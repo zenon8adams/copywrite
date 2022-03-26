@@ -1,22 +1,14 @@
 /*
-
-                                                                       ▆▆▆                  ▆▆          
-      ▆▆▆▆▆▆                                                ▆▆▆▆▆▆▆    ▆▆▆                  ▆▆          
-    ▆▆▆▆ ▆▆▆▆                                               ▆▆▆▆▆▆▆▆    ▆                   ▆▆          
-   ▆▆       ▆▆                                              ▆▆▆   ▆▆▆                       ▆▆          
-  ▆▆         ▆▆  ▆▆▆▆▆▆▆   ▆▆▆▆   ▆▆  ▆▆▆     ▆▆▆▆   ▆▆  ▆▆ ▆▆▆    ▆▆  ▆▆▆    ▆▆▆▆      ▆▆▆ ▆▆    ▆▆▆▆  
-  ▆▆   ▆▆ ▆  ▆▆  ▆▆▆▆▆▆   ▆▆▆▆▆▆  ▆▆▆▆▆▆▆▆   ▆▆▆▆▆▆  ▆▆ ▆▆▆ ▆▆▆    ▆▆  ▆▆▆   ▆▆▆▆▆▆    ▆▆▆▆▆▆▆   ▆▆▆▆▆▆ 
- ▆▆   ▆▆▆▆▆   ▆     ▆▆▆  ▆▆   ▆▆  ▆▆▆  ▆▆▆  ▆▆   ▆▆  ▆▆▆▆   ▆▆▆    ▆▆▆ ▆▆▆  ▆▆▆  ▆▆▆  ▆▆▆   ▆▆  ▆▆   ▆▆ 
- ▆▆  ▆▆  ▆▆   ▆     ▆▆   ▆▆▆▆▆▆▆▆ ▆▆▆   ▆▆  ▆▆▆▆▆▆▆▆ ▆▆▆    ▆▆▆    ▆▆▆ ▆▆▆  ▆▆    ▆▆  ▆▆    ▆▆  ▆▆▆▆▆▆▆▆
- ▆▆  ▆   ▆▆   ▆    ▆▆    ▆▆▆▆▆▆▆▆ ▆▆▆   ▆▆  ▆▆▆▆▆▆▆▆ ▆▆▆    ▆▆▆    ▆▆  ▆▆▆  ▆▆    ▆▆  ▆▆    ▆▆  ▆▆▆▆▆▆▆▆
- ▆   ▆   ▆▆  ▆▆   ▆▆▆    ▆▆       ▆▆▆   ▆▆  ▆▆       ▆▆▆    ▆▆▆    ▆▆  ▆▆▆  ▆▆    ▆▆  ▆▆    ▆▆  ▆▆      
- ▆▆  ▆▆▆▆▆▆  ▆    ▆▆     ▆▆▆      ▆▆▆   ▆▆  ▆▆▆      ▆▆▆    ▆▆▆   ▆▆▆  ▆▆▆  ▆▆▆  ▆▆▆  ▆▆▆  ▆▆▆  ▆▆▆     
- ▆▆  ▆▆▆ ▆▆▆▆▆   ▆▆▆▆▆▆▆  ▆▆▆▆▆▆  ▆▆▆   ▆▆   ▆▆▆▆▆▆  ▆▆▆    ▆▆▆▆▆▆▆▆   ▆▆▆   ▆▆▆▆▆▆    ▆▆▆▆▆▆▆   ▆▆▆▆▆▆ 
-  ▆              ▆▆▆▆▆▆▆   ▆▆▆▆   ▆▆▆   ▆▆    ▆▆▆▆   ▆▆▆    ▆▆▆▆▆▆▆    ▆▆▆    ▆▆▆▆      ▆▆▆ ▆▆    ▆▆▆▆  
-  ▆▆                                                                                                    
-   ▆▆▆▆  ▆▆                                                                                             
-     ▆▆▆▆▆                                                                                              
+  ▆▆▆                                ▆▆▆     ▆            ▆       
+ ▆   ▆                               ▆  ▆                 ▆       
+▆ ▆▆ ▆ ▆▆▆▆   ▆▆▆  ▆▆▆▆   ▆▆▆  ▆▆▆▆  ▆   ▆ ▆▆▆   ▆▆▆▆  ▆▆▆▆   ▆▆▆ 
+▆▆ ▆ ▆   ▆   ▆  ▆  ▆  ▆  ▆  ▆  ▆     ▆   ▆   ▆   ▆  ▆  ▆  ▆  ▆  ▆ 
+▆▆ ▆ ▆  ▆    ▆▆▆▆  ▆  ▆  ▆▆▆▆  ▆     ▆   ▆   ▆   ▆  ▆  ▆  ▆  ▆▆▆▆ 
+▆ ▆▆▆   ▆    ▆     ▆  ▆  ▆     ▆     ▆  ▆    ▆   ▆  ▆  ▆  ▆  ▆    
+ ▆     ▆▆▆▆   ▆▆▆  ▆  ▆   ▆▆▆  ▆     ▆▆▆   ▆▆▆▆  ▆▆▆▆  ▆▆▆▆   ▆▆▆ 
+  ▆▆▆                                                             
 */
+
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
@@ -80,7 +72,7 @@ void insert( Glyph *&index, Glyph glyph)
 	insert( index->next, glyph);
 }
 
-FT_Int kerning(char c, char prev, FT_Face face)
+FT_Int kerning( char c, char prev, FT_Face face)
 {
 	FT_Vector kern;
 
@@ -161,14 +153,14 @@ int main( int ac, char *av[])
   FT_Face       face;
   FT_Error      error;
 
-  const char *filename = "NotoSansJP-Bold.otf",
+  const char *filename = "./fonts/DroidSansMono.ttf",
 		     *word  = ac > 1 ? av[ 1] : "@zenerDiode";
 
   error = FT_Init_FreeType( &library );
 
   error = FT_New_Face( library, filename, 0, &face);
 
-  error = FT_Set_Pixel_Sizes( face, 20, 0); 
+  error = FT_Set_Pixel_Sizes( face, 10, 0); 
 
   render( word, face);
 
