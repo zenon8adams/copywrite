@@ -1,0 +1,4 @@
+/home/zener-diode/Downloads/clion-2019.2.2/bin/cmake/linux/bin/cmake -DCMAKE_BUILD_TYPE=Debug -G "CodeBlocks - Unix Makefiles" "/home/zener-diode/Desktop/SandBox/Device Workspace/Misc/copywrite"
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/zener-diode/Desktop/SandBox/Device Workspace/Misc/copywrite/cmake-build-debug

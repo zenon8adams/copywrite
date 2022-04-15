@@ -1,0 +1,351 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CMakeRunConfigurationManager" shouldGenerate="true" shouldDeleteObsolete="true">
+    <generated>
+      <config projectName="copywrite" targetName="copywrite" />
+    </generated>
+  </component>
+  <component name="CMakeSettings" AUTO_RELOAD="true">
+    <configurations>
+      <configuration PROFILE_NAME="Debug" CONFIG_NAME="Debug" />
+    </configurations>
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="bc49474b-4d41-4784-9b75-ad8ebc4e351e" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/copywrite.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/copywrite.hpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/LICENSE" beforeDir="false" afterPath="$PROJECT_DIR$/LICENSE" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/AndroidClock.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/CarroisGothicSC-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/ComingSoon.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/CutiveMono.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/DancingScript-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/DancingScript-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/DroidSans-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/DroidSans.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/DroidSansMono.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoColorEmoji.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoNaskhArabic-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoNaskhArabic-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoNaskhArabicUI-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoNaskhArabicUI-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansAdlam-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansAhom-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansAnatolianHieroglyphs-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansArmenian-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansArmenian-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansArmenian-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansAvestan-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBalinese-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBamum-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBassaVah-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBatak-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBengali-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBengali-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBengali-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBengaliUI-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBengaliUI-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBengaliUI-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBhaiksuki-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBrahmi-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBuginese-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansBuhid-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansCJK-Regular.ttc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansCanadianAboriginal-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansCarian-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansChakma-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansCham-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansCham-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansCherokee-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansCoptic-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansCuneiform-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansCypriot-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansDeseret-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansDevanagari-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansDevanagari-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansDevanagari-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansDevanagariUI-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansDevanagariUI-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansDevanagariUI-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansEgyptianHieroglyphs-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansElbasan-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansEthiopic-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansEthiopic-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGeorgian-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGeorgian-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGeorgian-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGlagolitic-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGothic-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGujarati-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGujarati-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGujaratiUI-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGujaratiUI-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGurmukhi-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGurmukhi-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGurmukhiUI-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansGurmukhiUI-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansHanunoo-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansHatran-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansHebrew-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansHebrew-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansImperialAramaic-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansInscriptionalPahlavi-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansInscriptionalParthian-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansJavanese-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansKaithi-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansKannada-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansKannada-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansKannadaUI-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansKannadaUI-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansKayahLi-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansKharoshthi-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansKhmer-VF.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansKhmerUI-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansKhmerUI-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansLao-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansLao-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansLaoUI-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansLaoUI-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansLepcha-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansLimbu-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansLinearA-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansLinearB-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansLisu-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansLycian-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansLydian-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMalayalam-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMalayalam-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMalayalam-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMalayalamUI-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMalayalamUI-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMalayalamUI-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMandaic-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansManichaean-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMarchen-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMeeteiMayek-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMeroitic-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMiao-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMongolian-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMro-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMultani-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMyanmar-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMyanmar-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMyanmar-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMyanmarUI-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMyanmarUI-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansMyanmarUI-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansNKo-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansNabataean-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansNewTaiLue-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansNewa-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOgham-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOlChiki-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOldItalic-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOldNorthArabian-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOldPermic-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOldPersian-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOldSouthArabian-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOldTurkic-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOriya-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOriya-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOriyaUI-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOriyaUI-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOsage-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansOsmanya-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansPahawhHmong-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansPalmyrene-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansPauCinHau-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansPhagsPa-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansPhoenician-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansRejang-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansRunic-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSamaritan-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSaurashtra-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSharada-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansShavian-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSinhala-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSinhala-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSinhala-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSinhalaUI-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSinhalaUI-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSinhalaUI-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSoraSompeng-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSundanese-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSylotiNagri-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSymbols-Regular-Subsetted.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSymbols-Regular-Subsetted2.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSyriacEastern-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSyriacEstrangela-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansSyriacWestern-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTagalog-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTagbanwa-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTaiLe-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTaiTham-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTaiViet-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTamil-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTamil-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTamil-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTamilUI-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTamilUI-Medium.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTamilUI-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTelugu-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTelugu-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTeluguUI-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTeluguUI-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansThaana-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansThaana-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansThai-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansThai-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansThaiUI-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansThaiUI-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTibetan-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTibetan-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansTifinagh-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansUgaritic-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansVai-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSansYi-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerif-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerif-BoldItalic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerif-Italic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerif-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifArmenian-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifArmenian-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifBengali-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifBengali-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifCJK-Regular.ttc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifDevanagari-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifDevanagari-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifEthiopic-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifEthiopic-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifGeorgian-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifGeorgian-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifGujarati-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifGujarati-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifGurmukhi-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifGurmukhi-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifHebrew-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifHebrew-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifKannada-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifKannada-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifKhmer-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifKhmer-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifLao-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifLao-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifMalayalam-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifMalayalam-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifMyanmar-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifMyanmar-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifSinhala-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifSinhala-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifTamil-Bold.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifTamil-Regular.otf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifTelugu-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifTelugu-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifThai-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/NotoSerifThai-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-Black.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-BlackItalic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-BoldItalic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-Italic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-Light.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-LightItalic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-Medium.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-MediumItalic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-Thin.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/Roboto-ThinItalic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/RobotoCondensed-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/RobotoCondensed-BoldItalic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/RobotoCondensed-Italic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/RobotoCondensed-Light.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/RobotoCondensed-LightItalic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/RobotoCondensed-Medium.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/RobotoCondensed-MediumItalic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/RobotoCondensed-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/SourceSansPro-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/SourceSansPro-BoldItalic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/SourceSansPro-Italic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/SourceSansPro-Regular.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/SourceSansPro-SemiBold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/SourceSansPro-SemiBoldItalic.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/ZawgyiOne.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/free/ar/Oblique-v5.02-9B751A725CC495573F8CA3A9B2A73A01.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/free/ar/Thabit-v5.01-9B751A725CC49R57FFGCD3A9B2A73A01.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/free/bn/Ekushey_Godhuli_Normal-v5.01-3A0C7A3A20DDBCE007383121A84910CE.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/free/bn/SolaimanLipi-v5.01-91F0B32C2F850C73A0B862A2E97A5BE4.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/free/hi/Apis-v5.01-CDF76D3A7B8879C637B6A51992F0E43A.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/h_aallltred.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/myanmar_shadow.tar.gz" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/myanmar_shadow.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.cpp" beforeDir="false" />
+    </list>
+    <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ClangdSettings">
+    <option name="formatViaClangd" value="false" />
+  </component>
+  <component name="ExecutionTargetManager" SELECTED_TARGET="CMakeBuildProfile:Debug" />
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectId" id="27oSh30VwVl8lfqkkmBhsQkCFGW" />
+  <component name="PropertiesComponent">
+    <property name="WebServerToolWindowFactoryState" value="false" />
+    <property name="settings.editor.selected.configurable" value="editor.preferences.fonts.default" />
+  </component>
+  <component name="RunDashboard">
+    <option name="ruleStates">
+      <list>
+        <RuleState>
+          <option name="name" value="ConfigurationTypeDashboardGroupingRule" />
+        </RuleState>
+        <RuleState>
+          <option name="name" value="StatusDashboardGroupingRule" />
+        </RuleState>
+      </list>
+    </option>
+  </component>
+  <component name="RunManager">
+    <configuration name="copywrite" type="CMakeRunConfiguration" factoryName="Application" PASS_PARENT_ENVS_2="true" PROJECT_NAME="copywrite" TARGET_NAME="copywrite" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="copywrite" RUN_TARGET_NAME="copywrite">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+  </component>
+  <component name="SvnConfiguration">
+    <configuration />
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="bc49474b-4d41-4784-9b75-ad8ebc4e351e" name="Default Changelist" comment="" />
+      <created>1649985060163</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1649985060163</updated>
+      <workItem from="1649985062739" duration="6423000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="1" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>

@@ -1,0 +1,3 @@
+/home/zener-diode/Desktop/SandBox/Device Workspace/Misc/copywrite/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/home/zener-diode/Desktop/SandBox/Device Workspace/Misc/copywrite/cmake-build-debug/CMakeFiles/copywrite.dir
+/home/zener-diode/Desktop/SandBox/Device Workspace/Misc/copywrite/cmake-build-debug/CMakeFiles/edit_cache.dir
