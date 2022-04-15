@@ -32,6 +32,6 @@
 *.app
 
 # Build Directory and Hidden directories
-.*
+.*/
 cmake-build-debug/
 build/
