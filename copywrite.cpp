@@ -297,8 +297,6 @@ int main( int ac, char *av[])
         exit( EXIT_FAILURE);
     }
 
-    printf( "font_file: %s, raster_glyph: %s, screen: %p, word: %s\n", fontfile, raster_glyph, screen, word);
-
     error = FT_Init_FreeType( &library );
 
     if( error != 0)
