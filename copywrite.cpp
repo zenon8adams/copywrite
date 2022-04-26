@@ -4,8 +4,8 @@
 /*                                                                         */
 /*    Driver program to create stamp									   */
 /*                                                                         */
-/*  Copyright 2022 by                                                      */
-/*  Adesina Meekness                                                       */
+/*  Copyright 2022 by Adesina Meekness                                     */
+/*                                                                         */
 /*                                                                         */
 /*       ##    ## ##                                                       */
 /*       ##    ##  #                                                       */
@@ -41,7 +41,7 @@ unsigned char *to_monochrome( FT_Bitmap bitmap)
 {
 	FT_Int rows = bitmap.rows,
 	       cols = bitmap.width;
-	unsigned char *pixmap = ( unsigned char *)calloc( rows * cols, 1);
+	auto *pixmap = ( unsigned char *)calloc( rows * cols, 1);
 	for( FT_Int y = 0; y < rows; ++y)
 	{
 		for( FT_Int ibyte = 0; ibyte < bitmap.pitch; ++ibyte)
@@ -51,7 +51,7 @@ unsigned char *to_monochrome( FT_Bitmap bitmap)
 			       cbit = bitmap.buffer[ y * bitmap.pitch + ibyte],
 			       rbits = (int)(cols - ibit) < 8 ? cols - ibit : 8;
 			for( FT_Int i = 0; i < rbits; ++i)
-			   pixmap[ base + i] = cbit & (1 << ( 7 - i));
+			   pixmap[ base + i] = ( uint8_t)cbit & (1u << ( 7u - i));
 		}
 	}
 
@@ -90,7 +90,7 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
 
 	FT_Get_Kerning( face, c, prev, FT_KERNING_DEFAULT, &kern);
 
-	return kern.x >> 6;
+	return ( uint8_t)kern.x >> 6u;
 }
 
 void draw( Glyph glyph, FT_Vector *pen, unsigned char *out, FT_Int mdescent, FT_Int width, FT_Int height)
@@ -103,13 +103,13 @@ void draw( Glyph glyph, FT_Vector *pen, unsigned char *out, FT_Int mdescent, FT_
 	pen->x += glyph.xstep; // Move the pen forward for positioning of the next character
 }
 
-void write( unsigned char *out, FT_Int width, FT_Int height)
+void write( const unsigned char *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination)
 {
   for ( FT_Int j = 0; j < height; ++j)
   {
     for ( FT_Int i = 0; i < width; ++i)
-		printf("%s", out[ j * width + i] ? "#" : " ");
-    putchar( '\n' );
+		fprintf( destination,"%s", out[ j * width + i] ? raster_glyph : " ");
+    fputc( '\n', destination );
   }
 }
 
@@ -152,7 +152,7 @@ static uint32_t collate( uint8_t *str, size_t idx, uint8_t count )
     return value;
 }
 
-void render( const char *word, FT_Face face)
+void render( const char *word, FT_Face face, const char *raster_glyph, FILE *destination)
 {
 	Glyph *head = nullptr;
 	FT_Int width 	= 0, // Total width of the buffer
@@ -192,19 +192,19 @@ void render( const char *word, FT_Face face)
 
 	FT_Int height = hexcess + xheight + mdescent;
 
-	unsigned char *out = ( unsigned char *)calloc( width * height, 1);
+	auto *out = ( unsigned char *)calloc( width * height, 1);
 	FT_Vector pen;
 	memset( &pen, 0, sizeof( pen));
-	for( Glyph *current = head, *prev; current != nullptr;)
+	for(Glyph *current = head, *prev_link; current != nullptr;)
 	{
 		draw( *current, &pen, out, mdescent, width, height);
-		prev = current;
+        prev_link = current;
 		current = current->next;
-		free( prev->pixmap);
-		free( prev);
+		free(prev_link->pixmap);
+		free(prev_link);
 	}
 
-	write( out, width, height);
+	write( out, width, height, raster_glyph, destination);
 
 	free( out);
 }
@@ -228,7 +228,7 @@ void requestFontList()
             const char *font = ( const char *)FcNameUnparse( fontSet->fonts[ i]),
                 *breakp = strchr( font, '/');
 
-            printf( "%s\n", breakp);
+            printf( "\t%s\n", breakp);
 
             free( ( FcChar8 *)font);
         }
@@ -238,50 +238,95 @@ void requestFontList()
 
     if( fontSet)
         FcFontSetDestroy( fontSet);
-
 }
 
 int main( int ac, char *av[])
 {
-  FT_Library    library;
-  FT_Face       face;
-  FT_Error      error;
+    FT_Library    library;
+    FT_Face       face;
+    FT_Error      error;
 
-  const char *filename = "/usr/share/fonts/opentype/urw-base35/P052-Bold.otf",
-		     *word  = ac > 1 ? av[ 1] : "~Mk";
+    /*
+     * Schema:
+     *  av[ 0] [--list-fonts|--font-file=FILE] [--font-size=NUM] [--drawing-character=CHAR] [--output FILE] text
+     *
+     */
 
-  error = FT_Init_FreeType( &library );
+    const char *fontfile = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+               *raster_glyph = "\u2589",
+               *font_size = "10",
+               *word = "Hello World",
+               *program = *av;
+    FILE *screen = stdout;
 
-  if( error != 0)
-  {
-      fprintf( stderr, "Unable to startup!");
-      exit( EXIT_FAILURE);
-  }
-
-  error = FT_New_Face( library, filename, 0, &face);
-
-    if( error != 0)
+    while( --ac > 0 && ( *++av)[ 0] == '-')
     {
-        fprintf( stderr, "Font file may be invalid!");
+        const char *directive = *av + 2,
+                   *index = nullptr,
+                   **selection = nullptr;
+
+        if( strcmp( directive, "list-fonts") == 0)
+        {
+            puts( "Available fonts:\n");
+            requestFontList();
+
+            exit( EXIT_SUCCESS);
+        }
+        else if( strcmp( directive, "output") == 0 && ac > 0)
+        {
+            ac -= 1;
+            screen = fopen( *++av, "w");
+            screen = screen == nullptr ? stdout : screen;
+        }
+        else if( strstr( directive, "font-file") != nullptr)
+            selection = &fontfile;
+        else if( strstr( directive, "font-size") != nullptr)
+            selection = &font_size;
+        else if( strstr( directive, "drawing-character") != nullptr)
+            selection = &raster_glyph;
+
+        if( selection != nullptr && ( index = strchr( directive, '=')) != nullptr)
+            *selection = index + 1;
+    }
+
+    if( ac == 1)
+        word = *av;
+    else
+    {
+        fprintf( stderr, "Usage: %s [--list-fonts|--font-file=FILE] [--font-size=NUM] [--drawing-character=CHAR] [--output FILE] text\n", program);
         exit( EXIT_FAILURE);
     }
 
+    printf( "font_file: %s, raster_glyph: %s, screen: %p, word: %s\n", fontfile, raster_glyph, screen, word);
 
-  error = FT_Set_Pixel_Sizes( face, 10, 0);
+    error = FT_Init_FreeType( &library );
 
-  if( error != 0)
-  {
-      fprintf( stderr, "Setup error!");
+    if( error != 0)
+    {
+      fprintf( stderr, "Unable to startup!");
       exit( EXIT_FAILURE);
-  }
+    }
 
-//  requestFontList();
+    error = FT_New_Face( library, fontfile, 0, &face);
 
-  render( word, face);
+    if( error != 0)
+    {
+        fprintf( stderr, "Font file is invalid!");
+        exit( EXIT_FAILURE);
+    }
 
-  FT_Done_Face    ( face);
-  FT_Done_FreeType( library);
+    error = FT_Set_Pixel_Sizes( face, strtol( font_size, nullptr, 10), 0);
 
-  return 0;
+    if( error != 0)
+    {
+        fprintf( stderr, "Setup error!");
+        exit( EXIT_FAILURE);
+    }
+
+    render( word, face, raster_glyph, screen);
+
+    FT_Done_Face( face);
+    FT_Done_FreeType( library);
+
+    return 0;
 }
-

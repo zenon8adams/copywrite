@@ -39,11 +39,11 @@ unsigned char *to_monochrome( FT_Bitmap bitmap);
 
 struct Glyph
 {
-    FT_Int width,
-        height,
-        xstep;
-    unsigned char *pixmap;
-    FT_Vector origin;
+    FT_Int width{},
+        height{},
+        xstep{};
+    unsigned char *pixmap{};
+    FT_Vector origin{};
 
     Glyph *next = nullptr;
 };
@@ -75,7 +75,7 @@ void draw( Glyph glyph, FT_Vector *pen, unsigned char *out, FT_Int mdescent, FT_
  * Display the monochrome canvas into stdout
  */
 
-void write( unsigned char *out, FT_Int width, FT_Int height);
+void write( const unsigned char *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination);
 
 static size_t byteCount( uint8_t c );
 
@@ -85,7 +85,7 @@ static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
  * Main dispatcher: Does all the rendering and display
  */
 
-void render( const char *word, FT_Face face);
+void render( const char *word, FT_Face face, const char *render_glyph, FILE *screen);
 
 void requestFontList();
 
