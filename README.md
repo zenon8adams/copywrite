@@ -1,4 +1,4 @@
-# copywrite
+# Copywrite
 A package for watermarking your code.
 
 ## Description
