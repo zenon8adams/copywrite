@@ -2,7 +2,7 @@
 /*                                                                         */
 /*  copywrite.cpp                                                          */
 /*                                                                         */
-/*    Driver program to create stamp									   */
+/*    Driver program to create stamp					   */
 /*                                                                         */
 /*  Copyright 2022 by Adesina Meekness                                     */
 /*                                                                         */
