@@ -2,7 +2,7 @@
 /*                                                                         */
 /*  copywrite.cpp                                                          */
 /*                                                                         */
-/*    Driver program to create stamp					   */
+/*    Driver program to create stamp					                   */
 /*                                                                         */
 /*  Copyright 2022 by Adesina Meekness                                     */
 /*                                                                         */
@@ -105,10 +105,13 @@ void draw( Glyph glyph, FT_Vector *pen, unsigned char *out, FT_Int mdescent, FT_
 
 void write( const unsigned char *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination)
 {
+  uint8_t raster_bytes = destination != stdout ? MAX( byteCount( *raster_glyph) - 1, 1) : 1;
+  std::string sp( raster_bytes, ' ');
+
   for ( FT_Int j = 0; j < height; ++j)
   {
     for ( FT_Int i = 0; i < width; ++i)
-		fprintf( destination,"%s", out[ j * width + i] ? raster_glyph : " ");
+		fprintf( destination,"%s", out[ j * width + i] ? raster_glyph : sp.c_str());
     fputc( '\n', destination );
   }
 }
