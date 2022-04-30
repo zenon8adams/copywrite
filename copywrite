@@ -1,0 +1,27 @@
+#!/bin/bash
+
+_copywrite_completion() {
+    local cur prev opts last_match
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    opts="--list-fonts --font-file= --font-size= --drawing-character= --output"
+
+    if [[ ${cur} == -* ]] ; then
+      check=$(echo "${prev}" | xargs)
+      case $check in
+        --list-fonts)
+          COMPREPLY=()
+          ;;
+        --font-file=|--font-size=|--drawing-character=|--output)
+            $cmds=$(echo "${opts}" | sed "s|${prev}|/|g")
+            COMPREPLY=( $(compgen -W "${opts}" -f "${cmds}"))
+          ;;
+        *)
+          COMPREPLY=( $(compgen -W "${opts}" -- "${cur}"))
+        esac
+      return 0
+    fi
+}
+
+complete -F_copywrite_completion copywrite
