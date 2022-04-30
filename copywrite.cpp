@@ -29,6 +29,15 @@
 
 #define MAX(x, y) ((x) ^ (((x) ^ (y)) & -((x) < (y))))
 
+#define ALLOWANCE 6
+#define FPRINTF( fmt, argument) ({ \
+    auto count = maxlength - strlen( argument) + ALLOWANCE;\
+    char spacing[ count + 1];\
+    memset( spacing, ' ', count);\
+    spacing[ count] = 0;\
+    fprintf( stderr, fmt, argument, spacing);\
+})
+
 /*
  * Converts bitmap into binary format.
  * NB!
@@ -290,13 +299,47 @@ int main( int ac, char *av[])
 
         if( selection != nullptr && ( index = strchr( directive, '=')) != nullptr)
             *selection = index + 1;
+        else if( selection != nullptr)
+        {
+            ac = -1;
+            break;
+        }
     }
 
     if( ac == 1)
         word = *av;
     else
     {
-        fprintf( stderr, "Usage: %s [--list-fonts|--font-file=FILE] [--font-size=NUM] [--drawing-character=CHAR] [--output FILE] text\n", program);
+        const char *start = strrchr( program, '/'),
+                   *name = start != nullptr ? start + 1 : program,
+                   *arguments[] = {
+                        "--list-fonts",
+                        "--font-file=FILE",
+                        "--font-size=NUM",
+                        "--drawing-character=CHAR",
+                        "--output FILE",
+                    };
+
+        size_t maxlength = 0;
+        {
+            size_t idx = 0, length = sizeof( arguments) / sizeof( arguments[ 0]);
+            while( idx < length)
+            {
+                size_t clen = strlen( arguments[ idx++]);
+                maxlength = clen > maxlength ? clen : maxlength;
+            }
+        }
+
+        fprintf( stderr, "Usage: %s [%s|%s] [%s] [%s] [%s] text\n", name,
+                *arguments, *( arguments + 1), *( arguments + 2), *( arguments + 3), *( arguments + 4));
+
+        fprintf( stderr, "Displays block form of character sequence\n");
+        fprintf( stderr, "Arguments:\n");
+        FPRINTF("%s%sList location of all installed fonts.\n", *arguments);
+        FPRINTF("%s%sSet the font file to be used for display.\n", *(arguments + 1));
+        FPRINTF("%s%sSet the font size for display to NUM pixels.\n", *(arguments + 2));
+        FPRINTF("%s%sSet the character to output in for each block.\n", *(arguments + 3));
+        FPRINTF("%s%sWrite the block of characters into the file FILE.\n", *(arguments + 4));
         exit( EXIT_FAILURE);
     }
 
