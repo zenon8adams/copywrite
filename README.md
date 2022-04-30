@@ -21,7 +21,7 @@ make
 
 ## Usage
 ```
-Usage: copywrite [--list-fonts|--font-file=FILE] [--font-size=NUM] [--drawing-character=CHAR] [--output FILE] text
+copywrite [--list-fonts|--font-file=FILE] [--font-size=NUM] [--drawing-character=CHAR] [--output FILE] text
 Displays block form of character sequence
 
 Arguments:
