@@ -326,20 +326,20 @@ int main( int ac, char *av[])
             while( idx < length)
             {
                 size_t clen = strlen( arguments[ idx++]);
-                maxlength = clen > maxlength ? clen : maxlength;
+                maxlength = MAX(clen, maxlength);
             }
         }
 
         fprintf( stderr, "Usage: %s [%s|%s] [%s] [%s] [%s] text\n", name,
                 *arguments, *( arguments + 1), *( arguments + 2), *( arguments + 3), *( arguments + 4));
 
-        fprintf( stderr, "Displays block form of character sequence\n");
+        fprintf( stderr, "Displays block form of character sequence\n\n");
         fprintf( stderr, "Arguments:\n");
-        FPRINTF("%s%sList location of all installed fonts.\n", *arguments);
-        FPRINTF("%s%sSet the font file to be used for display.\n", *(arguments + 1));
-        FPRINTF("%s%sSet the font size for display to NUM pixels.\n", *(arguments + 2));
-        FPRINTF("%s%sSet the character to output in for each block.\n", *(arguments + 3));
-        FPRINTF("%s%sWrite the block of characters into the file FILE.\n", *(arguments + 4));
+        FPRINTF("\t%s%sList location of all installed fonts.\n", *arguments);
+        FPRINTF("\t%s%sSet the font file to be used for display.\n", *(arguments + 1));
+        FPRINTF("\t%s%sSet the font size for display to NUM pixels.\n", *(arguments + 2));
+        FPRINTF("\t%s%sSet the character to output in for each block.\n", *(arguments + 3));
+        FPRINTF("\t%s%sWrite the block of characters into the file FILE.\n", *(arguments + 4));
         exit( EXIT_FAILURE);
     }
 
