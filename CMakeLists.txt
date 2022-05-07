@@ -8,4 +8,4 @@ add_executable(copywrite copywrite.cpp copywrite.hpp)
 
 target_include_directories(copywrite PRIVATE "${SYSTEM_INCLUDE_PATH}/freetype2/" "${SYSTEM_INCLUDE_PATH}/freetype2/freetype")
 
-target_link_libraries( copywrite PRIVATE -lfreetype -lfontconfig)
+target_link_libraries( copywrite PRIVATE -lfreetype -lfontconfig -lpng)

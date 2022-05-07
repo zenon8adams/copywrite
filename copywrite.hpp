@@ -29,6 +29,11 @@
 
 #include <ft2build.h>
 #include <string>
+#include <pngconf.h>
+#ifndef PNG_STDIO_SUPPORTED
+typedef FILE                * png_FILE_p;
+#endif
+
 #include  FT_FREETYPE_H
 
 unsigned char *to_monochrome( FT_Bitmap bitmap);
@@ -85,7 +90,9 @@ static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
  * Main dispatcher: Does all the rendering and display
  */
 
-void render( const char *word, FT_Face face, const char *render_glyph, FILE *screen);
+void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image = false);
+
+void writePNG(FILE *cfp, const png_bytep buffer, png_int_32 width, png_int_32 height);
 
 void requestFontList();
 
