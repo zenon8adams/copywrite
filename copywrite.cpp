@@ -256,13 +256,8 @@ void requestFontList()
         FcFontSetDestroy( fontSet);
 }
 
-void writePNG(FILE *cfp, const  png_bytep buffer, png_int_32 width, png_int_32 height)
+void writePNG(FILE *fp, const  png_bytep buffer, png_int_32 width, png_int_32 height)
 {
-//    FILE *fp = fdopen( fileno( cfp), "wb");
-
-    FILE *fp = fopen( "image.png", "wb");
-
-    fclose( cfp);
     if( fp == nullptr)
         return;
 
@@ -400,7 +395,7 @@ int main( int ac, char *av[])
         else if( strcmp( directive, "output") == 0 && ac > 0)
         {
             ac -= 1;
-            screen = fopen( *++av, "w");
+            screen = fopen( *++av, "wb");
             screen = screen == nullptr ? stdout : screen;
         }
         else if( strstr( directive, "font-file") != nullptr)
