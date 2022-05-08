@@ -30,6 +30,8 @@
 #include <ft2build.h>
 #include <string>
 #include <pngconf.h>
+#include <vector>
+
 #ifndef PNG_STDIO_SUPPORTED
 typedef FILE                * png_FILE_p;
 #endif
@@ -53,6 +55,20 @@ struct Glyph
     Glyph *next = nullptr;
 };
 
+struct ColorRule
+{
+    int32_t start = 0, end = -1;
+    uint32_t color = 0x000000FF;
+    uint8_t offset = 0;
+};
+
+struct MetaInfo
+{
+    ColorRule tail;
+    FT_Vector size{};
+    uint32_t position = UINT32_MAX;
+};
+
 
 Glyph extract( FT_GlyphSlot slot);
 
@@ -74,13 +90,13 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face);
  * Render the given glyph into the final computed container
  */
 
-void draw( Glyph glyph, FT_Vector *pen, unsigned char *out, FT_Int mdescent, FT_Int width, FT_Int height);
+auto draw( Glyph glyph, FT_Vector *pen, unsigned char *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t index, const std::vector<MetaInfo>& );
 
 /*
  * Display the monochrome canvas into stdout
  */
 
-void write( const unsigned char *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination);
+void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination);
 
 static size_t byteCount( uint8_t c );
 
@@ -90,9 +106,9 @@ static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
  * Main dispatcher: Does all the rendering and display
  */
 
-void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image = false);
+void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image = false, const char *color_rule = nullptr);
 
-void writePNG(FILE *cfp, const png_bytep buffer, png_int_32 width, png_int_32 height);
+void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height);
 
 void requestFontList();
 

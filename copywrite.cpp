@@ -27,17 +27,23 @@
 #include "copywrite.hpp"
 #include <fontconfig/fontconfig.h>
 #include <png.h>
+#include <cmath>
 
 #define MAX(x, y) ((x) ^ (((x) ^ (y)) & -((x) < (y))))
-
 #define ALLOWANCE 6
-#define FPRINTF( fmt, argument) ({ \
-    auto count = maxlength - strlen( argument) + ALLOWANCE;\
+#define FPRINTFD( fmt, argument, include) ({ \
+    auto arglength = strlen( argument);\
+    auto count = maxlength - arglength + ALLOWANCE + !include * arglength;\
     char spacing[ count + 1];\
     memset( spacing, ' ', count);\
     spacing[ count] = 0;\
-    fprintf( stderr, fmt, argument, spacing);\
+    if( include) \
+        fprintf( stderr, fmt, argument, spacing);\
+    else \
+        fprintf( stderr, fmt, "", spacing);\
 })
+
+#define FPRINTF( fmt, argument) FPRINTFD( fmt, argument, true)
 
 /*
  * Converts bitmap into binary format.
@@ -103,17 +109,30 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
 	return ( uint8_t)kern.x >> 6u;
 }
 
-void draw( Glyph glyph, FT_Vector *pen, unsigned char *out, FT_Int mdescent, FT_Int width, FT_Int height)
+void draw(Glyph glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t index, const std::vector<ColorRule>& rules)
 {
 	FT_Int base = height - glyph.height - mdescent;
+	ColorRule best;
+    for( const auto& each: rules)
+    {
+        if( ( each.end == INT32_MIN && index == each.start) || ( index >= each.start && ( ( index <= each.end && each.end != INT32_MIN) || each.end == -1)))
+            best = each;
+    }
+
 	for( FT_Int y = glyph.origin.y, j = 0; j < glyph.height; ++y, ++j)
-		for( FT_Int x = glyph.origin.x, i = 0; i < glyph.width; ++x, ++i)
-			out[ ( base + pen->y + y) * width + x + pen->x] |= glyph.pixmap[ j * glyph.width + i];
-		
+    {
+        for( FT_Int x = glyph.origin.x, i = 0; i < glyph.width; ++x, ++i)
+        {
+            uint64_t pixel = glyph.pixmap[ j * glyph.width + i];
+            out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | ( pixel ? best.color : 0);
+        }
+    }
+
 	pen->x += glyph.xstep; // Move the pen forward for positioning of the next character
+
 }
 
-void write( const unsigned char *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination)
+void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination)
 {
   uint8_t raster_bytes = destination != stdout ? MAX( byteCount( *raster_glyph) - 1, 1) : 1;
   std::string sp( raster_bytes, ' ');
@@ -121,7 +140,7 @@ void write( const unsigned char *out, FT_Int width, FT_Int height, const char *r
   for ( FT_Int j = 0; j < height; ++j)
   {
     for ( FT_Int i = 0; i < width; ++i)
-		fprintf( destination,"%s", out[ j * width + i] ? raster_glyph : sp.c_str());
+		fprintf( destination,"%s", ( out[ j * width + i] >> 32u) ? raster_glyph : sp.c_str());
     fputc( '\n', destination );
   }
 }
@@ -165,7 +184,143 @@ static uint32_t collate( uint8_t *str, size_t idx, uint8_t count )
     return value;
 }
 
-void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image)
+uint32_t getNumber( const char *&ctx, uint8_t base = 10)
+{
+    uint32_t weight = 0;
+    while( isxdigit( *ctx))
+    {
+        uint8_t character = tolower( *( ctx++));
+        int value = character >= 'a' && character <= 'f' ? character - 'a' + 10 : isdigit( character) ? character - '0' : 0;
+        weight = weight * base + value;
+    }
+
+    return weight;
+}
+
+// Format example: [1]{#244839};[2]{#456676};[3..5]{#594930};[4..]{#567898}
+auto parseColorRule( const char *rule)
+{
+    const char *prev = nullptr;
+    std::vector<ColorRule> rules;
+    while( *rule)
+    {
+        ColorRule ccolor;
+        if( !rules.empty())
+        {
+            if(*rule != ';')
+            {
+                fprintf( stderr, "Incomplete color specification missing semicolon -> %s", rule);
+                exit( EXIT_FAILURE);
+            }
+            else
+                ++rule;
+        }
+        while( *rule)
+        {
+            if( *rule == '[')
+            {
+                prev = rule;
+                ++rule;
+                ccolor.start = getNumber( rule);
+                if( *rule != '\0')
+                {
+                    if( *rule == '.' && *( rule + 1) == '.')
+                    {
+                        rule += 2;
+                        if( isdigit( *rule))
+                            ccolor.end = getNumber( rule);
+
+                        if( ccolor.end != -1 && ccolor.end < ccolor.start)
+                        {
+                            fprintf( stderr, "Color start and end should not overlap -> %s", prev);
+                            exit( EXIT_FAILURE);
+                        }
+                    }
+                    else if( *rule == '.')
+                    {
+                        fprintf( stderr, "Expected `.` before end range -> %s", rule + 1);
+                        exit( EXIT_FAILURE);
+                    }
+                    else
+                        ccolor.end = INT32_MIN;
+                }
+                else
+                {
+                    fprintf( stderr, "Incomplete color specification");
+                    exit( EXIT_FAILURE);
+                }
+                if( *rule == ']')
+                    ++rule;
+                else
+                {
+                    fprintf( stderr, "Incomplete color specification");
+                    exit( EXIT_FAILURE);
+                }
+            }
+            else if( *rule == '{')
+            {
+                ++rule;
+                if( *rule != '\0')
+                {
+                    prev = rule;
+                    if( *rule == '#')
+                        ++rule;
+                    else if( *rule == 'x')
+                        ++rule;
+                    else if( strncasecmp( rule, "0x", 2) == 0)
+                        rule += 2;
+                    else
+                    {
+                        fprintf( stderr, "Expected hex indicator near -> %s (allowed: `#`, `x`, `0x`)", prev);
+                        exit( EXIT_FAILURE);
+                    }
+
+                    prev = rule;
+                    if( isxdigit( *rule))
+                    {
+                        ccolor.color = getNumber( rule, 16);
+                        uint8_t ccount = rule - prev;
+                        if( ccolor.color == 0 || ( ccount != 6 && ccount != 8))
+                        {
+                            fprintf( stderr, ccolor.color == 0 ? "Invalid color specification %s"
+                                             : "Color has to be 6 or 8 hex digits -> %s", prev);
+                            exit( EXIT_FAILURE);
+                        }
+                        else if( ccount == 6)
+                            ccolor.color = ccolor.color << 8u | 0xFFu;
+                    }
+                    else
+                    {
+                        fprintf( stderr, "Expected hex digits -> %s", prev);
+                        exit( EXIT_FAILURE);
+                    }
+
+                    if( *rule == '}')
+                        ++rule;
+                    else
+                    {
+                        fprintf( stderr, "Missing end of expression `}`");
+                        exit( EXIT_FAILURE);
+                    }
+
+                    ccolor.offset = 4 - strlen((const char *)( &ccolor.color));
+
+                    rules.push_back( ccolor);
+                    break;
+                }
+                else
+                {
+                    fprintf( stderr, "Incomplete color specification");
+                    exit( EXIT_FAILURE);
+                }
+            }
+        }
+    }
+
+    return rules;
+}
+
+void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image, const  char *color_rule)
 {
 	Glyph *head = nullptr;
 	FT_Int width 	= 0, // Total width of the buffer
@@ -205,12 +360,15 @@ void render(const char *word, FT_Face face, const char *raster_glyph, FILE *dest
 
 	FT_Int height = hexcess + xheight + mdescent;
 
-	auto *out = ( unsigned char *)calloc( width * height, 1);
+	auto *out = ( uint64_t *)calloc( width * height, sizeof( uint64_t));
 	FT_Vector pen;
 	memset( &pen, 0, sizeof( pen));
+	size_t index = 0;
+	auto rules = color_rule == nullptr ? std::vector<ColorRule>{} : parseColorRule( color_rule);
 	for(Glyph *current = head, *prev_link; current != nullptr;)
 	{
-		draw( *current, &pen, out, mdescent, width, height);
+        draw( *current, &pen, out, mdescent, width, height, ++index, rules);
+
         prev_link = current;
 		current = current->next;
 		free(prev_link->pixmap);
@@ -256,9 +414,9 @@ void requestFontList()
         FcFontSetDestroy( fontSet);
 }
 
-void writePNG(FILE *fp, const  png_bytep buffer, png_int_32 width, png_int_32 height)
+void writePNG(FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height)
 {
-    if( fp == nullptr)
+    if(cfp == nullptr)
         return;
 
     png_structp png_ptr;
@@ -268,26 +426,26 @@ void writePNG(FILE *fp, const  png_bytep buffer, png_int_32 width, png_int_32 he
     png_ptr = png_create_write_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
     if( png_ptr == nullptr)
     {
-        fclose( fp);
+        fclose(cfp);
         return;
     }
 
     info_ptr = png_create_info_struct( png_ptr);
     if( info_ptr == nullptr)
     {
-        fclose( fp);
+        fclose(cfp);
         png_destroy_write_struct( &png_ptr, &info_ptr);
         return;
     }
 
     if( setjmp( png_jmpbuf( png_ptr)))
     {
-        fclose( fp);
+        fclose(cfp);
         png_destroy_write_struct( &png_ptr, &info_ptr);
         return;
     }
 
-    png_init_io( png_ptr, fp);
+    png_init_io(png_ptr, cfp);
 
     png_set_IHDR( png_ptr, info_ptr, width, height, bit_depth, PNG_COLOR_TYPE_RGB_ALPHA,
                   PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
@@ -330,13 +488,21 @@ void writePNG(FILE *fp, const  png_bytep buffer, png_int_32 width, png_int_32 he
 
     auto image = ( png_bytep)png_calloc( png_ptr, height * width * bytes_per_pixel);
     png_bytep row_pointers[ height];
+    unsigned char color_buffer[ bytes_per_pixel];
+    memset( color_buffer, 0, bytes_per_pixel);
 
     for( png_uint_32 j = 0; j < height; ++j)
     {
         for( png_uint_32 i = 0; i < width; ++i)
         {
-            png_uint_32 mbyte = *(buffer + j * width + i) ? 0xFF0000FF : 0;
-            memcpy( image + j * width * bytes_per_pixel + i * bytes_per_pixel, ( const char *)&mbyte, bytes_per_pixel);
+            uint64_t pixel = *(buffer + j * width + i);
+            png_uint_32 color = pixel & 0xFFFFFFFF;
+            png_uint_32 mbyte = ( pixel >> 32u) ? color : 0;
+            png_uint_32 index = j * width * bytes_per_pixel + i * bytes_per_pixel;
+            image[     index] = mbyte >> 24u;
+            image[ index + 1] = ( mbyte >> 16u) & 0xFFu;
+            image[ index + 2] = ( mbyte >>  8u) & 0xFFu;
+            image[ index + 3] = mbyte & 0xFFu;
         }
     }
 
@@ -354,23 +520,27 @@ void writePNG(FILE *fp, const  png_bytep buffer, png_int_32 width, png_int_32 he
 
     png_free( png_ptr, image);
 
-    fclose( fp);
+    fclose(cfp);
 }
 
 int main( int ac, char *av[])
 {
+
+//    parseColorRule( "[1]{#244839};[2]{#456676};[4..4]{#p59930};[4..]{#567898};");
+
     FT_Library    library;
     FT_Face       face;
     FT_Error      error;
 
     /*
      * Schema:
-     *  av[ 0] [--list-fonts|--font-file=FILE] [--font-size=NUM] [--drawing-character=CHAR] [--output FILE] text
+     *  av[ 0] [--list-fonts|--font-file=FILE [--font-size=NUM] [--drawing-character=CHAR] [--output FILE]] text
      *
      */
 
     const char *fontfile = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
                *raster_glyph = "\u2589",
+               *color_rule = nullptr,
                *font_size = "10",
                *word = "Hello World",
                *program = *av;
@@ -400,6 +570,8 @@ int main( int ac, char *av[])
         }
         else if( strstr( directive, "font-file") != nullptr)
             selection = &fontfile;
+        else if( strstr( directive, "color-rule") != nullptr)
+            selection = &color_rule;
         else if( strstr( directive, "font-size") != nullptr)
             selection = &font_size;
         else if( strstr( directive, "drawing-character") != nullptr)
@@ -423,6 +595,7 @@ int main( int ac, char *av[])
                    *arguments[] = {
                         "--list-fonts",
                         "--font-file=FILE",
+                        "--color-rule=RULE",
                         "--font-size=NUM",
                         "--drawing-character=CHAR",
                         "--as-image",
@@ -439,17 +612,25 @@ int main( int ac, char *av[])
             }
         }
 
-        fprintf( stderr, "Usage: %s [%s|%s] [%s] [%s] [%s] [%s] text\n", name,
-                *arguments, *( arguments + 1), *( arguments + 2), *( arguments + 3), *( arguments + 4), *( arguments + 5));
+        fprintf( stderr, "Usage: %s [%s|%s [%s] [%s] [%s] [%s] [%s]] text\n", name,
+                *arguments, *( arguments + 1), *( arguments + 2), *( arguments + 3), *( arguments + 4), *( arguments + 5), *( arguments + 6));
 
         fprintf( stderr, "Displays block form of character sequence\n\n");
         fprintf( stderr, "Arguments:\n");
         FPRINTF("\t%s%sList location of all installed fonts.\n", *arguments);
         FPRINTF("\t%s%sSet the font file to be used for display.\n", *(arguments + 1));
-        FPRINTF("\t%s%sSet the font size for display to NUM pixels.\n", *(arguments + 2));
-        FPRINTF("\t%s%sSet the character to output in for each block.\n", *(arguments + 3));
-        FPRINTF("\t%s%sWrite to file as an image.\n", *(arguments + 4));
-        FPRINTF("\t%s%sWrite the block of characters into the file FILE.\n", *(arguments + 5));
+        FPRINTF("\t%s%sPaint image based on the RULE given by: ^(\\[(\\d+)(\\.\\.(\\d+)?)?\\]"
+                       "\\{(#|0?x)\\d{6,8}\\})(;\\[(\\d+)(\\.\\.(\\d+)?)?\\]\\{(\\#|0?x)\\d{6,8}\\})*;?$.\n", *(arguments + 2));
+        FPRINTFD( "\t%s%sExample: [1]{#244839};[2]{#456676};[3..4]{#559930};[5..]{#567898};\n", *( arguments + 2), false);
+        FPRINTFD( "\t%s%s  Word: `Hello` ==>  H -> #244839\n", *( arguments + 2), false);
+        FPRINTFD( "\t%s%s  Word: `Hello` ==>  e -> #456676\n", *( arguments + 2), false);
+        FPRINTFD( "\t%s%s  Word: `Hello` ==> ll -> #559930\n", *( arguments + 2), false);
+        FPRINTFD( "\t%s%s  Word: `Hello` ==>  0 -> #567898\n", *( arguments + 2), false);
+        FPRINTFD( "\t%s%sNB! If two rules match a character, the last one takes precedence.\n", *( arguments + 2), false);
+        FPRINTF("\t%s%sSet the font size for display to NUM pixels.\n", *(arguments + 3));
+        FPRINTF("\t%s%sSet the character to output in for each block.\n", *(arguments + 4));
+        FPRINTF("\t%s%sWrite to file as an image. Used with --output flag\n", *(arguments + 5));
+        FPRINTF("\t%s%sWrite the block of characters into the file FILE.\n", *(arguments + 6));
         exit( EXIT_FAILURE);
     }
 
@@ -477,7 +658,7 @@ int main( int ac, char *av[])
         exit( EXIT_FAILURE);
     }
 
-    render( word, face, raster_glyph, screen, write_as_image);
+    render( word, face, raster_glyph, screen, write_as_image, color_rule);
 
     FT_Done_Face( face);
     FT_Done_FreeType( library);
