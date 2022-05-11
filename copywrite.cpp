@@ -28,6 +28,7 @@
 #include <fontconfig/fontconfig.h>
 #include <png.h>
 #include <cmath>
+#include <iostream>
 
 #define MAX(x, y) ((x) ^ (((x) ^ (y)) & -((x) < (y))))
 
@@ -45,6 +46,12 @@
 })
 
 #define FPRINTF( fmt, argument) FPRINTFD( fmt, argument, true)
+
+#define ABS( expr) ({\
+    auto value = expr;\
+    auto mask = value >> ( ( sizeof( value) << 3u) - 1u);\
+    (value ^ mask) - mask;\
+})
 
 /*
  * Converts bitmap into binary format.
@@ -133,7 +140,7 @@ void draw(Glyph glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int wi
 
 }
 
-void insert( KDNode *&node, Color color, uint8_t depth = 0, size_t index = 0)
+void insert( KDNode *&node, Color color, size_t index = 0, uint8_t depth = 0)
 {
     if( node == nullptr)
     {
@@ -145,12 +152,39 @@ void insert( KDNode *&node, Color color, uint8_t depth = 0, size_t index = 0)
             cchannel = node->color.rgb[ depth],
             ndepth   = ( depth + 1) % 3;
     if( nchannel < cchannel)
-        insert(node->left, color, ndepth, index + 1);
+        insert(node->left, color, index, ndepth);
     else
-        insert(node->right, color, ndepth, index + 1);
+        insert(node->right, color, index, ndepth);
 }
 
-KDNode * approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0)
+void free( KDNode *&node)
+{
+    if( node == nullptr)
+        return;
+
+    free( node->left);
+    free( node->right);
+
+    delete node; node = nullptr;
+}
+
+float qsqrt( float number)
+{
+    long i;
+    float xhalf, y;
+    const float threehalfs = 1.5f;
+
+    xhalf = number * .5f;
+    y  = number;
+    i  = *( long *)&y;
+    i = 0x5f3759df - ( i >> 1);
+    y = *( float *)&i;
+    y = y * ( threehalfs - ( xhalf * y * y));
+
+    return 1 / y;
+}
+
+KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0)
 {
     if( node == nullptr)
         return best;
@@ -164,10 +198,10 @@ KDNode * approximate( KDNode *node, Color search, double &ldist, KDNode *best = 
             b = search.rgb[ 2] - node->color.rgb[ 2];
 
     double y = .299    * r + .587   * g + .114   * b,
-            u = -.14713 * r - .28886 * g + .436   * b,
-            v = .615    * r - .51499 * g - .10001 * b;
+           u = -.14713 * r - .28886 * g + .436   * b,
+           v = .615    * r - .51499 * g - .10001 * b;
 
-    double ndist = sqrt( y * y + u * u + v * v);
+    float ndist = qsqrt( ( float)(y * y + u * u + v * v));
 
     if( ndist < ldist)
     {
@@ -192,9 +226,8 @@ KDNode * approximate( KDNode *node, Color search, double &ldist, KDNode *best = 
         left = false;
     }
 
-    if( std::abs( search.rgb[ depth] - node->color.rgb[ depth]) < ldist)
+    if( ABS( search.rgb[ depth] - node->color.rgb[ depth]) < ldist)
         best = approximate(!left ? node->left : node->right, search, ldist, best, ndepth);
-
 
     return best;
 }
@@ -206,9 +239,7 @@ void write(const uint64_t *out, FT_Int width, FT_Int height, const char *raster_
     uint8_t raster_bytes = destination != stdout ? MAX( byteCount( *raster_glyph) - 1, 1) : is_stdout = true;
     std::string sp( raster_bytes, ' ');
 
-
-
-    uint8_t fmt[] = { '\x1B', '[', '3', '8', ';', '5', ';', '0', '0', '0', 'm'};
+    uint8_t fmt[] = { '\x1B', '[', '3', '8', ';', '5', ';', '0', '0', '0', 'm', '\0'};
     uint8_t offset = 7;
 
     for ( FT_Int j = 0; j < height; ++j)
@@ -218,6 +249,7 @@ void write(const uint64_t *out, FT_Int width, FT_Int height, const char *raster_
             double initial = INFINITY;
             uint64_t byte =  out[ j * width + i];
             uint32_t color = byte & 0xFFFFFFFFu;
+            bool is_transparent = ( color & 0xFFu) == 0u;
             auto nmatch = approximate( root, {( uint8_t)( color >> 24u),
                                              ( uint8_t)( ( color >> 16u) & 0xFFu), ( uint8_t)( ( color >> 8u) & 0xFFu)}, initial);
             fmt[     offset] = nmatch->index / 100 + '0';
@@ -226,7 +258,7 @@ void write(const uint64_t *out, FT_Int width, FT_Int height, const char *raster_
 
             if( is_stdout)
                 fprintf( destination, "%s", ( const char *)fmt);
-            fprintf( destination,"%s", byte >> 32u ? raster_glyph : sp.c_str());
+            fprintf( destination,"%s", byte >> 32u && !is_transparent ? raster_glyph : sp.c_str());
             if( is_stdout)
                 fprintf( destination, "\x1B[0m");
         }
@@ -617,264 +649,262 @@ int main( int ac, char *av[])
 {
     KDNode *root = nullptr;
 
-    insert(root, {0, 0, 0});
-    insert(root, {128, 0, 0});
-    insert(root, {0, 128, 0});
-    insert(root, {128, 128, 0});
-    insert(root, {0, 0, 128});
-    insert(root, {128, 0, 128});
-    insert(root, {0, 128, 128});
-    insert(root, {192, 192, 192});
-    insert(root, {128, 128, 128});
-    insert(root, {255, 0, 0});
-    insert(root, {0, 255, 0});
-    insert(root, {255, 255, 0});
-    insert(root, {0, 0, 255});
-    insert(root, {255, 0, 255});
-    insert(root, {0, 255, 255});
-    insert(root, {255, 255, 255});
-    insert(root, {0, 0, 0});
-    insert(root, {0, 0, 95});
-    insert(root, {0, 0, 135});
-    insert(root, {0, 0, 175});
-    insert(root, {0, 0, 215});
-    insert(root, {0, 0, 255});
-    insert(root, {0, 95, 0});
-    insert(root, {0, 95, 95});
-    insert(root, {0, 95, 135});
-    insert(root, {0, 95, 175});
-    insert(root, {0, 95, 215});
-    insert(root, {0, 95, 255});
-    insert(root, {0, 135, 0});
-    insert(root, {0, 135, 95});
-    insert(root, {0, 135, 135});
-    insert(root, {0, 135, 175});
-    insert(root, {0, 135, 215});
-    insert(root, {0, 135, 255});
-    insert(root, {0, 175, 0});
-    insert(root, {0, 175, 95});
-    insert(root, {0, 175, 135});
-    insert(root, {0, 175, 175});
-    insert(root, {0, 175, 215});
-    insert(root, {0, 175, 255});
-    insert(root, {0, 215, 0});
-    insert(root, {0, 215, 95});
-    insert(root, {0, 215, 135});
-    insert(root, {0, 215, 175});
-    insert(root, {0, 215, 215});
-    insert(root, {0, 215, 255});
-    insert(root, {0, 255, 0});
-    insert(root, {0, 255, 95});
-    insert(root, {0, 255, 135});
-    insert(root, {0, 255, 175});
-    insert(root, {0, 255, 215});
-    insert(root, {0, 255, 255});
-    insert(root, {95, 0, 0});
-    insert(root, {95, 0, 95});
-    insert(root, {95, 0, 135});
-    insert(root, {95, 0, 175});
-    insert(root, {95, 0, 215});
-    insert(root, {95, 0, 255});
-    insert(root, {95, 95, 0});
-    insert(root, {95, 95, 95});
-    insert(root, {95, 95, 135});
-    insert(root, {95, 95, 175});
-    insert(root, {95, 95, 215});
-    insert(root, {95, 95, 255});
-    insert(root, {95, 135, 0});
-    insert(root, {95, 135, 95});
-    insert(root, {95, 135, 135});
-    insert(root, {95, 135, 175});
-    insert(root, {95, 135, 215});
-    insert(root, {95, 135, 255});
-    insert(root, {95, 175, 0});
-    insert(root, {95, 175, 95});
-    insert(root, {95, 175, 135});
-    insert(root, {95, 175, 175});
-    insert(root, {95, 175, 215});
-    insert(root, {95, 175, 255});
-    insert(root, {95, 215, 0});
-    insert(root, {95, 215, 95});
-    insert(root, {95, 215, 135});
-    insert(root, {95, 215, 175});
-    insert(root, {95, 215, 215});
-    insert(root, {95, 215, 255});
-    insert(root, {95, 255, 0});
-    insert(root, {95, 255, 95});
-    insert(root, {95, 255, 135});
-    insert(root, {95, 255, 175});
-    insert(root, {95, 255, 215});
-    insert(root, {95, 255, 255});
-    insert(root, {135, 0, 0});
-    insert(root, {135, 0, 95});
-    insert(root, {135, 0, 135});
-    insert(root, {135, 0, 175});
-    insert(root, {135, 0, 215});
-    insert(root, {135, 0, 255});
-    insert(root, {135, 95, 0});
-    insert(root, {135, 95, 95});
-    insert(root, {135, 95, 135});
-    insert(root, {135, 95, 175});
-    insert(root, {135, 95, 215});
-    insert(root, {135, 95, 255});
-    insert(root, {135, 135, 0});
-    insert(root, {135, 135, 95});
-    insert(root, {135, 135, 135});
-    insert(root, {135, 135, 175});
-    insert(root, {135, 135, 215});
-    insert(root, {135, 135, 255});
-    insert(root, {135, 175, 0});
-    insert(root, {135, 175, 95});
-    insert(root, {135, 175, 135});
-    insert(root, {135, 175, 175});
-    insert(root, {135, 175, 215});
-    insert(root, {135, 175, 255});
-    insert(root, {135, 215, 0});
-    insert(root, {135, 215, 95});
-    insert(root, {135, 215, 135});
-    insert(root, {135, 215, 175});
-    insert(root, {135, 215, 215});
-    insert(root, {135, 215, 255});
-    insert(root, {135, 255, 0});
-    insert(root, {135, 255, 95});
-    insert(root, {135, 255, 135});
-    insert(root, {135, 255, 175});
-    insert(root, {135, 255, 215});
-    insert(root, {135, 255, 255});
-    insert(root, {175, 0, 0});
-    insert(root, {175, 0, 95});
-    insert(root, {175, 0, 135});
-    insert(root, {175, 0, 175});
-    insert(root, {175, 0, 215});
-    insert(root, {175, 0, 255});
-    insert(root, {175, 95, 0});
-    insert(root, {175, 95, 95});
-    insert(root, {175, 95, 135});
-    insert(root, {175, 95, 175});
-    insert(root, {175, 95, 215});
-    insert(root, {175, 95, 255});
-    insert(root, {175, 135, 0});
-    insert(root, {175, 135, 95});
-    insert(root, {175, 135, 135});
-    insert(root, {175, 135, 175});
-    insert(root, {175, 135, 215});
-    insert(root, {175, 135, 255});
-    insert(root, {175, 175, 0});
-    insert(root, {175, 175, 95});
-    insert(root, {175, 175, 135});
-    insert(root, {175, 175, 175});
-    insert(root, {175, 175, 215});
-    insert(root, {175, 175, 255});
-    insert(root, {175, 215, 0});
-    insert(root, {175, 215, 95});
-    insert(root, {175, 215, 135});
-    insert(root, {175, 215, 175});
-    insert(root, {175, 215, 215});
-    insert(root, {175, 215, 255});
-    insert(root, {175, 255, 0});
-    insert(root, {175, 255, 95});
-    insert(root, {175, 255, 135});
-    insert(root, {175, 255, 175});
-    insert(root, {175, 255, 215});
-    insert(root, {175, 255, 255});
-    insert(root, {215, 0, 0});
-    insert(root, {215, 0, 95});
-    insert(root, {215, 0, 135});
-    insert(root, {215, 0, 175});
-    insert(root, {215, 0, 215});
-    insert(root, {215, 0, 255});
-    insert(root, {215, 95, 0});
-    insert(root, {215, 95, 95});
-    insert(root, {215, 95, 135});
-    insert(root, {215, 95, 175});
-    insert(root, {215, 95, 215});
-    insert(root, {215, 95, 255});
-    insert(root, {215, 135, 0});
-    insert(root, {215, 135, 95});
-    insert(root, {215, 135, 135});
-    insert(root, {215, 135, 175});
-    insert(root, {215, 135, 215});
-    insert(root, {215, 135, 255});
-    insert(root, {215, 175, 0});
-    insert(root, {215, 175, 95});
-    insert(root, {215, 175, 135});
-    insert(root, {215, 175, 175});
-    insert(root, {215, 175, 215});
-    insert(root, {215, 175, 255});
-    insert(root, {215, 215, 0});
-    insert(root, {215, 215, 95});
-    insert(root, {215, 215, 135});
-    insert(root, {215, 215, 175});
-    insert(root, {215, 215, 215});
-    insert(root, {215, 215, 255});
-    insert(root, {215, 255, 0});
-    insert(root, {215, 255, 95});
-    insert(root, {215, 255, 135});
-    insert(root, {215, 255, 175});
-    insert(root, {215, 255, 215});
-    insert(root, {215, 255, 255});
-    insert(root, {255, 0, 0});
-    insert(root, {255, 0, 95});
-    insert(root, {255, 0, 135});
-    insert(root, {255, 0, 175});
-    insert(root, {255, 0, 215});
-    insert(root, {255, 0, 255});
-    insert(root, {255, 95, 0});
-    insert(root, {255, 95, 95});
-    insert(root, {255, 95, 135});
-    insert(root, {255, 95, 175});
-    insert(root, {255, 95, 215});
-    insert(root, {255, 95, 255});
-    insert(root, {255, 135, 0});
-    insert(root, {255, 135, 95});
-    insert(root, {255, 135, 135});
-    insert(root, {255, 135, 175});
-    insert(root, {255, 135, 215});
-    insert(root, {255, 135, 255});
-    insert(root, {255, 175, 0});
-    insert(root, {255, 175, 95});
-    insert(root, {255, 175, 135});
-    insert(root, {255, 175, 175});
-    insert(root, {255, 175, 215});
-    insert(root, {255, 175, 255});
-    insert(root, {255, 215, 0});
-    insert(root, {255, 215, 95});
-    insert(root, {255, 215, 135});
-    insert(root, {255, 215, 175});
-    insert(root, {255, 215, 215});
-    insert(root, {255, 215, 255});
-    insert(root, {255, 255, 0});
-    insert(root, {255, 255, 95});
-    insert(root, {255, 255, 135});
-    insert(root, {255, 255, 175});
-    insert(root, {255, 255, 215});
-    insert(root, {255, 255, 255});
-    insert(root, {8, 8, 8});
-    insert(root, {18, 18, 18});
-    insert(root, {28, 28, 28});
-    insert(root, {38, 38, 38});
-    insert(root, {48, 48, 48});
-    insert(root, {58, 58, 58});
-    insert(root, {68, 68, 68});
-    insert(root, {78, 78, 78});
-    insert(root, {88, 88, 88});
-    insert(root, {98, 98, 98});
-    insert(root, {108, 108, 108});
-    insert(root, {118, 118, 118});
-    insert(root, {128, 128, 128});
-    insert(root, {138, 138, 138});
-    insert(root, {148, 148, 148});
-    insert(root, {158, 158, 158});
-    insert(root, {168, 168, 168});
-    insert(root, {178, 178, 178});
-    insert(root, {188, 188, 188});
-    insert(root, {198, 198, 198});
-    insert(root, {208, 208, 208});
-    insert(root, {218, 218, 218});
-    insert(root, {228, 228, 228});
-    insert(root, {238, 238, 238});
-
-//    parseColorRule( "[1]{#244839};[2]{#456676};[4..4]{#p59930};[4..]{#567898};");
+    insert( root, { 0, 0, 0}, 0);
+    insert( root, { 128, 0, 0}, 1);
+    insert( root, { 0, 128, 0}, 2);
+    insert( root, { 128, 128, 0}, 3);
+    insert( root, { 0, 0, 128}, 4);
+    insert( root, { 128, 0, 128}, 5);
+    insert( root, { 0, 128, 128}, 6);
+    insert( root, { 192, 192, 192}, 7);
+    insert( root, { 128, 128, 128}, 8);
+    insert( root, { 255, 0, 0}, 9);
+    insert( root, { 0, 255, 0}, 10);
+    insert( root, { 255, 255, 0}, 11);
+    insert( root, { 0, 0, 255}, 12);
+    insert( root, { 255, 0, 255}, 13);
+    insert( root, { 0, 255, 255}, 14);
+    insert( root, { 255, 255, 255}, 15);
+    insert( root, { 0, 0, 0}, 16);
+    insert( root, { 0, 0, 95}, 17);
+    insert( root, { 0, 0, 135}, 18);
+    insert( root, { 0, 0, 175}, 19);
+    insert( root, { 0, 0, 215}, 20);
+    insert( root, { 0, 0, 255}, 21);
+    insert( root, { 0, 95, 0}, 22);
+    insert( root, { 0, 95, 95}, 23);
+    insert( root, { 0, 95, 135}, 24);
+    insert( root, { 0, 95, 175}, 25);
+    insert( root, { 0, 95, 215}, 26);
+    insert( root, { 0, 95, 255}, 27);
+    insert( root, { 0, 135, 0}, 28);
+    insert( root, { 0, 135, 95}, 29);
+    insert( root, { 0, 135, 135}, 30);
+    insert( root, { 0, 135, 175}, 31);
+    insert( root, { 0, 135, 215}, 32);
+    insert( root, { 0, 135, 255}, 33);
+    insert( root, { 0, 175, 0}, 34);
+    insert( root, { 0, 175, 95}, 35);
+    insert( root, { 0, 175, 135}, 36);
+    insert( root, { 0, 175, 175}, 37);
+    insert( root, { 0, 175, 215}, 38);
+    insert( root, { 0, 175, 255}, 39);
+    insert( root, { 0, 215, 0}, 40);
+    insert( root, { 0, 215, 95}, 41);
+    insert( root, { 0, 215, 135}, 42);
+    insert( root, { 0, 215, 175}, 43);
+    insert( root, { 0, 215, 215}, 44);
+    insert( root, { 0, 215, 255}, 45);
+    insert( root, { 0, 255, 0}, 46);
+    insert( root, { 0, 255, 95}, 47);
+    insert( root, { 0, 255, 135}, 48);
+    insert( root, { 0, 255, 175}, 49);
+    insert( root, { 0, 255, 215}, 50);
+    insert( root, { 0, 255, 255}, 51);
+    insert( root, { 95, 0, 0}, 52);
+    insert( root, { 95, 0, 95}, 53);
+    insert( root, { 95, 0, 135}, 54);
+    insert( root, { 95, 0, 175}, 55);
+    insert( root, { 95, 0, 215}, 56);
+    insert( root, { 95, 0, 255}, 57);
+    insert( root, { 95, 95, 0}, 58);
+    insert( root, { 95, 95, 95}, 59);
+    insert( root, { 95, 95, 135}, 60);
+    insert( root, { 95, 95, 175}, 61);
+    insert( root, { 95, 95, 215}, 62);
+    insert( root, { 95, 95, 255}, 63);
+    insert( root, { 95, 135, 0}, 64);
+    insert( root, { 95, 135, 95}, 65);
+    insert( root, { 95, 135, 135}, 66);
+    insert( root, { 95, 135, 175}, 67);
+    insert( root, { 95, 135, 215}, 68);
+    insert( root, { 95, 135, 255}, 69);
+    insert( root, { 95, 175, 0}, 70);
+    insert( root, { 95, 175, 95}, 71);
+    insert( root, { 95, 175, 135}, 72);
+    insert( root, { 95, 175, 175}, 73);
+    insert( root, { 95, 175, 215}, 74);
+    insert( root, { 95, 175, 255}, 75);
+    insert( root, { 95, 215, 0}, 76);
+    insert( root, { 95, 215, 95}, 77);
+    insert( root, { 95, 215, 135}, 78);
+    insert( root, { 95, 215, 175}, 79);
+    insert( root, { 95, 215, 215}, 80);
+    insert( root, { 95, 215, 255}, 81);
+    insert( root, { 95, 255, 0}, 82);
+    insert( root, { 95, 255, 95}, 83);
+    insert( root, { 95, 255, 135}, 84);
+    insert( root, { 95, 255, 175}, 85);
+    insert( root, { 95, 255, 215}, 86);
+    insert( root, { 95, 255, 255}, 87);
+    insert( root, { 135, 0, 0}, 88);
+    insert( root, { 135, 0, 95}, 89);
+    insert( root, { 135, 0, 135}, 90);
+    insert( root, { 135, 0, 175}, 91);
+    insert( root, { 135, 0, 215}, 92);
+    insert( root, { 135, 0, 255}, 93);
+    insert( root, { 135, 95, 0}, 94);
+    insert( root, { 135, 95, 95}, 95);
+    insert( root, { 135, 95, 135}, 96);
+    insert( root, { 135, 95, 175}, 97);
+    insert( root, { 135, 95, 215}, 98);
+    insert( root, { 135, 95, 255}, 99);
+    insert( root, { 135, 135, 0}, 100);
+    insert( root, { 135, 135, 95}, 101);
+    insert( root, { 135, 135, 135}, 102);
+    insert( root, { 135, 135, 175}, 103);
+    insert( root, { 135, 135, 215}, 104);
+    insert( root, { 135, 135, 255}, 105);
+    insert( root, { 135, 175, 0}, 106);
+    insert( root, { 135, 175, 95}, 107);
+    insert( root, { 135, 175, 135}, 108);
+    insert( root, { 135, 175, 175}, 109);
+    insert( root, { 135, 175, 215}, 110);
+    insert( root, { 135, 175, 255}, 111);
+    insert( root, { 135, 215, 0}, 112);
+    insert( root, { 135, 215, 95}, 113);
+    insert( root, { 135, 215, 135}, 114);
+    insert( root, { 135, 215, 175}, 115);
+    insert( root, { 135, 215, 215}, 116);
+    insert( root, { 135, 215, 255}, 117);
+    insert( root, { 135, 255, 0}, 118);
+    insert( root, { 135, 255, 95}, 119);
+    insert( root, { 135, 255, 135}, 120);
+    insert( root, { 135, 255, 175}, 121);
+    insert( root, { 135, 255, 215}, 122);
+    insert( root, { 135, 255, 255}, 123);
+    insert( root, { 175, 0, 0}, 124);
+    insert( root, { 175, 0, 95}, 125);
+    insert( root, { 175, 0, 135}, 126);
+    insert( root, { 175, 0, 175}, 127);
+    insert( root, { 175, 0, 215}, 128);
+    insert( root, { 175, 0, 255}, 129);
+    insert( root, { 175, 95, 0}, 130);
+    insert( root, { 175, 95, 95}, 131);
+    insert( root, { 175, 95, 135}, 132);
+    insert( root, { 175, 95, 175}, 133);
+    insert( root, { 175, 95, 215}, 134);
+    insert( root, { 175, 95, 255}, 135);
+    insert( root, { 175, 135, 0}, 136);
+    insert( root, { 175, 135, 95}, 137);
+    insert( root, { 175, 135, 135}, 138);
+    insert( root, { 175, 135, 175}, 139);
+    insert( root, { 175, 135, 215}, 140);
+    insert( root, { 175, 135, 255}, 141);
+    insert( root, { 175, 175, 0}, 142);
+    insert( root, { 175, 175, 95}, 143);
+    insert( root, { 175, 175, 135}, 144);
+    insert( root, { 175, 175, 175}, 145);
+    insert( root, { 175, 175, 215}, 146);
+    insert( root, { 175, 175, 255}, 147);
+    insert( root, { 175, 215, 0}, 148);
+    insert( root, { 175, 215, 95}, 149);
+    insert( root, { 175, 215, 135}, 150);
+    insert( root, { 175, 215, 175}, 151);
+    insert( root, { 175, 215, 215}, 152);
+    insert( root, { 175, 215, 255}, 153);
+    insert( root, { 175, 255, 0}, 154);
+    insert( root, { 175, 255, 95}, 155);
+    insert( root, { 175, 255, 135}, 156);
+    insert( root, { 175, 255, 175}, 157);
+    insert( root, { 175, 255, 215}, 158);
+    insert( root, { 175, 255, 255}, 159);
+    insert( root, { 215, 0, 0}, 160);
+    insert( root, { 215, 0, 95}, 161);
+    insert( root, { 215, 0, 135}, 162);
+    insert( root, { 215, 0, 175}, 163);
+    insert( root, { 215, 0, 215}, 164);
+    insert( root, { 215, 0, 255}, 165);
+    insert( root, { 215, 95, 0}, 166);
+    insert( root, { 215, 95, 95}, 167);
+    insert( root, { 215, 95, 135}, 168);
+    insert( root, { 215, 95, 175}, 169);
+    insert( root, { 215, 95, 215}, 170);
+    insert( root, { 215, 95, 255}, 171);
+    insert( root, { 215, 135, 0}, 172);
+    insert( root, { 215, 135, 95}, 173);
+    insert( root, { 215, 135, 135}, 174);
+    insert( root, { 215, 135, 175}, 175);
+    insert( root, { 215, 135, 215}, 176);
+    insert( root, { 215, 135, 255}, 177);
+    insert( root, { 215, 175, 0}, 178);
+    insert( root, { 215, 175, 95}, 179);
+    insert( root, { 215, 175, 135}, 180);
+    insert( root, { 215, 175, 175}, 181);
+    insert( root, { 215, 175, 215}, 182);
+    insert( root, { 215, 175, 255}, 183);
+    insert( root, { 215, 215, 0}, 184);
+    insert( root, { 215, 215, 95}, 185);
+    insert( root, { 215, 215, 135}, 186);
+    insert( root, { 215, 215, 175}, 187);
+    insert( root, { 215, 215, 215}, 188);
+    insert( root, { 215, 215, 255}, 189);
+    insert( root, { 215, 255, 0}, 190);
+    insert( root, { 215, 255, 95}, 191);
+    insert( root, { 215, 255, 135}, 192);
+    insert( root, { 215, 255, 175}, 193);
+    insert( root, { 215, 255, 215}, 194);
+    insert( root, { 215, 255, 255}, 195);
+    insert( root, { 255, 0, 0}, 196);
+    insert( root, { 255, 0, 95}, 197);
+    insert( root, { 255, 0, 135}, 198);
+    insert( root, { 255, 0, 175}, 199);
+    insert( root, { 255, 0, 215}, 200);
+    insert( root, { 255, 0, 255}, 201);
+    insert( root, { 255, 95, 0}, 202);
+    insert( root, { 255, 95, 95}, 203);
+    insert( root, { 255, 95, 135}, 204);
+    insert( root, { 255, 95, 175}, 205);
+    insert( root, { 255, 95, 215}, 206);
+    insert( root, { 255, 95, 255}, 207);
+    insert( root, { 255, 135, 0}, 208);
+    insert( root, { 255, 135, 95}, 209);
+    insert( root, { 255, 135, 135}, 210);
+    insert( root, { 255, 135, 175}, 211);
+    insert( root, { 255, 135, 215}, 212);
+    insert( root, { 255, 135, 255}, 213);
+    insert( root, { 255, 175, 0}, 214);
+    insert( root, { 255, 175, 95}, 215);
+    insert( root, { 255, 175, 135}, 216);
+    insert( root, { 255, 175, 175}, 217);
+    insert( root, { 255, 175, 215}, 218);
+    insert( root, { 255, 175, 255}, 219);
+    insert( root, { 255, 215, 0}, 220);
+    insert( root, { 255, 215, 95}, 221);
+    insert( root, { 255, 215, 135}, 222);
+    insert( root, { 255, 215, 175}, 223);
+    insert( root, { 255, 215, 215}, 224);
+    insert( root, { 255, 215, 255}, 225);
+    insert( root, { 255, 255, 0}, 226);
+    insert( root, { 255, 255, 95}, 227);
+    insert( root, { 255, 255, 135}, 228);
+    insert( root, { 255, 255, 175}, 229);
+    insert( root, { 255, 255, 215}, 230);
+    insert( root, { 255, 255, 255}, 231);
+    insert( root, { 8, 8, 8}, 232);
+    insert( root, { 18, 18, 18}, 233);
+    insert( root, { 28, 28, 28}, 234);
+    insert( root, { 38, 38, 38}, 235);
+    insert( root, { 48, 48, 48}, 236);
+    insert( root, { 58, 58, 58}, 237);
+    insert( root, { 68, 68, 68}, 238);
+    insert( root, { 78, 78, 78}, 239);
+    insert( root, { 88, 88, 88}, 240);
+    insert( root, { 98, 98, 98}, 241);
+    insert( root, { 108, 108, 108}, 242);
+    insert( root, { 118, 118, 118}, 243);
+    insert( root, { 128, 128, 128}, 244);
+    insert( root, { 138, 138, 138}, 245);
+    insert( root, { 148, 148, 148}, 246);
+    insert( root, { 158, 158, 158}, 247);
+    insert( root, { 168, 168, 168}, 248);
+    insert( root, { 178, 178, 178}, 249);
+    insert( root, { 188, 188, 188}, 250);
+    insert( root, { 198, 198, 198}, 251);
+    insert( root, { 208, 208, 208}, 252);
+    insert( root, { 218, 218, 218}, 253);
+    insert( root, { 228, 228, 228}, 254);
+    insert( root, { 238, 238, 238}, 255);
 
     FT_Library    library;
     FT_Face       face;
@@ -1010,6 +1040,7 @@ int main( int ac, char *av[])
 
     FT_Done_Face( face);
     FT_Done_FreeType( library);
+    free( root);
 
     return 0;
 }
