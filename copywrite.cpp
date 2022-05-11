@@ -168,7 +168,7 @@ void free( KDNode *&node)
     delete node; node = nullptr;
 }
 
-float qsqrt( float number)
+inline float qsqrt( float number)
 {
     long i;
     float xhalf, y;
