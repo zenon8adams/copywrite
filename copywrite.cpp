@@ -30,6 +30,7 @@
 #include <cmath>
 
 #define MAX(x, y) ((x) ^ (((x) ^ (y)) & -((x) < (y))))
+
 #define ALLOWANCE 6
 #define FPRINTFD( fmt, argument, include) ({ \
     auto arglength = strlen( argument);\
@@ -132,17 +133,105 @@ void draw(Glyph glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int wi
 
 }
 
-void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination)
+void insert( KDNode *&node, Color color, uint8_t depth = 0, size_t index = 0)
 {
-  uint8_t raster_bytes = destination != stdout ? MAX( byteCount( *raster_glyph) - 1, 1) : 1;
-  std::string sp( raster_bytes, ' ');
+    if( node == nullptr)
+    {
+        node = new KDNode{ color, index};
+        return;
+    }
 
-  for ( FT_Int j = 0; j < height; ++j)
-  {
-    for ( FT_Int i = 0; i < width; ++i)
-		fprintf( destination,"%s", ( out[ j * width + i] >> 32u) ? raster_glyph : sp.c_str());
-    fputc( '\n', destination );
-  }
+    uint8_t nchannel = color.rgb[ depth],
+            cchannel = node->color.rgb[ depth],
+            ndepth   = ( depth + 1) % 3;
+    if( nchannel < cchannel)
+        insert(node->left, color, ndepth, index + 1);
+    else
+        insert(node->right, color, ndepth, index + 1);
+}
+
+KDNode * approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0)
+{
+    if( node == nullptr)
+        return best;
+
+    uint8_t nchannel = search.rgb[ depth],
+            cchannel = node->color.rgb[ depth],
+            ndepth   = ( depth + 1) % 3;
+
+    int r = search.rgb[ 0] - node->color.rgb[ 0],
+            g = search.rgb[ 1] - node->color.rgb[ 1],
+            b = search.rgb[ 2] - node->color.rgb[ 2];
+
+    double y = .299    * r + .587   * g + .114   * b,
+            u = -.14713 * r - .28886 * g + .436   * b,
+            v = .615    * r - .51499 * g - .10001 * b;
+
+    double ndist = sqrt( y * y + u * u + v * v);
+
+    if( ndist < ldist)
+    {
+        ldist = ndist;
+        best = node;
+    }
+
+    bool left = true;
+    if( nchannel < cchannel)
+    {
+        if( node->left != nullptr)
+            best = approximate(node->left, search, ldist, best, ndepth);
+        else
+            return best;
+    }
+    else
+    {
+        if( node->right != nullptr)
+            best = approximate(node->right, search, ldist, best, ndepth);
+        else
+            return best;
+        left = false;
+    }
+
+    if( std::abs( search.rgb[ depth] - node->color.rgb[ depth]) < ldist)
+        best = approximate(!left ? node->left : node->right, search, ldist, best, ndepth);
+
+
+    return best;
+}
+
+
+void write(const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination, KDNode *root)
+{
+    bool is_stdout = false;
+    uint8_t raster_bytes = destination != stdout ? MAX( byteCount( *raster_glyph) - 1, 1) : is_stdout = true;
+    std::string sp( raster_bytes, ' ');
+
+
+
+    uint8_t fmt[] = { '\x1B', '[', '3', '8', ';', '5', ';', '0', '0', '0', 'm'};
+    uint8_t offset = 7;
+
+    for ( FT_Int j = 0; j < height; ++j)
+    {
+        for ( FT_Int i = 0; i < width; ++i)
+        {
+            double initial = INFINITY;
+            uint64_t byte =  out[ j * width + i];
+            uint32_t color = byte & 0xFFFFFFFFu;
+            auto nmatch = approximate( root, {( uint8_t)( color >> 24u),
+                                             ( uint8_t)( ( color >> 16u) & 0xFFu), ( uint8_t)( ( color >> 8u) & 0xFFu)}, initial);
+            fmt[     offset] = nmatch->index / 100 + '0';
+            fmt[ offset + 1] = ( nmatch->index - ( fmt[ offset] - '0') * 100) / 10 + '0';
+            fmt[ offset + 2] = nmatch->index % 10  + '0';
+
+            if( is_stdout)
+                fprintf( destination, "%s", ( const char *)fmt);
+            fprintf( destination,"%s", byte >> 32u ? raster_glyph : sp.c_str());
+            if( is_stdout)
+                fprintf( destination, "\x1B[0m");
+        }
+        fputc( '\n', destination );
+    }
 }
 
 static size_t byteCount( uint8_t c )
@@ -320,7 +409,8 @@ auto parseColorRule( const char *rule)
     return rules;
 }
 
-void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image, const  char *color_rule)
+void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
+            const char *color_rule, KDNode *root)
 {
 	Glyph *head = nullptr;
 	FT_Int width 	= 0, // Total width of the buffer
@@ -378,7 +468,7 @@ void render(const char *word, FT_Face face, const char *raster_glyph, FILE *dest
 	if( as_image && destination != stdout)
         writePNG( destination, out, width, height);
 	else
-	    write( out, width, height, raster_glyph, destination);
+        write(out, width, height, raster_glyph, destination, root);
 
 	free( out);
 }
@@ -525,6 +615,264 @@ void writePNG(FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 he
 
 int main( int ac, char *av[])
 {
+    KDNode *root = nullptr;
+
+    insert(root, {0, 0, 0});
+    insert(root, {128, 0, 0});
+    insert(root, {0, 128, 0});
+    insert(root, {128, 128, 0});
+    insert(root, {0, 0, 128});
+    insert(root, {128, 0, 128});
+    insert(root, {0, 128, 128});
+    insert(root, {192, 192, 192});
+    insert(root, {128, 128, 128});
+    insert(root, {255, 0, 0});
+    insert(root, {0, 255, 0});
+    insert(root, {255, 255, 0});
+    insert(root, {0, 0, 255});
+    insert(root, {255, 0, 255});
+    insert(root, {0, 255, 255});
+    insert(root, {255, 255, 255});
+    insert(root, {0, 0, 0});
+    insert(root, {0, 0, 95});
+    insert(root, {0, 0, 135});
+    insert(root, {0, 0, 175});
+    insert(root, {0, 0, 215});
+    insert(root, {0, 0, 255});
+    insert(root, {0, 95, 0});
+    insert(root, {0, 95, 95});
+    insert(root, {0, 95, 135});
+    insert(root, {0, 95, 175});
+    insert(root, {0, 95, 215});
+    insert(root, {0, 95, 255});
+    insert(root, {0, 135, 0});
+    insert(root, {0, 135, 95});
+    insert(root, {0, 135, 135});
+    insert(root, {0, 135, 175});
+    insert(root, {0, 135, 215});
+    insert(root, {0, 135, 255});
+    insert(root, {0, 175, 0});
+    insert(root, {0, 175, 95});
+    insert(root, {0, 175, 135});
+    insert(root, {0, 175, 175});
+    insert(root, {0, 175, 215});
+    insert(root, {0, 175, 255});
+    insert(root, {0, 215, 0});
+    insert(root, {0, 215, 95});
+    insert(root, {0, 215, 135});
+    insert(root, {0, 215, 175});
+    insert(root, {0, 215, 215});
+    insert(root, {0, 215, 255});
+    insert(root, {0, 255, 0});
+    insert(root, {0, 255, 95});
+    insert(root, {0, 255, 135});
+    insert(root, {0, 255, 175});
+    insert(root, {0, 255, 215});
+    insert(root, {0, 255, 255});
+    insert(root, {95, 0, 0});
+    insert(root, {95, 0, 95});
+    insert(root, {95, 0, 135});
+    insert(root, {95, 0, 175});
+    insert(root, {95, 0, 215});
+    insert(root, {95, 0, 255});
+    insert(root, {95, 95, 0});
+    insert(root, {95, 95, 95});
+    insert(root, {95, 95, 135});
+    insert(root, {95, 95, 175});
+    insert(root, {95, 95, 215});
+    insert(root, {95, 95, 255});
+    insert(root, {95, 135, 0});
+    insert(root, {95, 135, 95});
+    insert(root, {95, 135, 135});
+    insert(root, {95, 135, 175});
+    insert(root, {95, 135, 215});
+    insert(root, {95, 135, 255});
+    insert(root, {95, 175, 0});
+    insert(root, {95, 175, 95});
+    insert(root, {95, 175, 135});
+    insert(root, {95, 175, 175});
+    insert(root, {95, 175, 215});
+    insert(root, {95, 175, 255});
+    insert(root, {95, 215, 0});
+    insert(root, {95, 215, 95});
+    insert(root, {95, 215, 135});
+    insert(root, {95, 215, 175});
+    insert(root, {95, 215, 215});
+    insert(root, {95, 215, 255});
+    insert(root, {95, 255, 0});
+    insert(root, {95, 255, 95});
+    insert(root, {95, 255, 135});
+    insert(root, {95, 255, 175});
+    insert(root, {95, 255, 215});
+    insert(root, {95, 255, 255});
+    insert(root, {135, 0, 0});
+    insert(root, {135, 0, 95});
+    insert(root, {135, 0, 135});
+    insert(root, {135, 0, 175});
+    insert(root, {135, 0, 215});
+    insert(root, {135, 0, 255});
+    insert(root, {135, 95, 0});
+    insert(root, {135, 95, 95});
+    insert(root, {135, 95, 135});
+    insert(root, {135, 95, 175});
+    insert(root, {135, 95, 215});
+    insert(root, {135, 95, 255});
+    insert(root, {135, 135, 0});
+    insert(root, {135, 135, 95});
+    insert(root, {135, 135, 135});
+    insert(root, {135, 135, 175});
+    insert(root, {135, 135, 215});
+    insert(root, {135, 135, 255});
+    insert(root, {135, 175, 0});
+    insert(root, {135, 175, 95});
+    insert(root, {135, 175, 135});
+    insert(root, {135, 175, 175});
+    insert(root, {135, 175, 215});
+    insert(root, {135, 175, 255});
+    insert(root, {135, 215, 0});
+    insert(root, {135, 215, 95});
+    insert(root, {135, 215, 135});
+    insert(root, {135, 215, 175});
+    insert(root, {135, 215, 215});
+    insert(root, {135, 215, 255});
+    insert(root, {135, 255, 0});
+    insert(root, {135, 255, 95});
+    insert(root, {135, 255, 135});
+    insert(root, {135, 255, 175});
+    insert(root, {135, 255, 215});
+    insert(root, {135, 255, 255});
+    insert(root, {175, 0, 0});
+    insert(root, {175, 0, 95});
+    insert(root, {175, 0, 135});
+    insert(root, {175, 0, 175});
+    insert(root, {175, 0, 215});
+    insert(root, {175, 0, 255});
+    insert(root, {175, 95, 0});
+    insert(root, {175, 95, 95});
+    insert(root, {175, 95, 135});
+    insert(root, {175, 95, 175});
+    insert(root, {175, 95, 215});
+    insert(root, {175, 95, 255});
+    insert(root, {175, 135, 0});
+    insert(root, {175, 135, 95});
+    insert(root, {175, 135, 135});
+    insert(root, {175, 135, 175});
+    insert(root, {175, 135, 215});
+    insert(root, {175, 135, 255});
+    insert(root, {175, 175, 0});
+    insert(root, {175, 175, 95});
+    insert(root, {175, 175, 135});
+    insert(root, {175, 175, 175});
+    insert(root, {175, 175, 215});
+    insert(root, {175, 175, 255});
+    insert(root, {175, 215, 0});
+    insert(root, {175, 215, 95});
+    insert(root, {175, 215, 135});
+    insert(root, {175, 215, 175});
+    insert(root, {175, 215, 215});
+    insert(root, {175, 215, 255});
+    insert(root, {175, 255, 0});
+    insert(root, {175, 255, 95});
+    insert(root, {175, 255, 135});
+    insert(root, {175, 255, 175});
+    insert(root, {175, 255, 215});
+    insert(root, {175, 255, 255});
+    insert(root, {215, 0, 0});
+    insert(root, {215, 0, 95});
+    insert(root, {215, 0, 135});
+    insert(root, {215, 0, 175});
+    insert(root, {215, 0, 215});
+    insert(root, {215, 0, 255});
+    insert(root, {215, 95, 0});
+    insert(root, {215, 95, 95});
+    insert(root, {215, 95, 135});
+    insert(root, {215, 95, 175});
+    insert(root, {215, 95, 215});
+    insert(root, {215, 95, 255});
+    insert(root, {215, 135, 0});
+    insert(root, {215, 135, 95});
+    insert(root, {215, 135, 135});
+    insert(root, {215, 135, 175});
+    insert(root, {215, 135, 215});
+    insert(root, {215, 135, 255});
+    insert(root, {215, 175, 0});
+    insert(root, {215, 175, 95});
+    insert(root, {215, 175, 135});
+    insert(root, {215, 175, 175});
+    insert(root, {215, 175, 215});
+    insert(root, {215, 175, 255});
+    insert(root, {215, 215, 0});
+    insert(root, {215, 215, 95});
+    insert(root, {215, 215, 135});
+    insert(root, {215, 215, 175});
+    insert(root, {215, 215, 215});
+    insert(root, {215, 215, 255});
+    insert(root, {215, 255, 0});
+    insert(root, {215, 255, 95});
+    insert(root, {215, 255, 135});
+    insert(root, {215, 255, 175});
+    insert(root, {215, 255, 215});
+    insert(root, {215, 255, 255});
+    insert(root, {255, 0, 0});
+    insert(root, {255, 0, 95});
+    insert(root, {255, 0, 135});
+    insert(root, {255, 0, 175});
+    insert(root, {255, 0, 215});
+    insert(root, {255, 0, 255});
+    insert(root, {255, 95, 0});
+    insert(root, {255, 95, 95});
+    insert(root, {255, 95, 135});
+    insert(root, {255, 95, 175});
+    insert(root, {255, 95, 215});
+    insert(root, {255, 95, 255});
+    insert(root, {255, 135, 0});
+    insert(root, {255, 135, 95});
+    insert(root, {255, 135, 135});
+    insert(root, {255, 135, 175});
+    insert(root, {255, 135, 215});
+    insert(root, {255, 135, 255});
+    insert(root, {255, 175, 0});
+    insert(root, {255, 175, 95});
+    insert(root, {255, 175, 135});
+    insert(root, {255, 175, 175});
+    insert(root, {255, 175, 215});
+    insert(root, {255, 175, 255});
+    insert(root, {255, 215, 0});
+    insert(root, {255, 215, 95});
+    insert(root, {255, 215, 135});
+    insert(root, {255, 215, 175});
+    insert(root, {255, 215, 215});
+    insert(root, {255, 215, 255});
+    insert(root, {255, 255, 0});
+    insert(root, {255, 255, 95});
+    insert(root, {255, 255, 135});
+    insert(root, {255, 255, 175});
+    insert(root, {255, 255, 215});
+    insert(root, {255, 255, 255});
+    insert(root, {8, 8, 8});
+    insert(root, {18, 18, 18});
+    insert(root, {28, 28, 28});
+    insert(root, {38, 38, 38});
+    insert(root, {48, 48, 48});
+    insert(root, {58, 58, 58});
+    insert(root, {68, 68, 68});
+    insert(root, {78, 78, 78});
+    insert(root, {88, 88, 88});
+    insert(root, {98, 98, 98});
+    insert(root, {108, 108, 108});
+    insert(root, {118, 118, 118});
+    insert(root, {128, 128, 128});
+    insert(root, {138, 138, 138});
+    insert(root, {148, 148, 148});
+    insert(root, {158, 158, 158});
+    insert(root, {168, 168, 168});
+    insert(root, {178, 178, 178});
+    insert(root, {188, 188, 188});
+    insert(root, {198, 198, 198});
+    insert(root, {208, 208, 208});
+    insert(root, {218, 218, 218});
+    insert(root, {228, 228, 228});
+    insert(root, {238, 238, 238});
 
 //    parseColorRule( "[1]{#244839};[2]{#456676};[4..4]{#p59930};[4..]{#567898};");
 
@@ -658,7 +1006,7 @@ int main( int ac, char *av[])
         exit( EXIT_FAILURE);
     }
 
-    render( word, face, raster_glyph, screen, write_as_image, color_rule);
+    render(word, face, raster_glyph, screen, write_as_image, color_rule, root);
 
     FT_Done_Face( face);
     FT_Done_FreeType( library);

@@ -69,6 +69,19 @@ struct MetaInfo
     uint32_t position = UINT32_MAX;
 };
 
+struct Color
+{
+    uint8_t rgb[ 3]{};
+};
+
+struct KDNode
+{
+    Color color;
+    size_t index = -1;
+    KDNode *left = nullptr,
+            *right = nullptr;
+};
+
 
 Glyph extract( FT_GlyphSlot slot);
 
@@ -96,7 +109,7 @@ auto draw( Glyph glyph, FT_Vector *pen, unsigned char *out, FT_Int mdescent, FT_
  * Display the monochrome canvas into stdout
  */
 
-void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination);
+void write(const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination, KDNode *root);
 
 static size_t byteCount( uint8_t c );
 
@@ -106,7 +119,8 @@ static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
  * Main dispatcher: Does all the rendering and display
  */
 
-void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image = false, const char *color_rule = nullptr);
+void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image = false,
+            const char *color_rule = nullptr, KDNode *root = nullptr);
 
 void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height);
 
