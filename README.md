@@ -21,7 +21,7 @@ make
 
 ## Usage
 ```
-copywrite [--list-fonts|--font-file=FILE] [--font-size=NUM] [--drawing-character=CHAR] [--output FILE] text
+Usage: copywrite [--list-fonts|--font-file=FILE] [--font-size=NUM] [--drawing-character=CHAR] [--as-image] [--output FILE] text
 Displays block form of character sequence
 
 Arguments:
@@ -29,5 +29,6 @@ Arguments:
         --font-file=FILE              Set the font file to be used for display.
         --font-size=NUM               Set the font size for display to NUM pixels.
         --drawing-character=CHAR      Set the character to output in for each block.
+        --as-image                    Write to file as an image.
         --output FILE                 Write the block of characters into the file FILE.
 ```
