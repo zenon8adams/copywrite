@@ -31,6 +31,7 @@
 #include <string>
 #include <pngconf.h>
 #include <vector>
+#include <functional>
 
 #ifndef PNG_STDIO_SUPPORTED
 typedef FILE                * png_FILE_p;
@@ -58,8 +59,9 @@ struct Glyph
 struct ColorRule
 {
     int32_t start = 0, end = -1;
-    uint32_t color = 0x000000FF;
-    uint8_t offset = 0;
+    uint32_t scolor = 0x000000FF, ecolor = 0x000000FF;
+    uint8_t soffset = 0, eoffset = 0;
+    std::function<float(float)> easing_fn;
 };
 
 struct MetaInfo
@@ -114,6 +116,8 @@ void write(const uint64_t *out, FT_Int width, FT_Int height, const char *raster_
 static size_t byteCount( uint8_t c );
 
 static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
+
+void fillEasingMode(std::function<float(float)> &function, const char *&rule);
 
 /*
  * Main dispatcher: Does all the rendering and display

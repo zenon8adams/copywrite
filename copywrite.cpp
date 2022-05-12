@@ -29,6 +29,8 @@
 #include <png.h>
 #include <cmath>
 #include <iostream>
+#include <unordered_map>
+#include <functional>
 
 #define MAX(x, y) ((x) ^ (((x) ^ (y)) & -((x) < (y))))
 
@@ -52,6 +54,10 @@
     auto mask = value >> ( ( sizeof( value) << 3u) - 1u);\
     (value ^ mask) - mask;\
 })
+
+#define EPSILON ( 1e-5)
+#define ZERO( fl) ( std::abs( fl) <= EPSILON)
+#define EQUAL( al, bl) ZERO( ( al) - ( bl))
 
 /*
  * Converts bitmap into binary format.
@@ -117,10 +123,21 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
 	return ( uint8_t)kern.x >> 6u;
 }
 
-void draw(Glyph glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t index, const std::vector<ColorRule>& rules)
+uint32_t interpolateColor(uint32_t scolor, uint32_t ecolor, double progress)
+{
+    uint8_t r = ( scolor >> 24u) * (1.0 - progress) + ( ecolor >> 24u) * progress,
+            g = ( scolor >> 16u) * (1.0 - progress) + ( ecolor >> 16u) * progress,
+            b = ( scolor >> 8u) * (1.0 - progress) + ( ecolor >> 8u) * progress,
+            a = ( scolor & 0xFFu) * ( 1.0 - progress) + ( ecolor & 0xFFu) * progress;
+
+    return ( uint32_t)r << 24u | ( uint32_t)g << 16u | ( uint32_t)b << 8u | a;
+}
+
+void draw( Glyph glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t index,
+          size_t total, const std::vector<ColorRule> &rules)
 {
 	FT_Int base = height - glyph.height - mdescent;
-	ColorRule best;
+	ColorRule best{};
     for( const auto& each: rules)
     {
         if( ( each.end == INT32_MIN && index == each.start) || ( index >= each.start && ( ( index <= each.end && each.end != INT32_MIN) || each.end == -1)))
@@ -132,7 +149,17 @@ void draw(Glyph glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int wi
         for( FT_Int x = glyph.origin.x, i = 0; i < glyph.width; ++x, ++i)
         {
             uint64_t pixel = glyph.pixmap[ j * glyph.width + i];
-            out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | ( pixel ? best.color : 0);
+            uint32_t color = best.scolor;
+            if( best.easing_fn)
+            {
+                size_t start = index - best.start,
+                    end = best.end == -1 ? total : best.end - best.start;
+
+                auto fraction = best.easing_fn( ( float)start / end);
+                color = interpolateColor( best.scolor, best.ecolor, fraction);
+            }
+
+            out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | (pixel ? color : 0);
         }
     }
 
@@ -318,6 +345,52 @@ uint32_t getNumber( const char *&ctx, uint8_t base = 10)
     return weight;
 }
 
+bool ltrim( const char*& p)
+{
+    while( isspace( *p))
+        ++p;
+    return true;
+}
+
+uint32_t extractColor( const char *& rule)
+{
+    uint32_t ccolor;
+    const char *prev = rule;
+    if( *rule == '#')
+        ++rule;
+    else if( *rule == 'x')
+        ++rule;
+    else if( strncasecmp( rule, "0x", 2) == 0)
+        rule += 2;
+    else
+    {
+        fprintf( stderr, "Expected hex indicator near -> %s (allowed: `#`, `x`, `0x`)", prev);
+        exit( EXIT_FAILURE);
+    }
+
+    prev = rule;
+    if( isxdigit( *rule))
+    {
+        ccolor = getNumber(rule, 16);
+        uint8_t ccount = rule - prev;
+        if(ccolor == 0 || (ccount != 6 && ccount != 8))
+        {
+            fprintf( stderr, ccolor == 0 ? "Invalid color specification %s"
+                                                : "Color has to be 6 or 8 hex digits -> %s", prev);
+            exit( EXIT_FAILURE);
+        }
+        else if( ccount == 6)
+            ccolor = ccolor << 8u | 0xFFu;
+    }
+    else
+    {
+        fprintf( stderr, "Expected hex digits -> %s", prev);
+        exit( EXIT_FAILURE);
+    }
+
+    return ccolor;
+}
+
 // Format example: [1]{#244839};[2]{#456676};[3..5]{#594930};[4..]{#567898}
 auto parseColorRule( const char *rule)
 {
@@ -351,7 +424,7 @@ auto parseColorRule( const char *rule)
                         if( isdigit( *rule))
                             ccolor.end = getNumber( rule);
 
-                        if( ccolor.end != -1 && ccolor.end < ccolor.start)
+                        if( ccolor.end != -1 && ccolor.end <= ccolor.start)
                         {
                             fprintf( stderr, "Color start and end should not overlap -> %s", prev);
                             exit( EXIT_FAILURE);
@@ -384,36 +457,32 @@ auto parseColorRule( const char *rule)
                 if( *rule != '\0')
                 {
                     prev = rule;
-                    if( *rule == '#')
-                        ++rule;
-                    else if( *rule == 'x')
-                        ++rule;
-                    else if( strncasecmp( rule, "0x", 2) == 0)
-                        rule += 2;
-                    else
-                    {
-                        fprintf( stderr, "Expected hex indicator near -> %s (allowed: `#`, `x`, `0x`)", prev);
-                        exit( EXIT_FAILURE);
-                    }
+                    ccolor.scolor = extractColor( rule);
 
-                    prev = rule;
-                    if( isxdigit( *rule))
+                    if( ltrim( rule) && *rule == '-')
                     {
-                        ccolor.color = getNumber( rule, 16);
-                        uint8_t ccount = rule - prev;
-                        if( ccolor.color == 0 || ( ccount != 6 && ccount != 8))
+                        if( ccolor.end == INT32_MIN)
                         {
-                            fprintf( stderr, ccolor.color == 0 ? "Invalid color specification %s"
-                                             : "Color has to be 6 or 8 hex digits -> %s", prev);
+                            fprintf( stderr, "Easing only available for range based colors -> %s", prev);
                             exit( EXIT_FAILURE);
                         }
-                        else if( ccount == 6)
-                            ccolor.color = ccolor.color << 8u | 0xFFu;
-                    }
-                    else
-                    {
-                        fprintf( stderr, "Expected hex digits -> %s", prev);
-                        exit( EXIT_FAILURE);
+
+                        ++rule;
+                        if( *rule != '>')
+                        {
+                            //TODO: Report error!
+                        }
+
+                        ltrim( ++rule);
+
+                        if( *rule != '\0')
+                            ccolor.ecolor = extractColor( rule);
+                        else
+                        {
+                            //TODO: Report error!
+                        }
+
+                        fillEasingMode( ccolor.easing_fn, rule);
                     }
 
                     if( *rule == '}')
@@ -424,7 +493,8 @@ auto parseColorRule( const char *rule)
                         exit( EXIT_FAILURE);
                     }
 
-                    ccolor.offset = 4 - strlen((const char *)( &ccolor.color));
+                    ccolor.soffset = 4 - strlen((const char *)( &ccolor.scolor));
+                    ccolor.eoffset = 4 - strlen((const char *)( &ccolor.ecolor));
 
                     rules.push_back( ccolor);
                     break;
@@ -441,6 +511,257 @@ auto parseColorRule( const char *rule)
     return rules;
 }
 
+void fillEasingMode(std::function<float(float)> &function, const char *&rule)
+{
+
+    const auto easeOutBounce = []( float progress)
+    {
+        const float n1 = 7.5625f;
+        const float d1 = 2.75f;
+
+        if (progress < 1 / d1) {
+            return n1 * progress * progress;
+        } else if (progress < 2 / d1) {
+            progress -= 1.5f / d1;
+            return n1 * progress * progress + 0.75f;
+        } else if (progress < 2.5 / d1) {
+            progress -= 2.25f / d1;
+            return n1 * progress * progress + 0.9375f;
+        } else {
+            progress -= 2.625f / d1;
+            return n1 * progress * progress + 0.984375f;
+        }
+    };
+
+    static const std::unordered_map<std::string, std::function<float( float)>> easingLookup =
+    {
+        {
+            "easeinsine", []( float progress)
+            {
+                return 1 - cos( ( progress * M_PI) / 2.0);
+            }
+        },
+        {
+            "easeoutsine", []( float progress)
+            {
+                return sin( progress * M_PI / 2);
+            }
+        },
+        {
+            "easeinoutsine", []( float progress)
+            {
+                return -( cos( progress * M_PI) - 1) / 2;
+            }
+        },
+        {
+            "easeincubic", []( float progress)
+            {
+                return progress * progress * progress;
+            }
+        },
+        {
+            "easeoutcubic", []( float progress)
+            {
+                return 1 - pow( 1 - progress, 3);
+            }
+        },
+        {
+            "easeinoutcubic", []( float progress)
+            {
+                return progress < 0.5 ? 4 * progress * progress * progress : 1 - pow(-2 * progress + 2, 3) / 2;
+            }
+        },
+        {
+            "easeinquint", []( float progress)
+            {
+                return progress * progress * progress * progress * progress;
+            }
+        },
+        {
+            "easeoutquint", []( float progress)
+            {
+                return  1 - pow( 1 - progress, 5);
+            }
+        },
+        {
+            "easeinoutquint", []( float progress)
+            {
+                return  progress < 0.5 ? 16 * progress * progress * progress * progress * progress
+                        : 1 - pow( -2 * progress + 2, 5) / 2;
+            }
+        },
+        {
+            "easeincirc", []( float progress)
+            {
+                return  1 - qsqrt( (float)( 1 - pow( progress, 2)));
+            }
+        },
+        {
+            "easeoutcirc", []( float progress)
+            {
+                return  qsqrt( ( float)( 1 - pow( progress - 1, 2)));
+            }
+        },
+        {
+            "easeinoutcirc", []( float progress)
+            {
+                return  progress < 0.5
+                        ? ( 1 - qsqrt(( float)( 1 - pow( 2 * progress, 2)))) / 2
+                        : ( qsqrt( ( float)(1 - pow( -2 * progress + 2, 2))) + 1) / 2;
+            }
+        },
+        {
+            "easeinelastic", []( float progress)
+            {
+                const float c4 = ( 2 * M_PI) / 3.0f;
+
+                return ZERO( progress)
+                             ? 0
+                             : EQUAL( progress, 1) ? 1
+                             : -pow(2, 10 * progress - 10) * sin(( progress * 10 - 10.75) * c4);
+            }
+        },
+        {
+            "easeoutelastic", []( float progress)
+            {
+                const float c4 = ( 2 * M_PI) / 3.0f;
+
+                return ZERO( progress)
+                       ? 0
+                       : EQUAL( progress, 1) ? 1
+                       : pow( 2, -10 * progress) * sin( ( progress * 10 - 0.75) * c4) + 1;
+            }
+        },
+        {
+            "easeinoutelastic", []( float progress)
+            {
+                const float c5 = ( 2 * M_PI) / 4.5f;
+
+                return ZERO( progress) ? 0 : EQUAL( progress, 1) ? 1 : progress < 0.5
+                       ? -( pow(2, 20 * progress - 10) * sin( ( 20 * progress - 11.125) * c5)) / 2
+                       : ( pow(2, -20 * progress + 10) * sin( ( 20 * progress - 11.125) * c5)) / 2 + 1;
+            }
+        },
+        {
+            "easeinquad", []( float progress)
+            {
+                return progress * progress;
+            }
+        },
+        {
+            "easeoutquad", []( float progress)
+            {
+                return 1 - ( 1 - progress) * ( 1 - progress);
+            }
+        },
+        {
+            "easeinoutquad", []( float progress)
+            {
+                return progress < 0.5 ? 2 * progress * progress : 1 - pow( -2 * progress + 2, 2) / 2;
+            }
+        },
+        {
+            "easeinquart", []( float progress)
+            {
+                return progress  * progress * progress * progress;
+            }
+        },
+        {
+            "easeoutquart", []( float progress)
+            {
+                return 1 - pow( 1 - progress, 4);
+            }
+        },
+        {
+            "easeinoutquart", []( float progress)
+            {
+                return progress < 0.5 ? 8 * progress * progress * progress * progress
+                       : 1 - pow( -2 * progress + 2, 4) / 2;
+            }
+        },
+        {
+            "easeinexpo", []( float progress)
+            {
+                return ZERO( progress) ? 0 : pow( 2, 10 * progress - 10);
+            }
+        },
+        {
+            "easeoutexpo", []( float progress)
+            {
+                return EQUAL( progress, 1) ? 1 : 1 - pow(2, -10 * progress);
+            }
+        },
+        {
+            "easeinoutexpo", []( float progress)
+            {
+                return ZERO( progress) ? 0
+                       : EQUAL( progress, 1) ? 1 : progress < 0.5 ? pow( 2, 20 * progress - 10) / 2
+                       : (2 - pow( 2, -20 * progress + 10)) / 2;
+            }
+        },
+        {
+            "easeinback", []( float progress)
+            {
+                const float c1 = 1.70158f;
+                const float c3 = c1 + 1.0f;
+
+                return c3 * progress * progress * progress - c1 * progress * progress;
+            }
+        },
+        {
+            "easeoutback", []( float progress)
+            {
+                const float c1 = 1.70158f;
+                const float c3 = c1 + 1.0f;
+
+                return 1 + c3 * pow( progress - 1, 3) + c1 * pow( progress - 1, 2);
+            }
+        },
+        {
+            "easeinoutback", []( float progress)
+            {
+                const float c1 = 1.70158f;
+                const float c2 = c1 * 1.525f;
+
+                return progress < 0.5
+                       ? ( pow( 2 * progress, 2) * ( ( c2 + 1) * 2 * progress - c2)) / 2
+                       : ( pow( 2 * progress - 2, 2) * ( ( c2 + 1) * ( progress * 2 - 2) + c2) + 2) / 2;
+            }
+        },
+        {
+            "easeinbounce", [=]( float progress)
+            {
+                return 1 - easeOutBounce( progress);
+            }
+        },
+        {
+            "easeoutbounce", easeOutBounce
+        },
+        {
+            "easeinoutbounce", [=]( float progress)
+            {
+                return progress < 0.5f
+                       ? ( 1.0f - easeOutBounce( 1.0f - 2.0f * progress)) / 2.0f
+                       : ( 1.0f + easeOutBounce( 2.0f * progress - 1.0f)) / 2.0f;
+            }
+        }
+    };
+
+    std::string easing;
+    while( *rule && *rule != '}')
+    {
+        if( *rule != '-' && *rule != ' ')
+            easing += std::tolower( *rule);
+        ++rule;
+    }
+
+    auto fn = easingLookup.find( easing);
+    if( fn != easingLookup.cend())
+        function = fn->second;
+    else
+        function = []( float progress){ return progress; };
+}
+
 void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
             const char *color_rule, KDNode *root)
 {
@@ -448,17 +769,19 @@ void render(const char *word, FT_Face face, const char *raster_glyph, FILE *dest
 	FT_Int width 	= 0, // Total width of the buffer
 		   mdescent = 0, // Holds the baseline for the character with most descent
 		   xheight 	= 0, // Holds the height taken by character 'x' (xheight)
-		   hexcess 	= 0; // Holds the ascent height based on the
+		   hexcess 	= 0, // Holds the ascent height based on the
 						 // presence of descented characters like 'g'
+           wlength = 0; // Holds the total word length
 	FT_UInt prev 	= 0; // Holds previous character read
 
 	FT_Error error = FT_Load_Char( face, 'x', FT_LOAD_RENDER | FT_LOAD_MONOCHROME);
 	if( !error)
 		xheight = face->glyph->bitmap.rows;
 
-	for( const char *pw = word; *pw; )
+	for( const char *pw = word; *pw;)
 	{
 	    FT_Int shift = byteCount( *pw);
+	    wlength += shift;
 	    FT_UInt character = collate( (uint8_t *)word, pw - word, shift);
 
 	    error = FT_Load_Char( face, character, FT_LOAD_RENDER | FT_LOAD_MONOCHROME);
@@ -489,7 +812,7 @@ void render(const char *word, FT_Face face, const char *raster_glyph, FILE *dest
 	auto rules = color_rule == nullptr ? std::vector<ColorRule>{} : parseColorRule( color_rule);
 	for(Glyph *current = head, *prev_link; current != nullptr;)
 	{
-        draw( *current, &pen, out, mdescent, width, height, ++index, rules);
+        draw( *current, &pen, out, mdescent, width, height, ++index, wlength - 1, rules);
 
         prev_link = current;
 		current = current->next;
@@ -610,7 +933,7 @@ void writePNG(FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 he
 
     auto image = ( png_bytep)png_calloc( png_ptr, height * width * bytes_per_pixel);
     png_bytep row_pointers[ height];
-    unsigned char color_buffer[ bytes_per_pixel];
+    uint8_t color_buffer[ bytes_per_pixel];
     memset( color_buffer, 0, bytes_per_pixel);
 
     for( png_uint_32 j = 0; j < height; ++j)
