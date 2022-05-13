@@ -125,7 +125,7 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
 	return ( uint8_t)kern.x >> 6u;
 }
 
-uint32_t HsvToRgb( uint32_t hsv)
+uint32_t hsvToRgb(uint32_t hsv)
 {
     uint32_t region, p, q, t, remainder,
              h = hsv >> 24u,
@@ -159,7 +159,7 @@ uint32_t HsvToRgb( uint32_t hsv)
     }
 }
 
-uint32_t RgbToHsv( uint32_t rgb)
+uint32_t rgbToHsv(uint32_t rgb)
 {
     uint32_t rgbMin, rgbMax, hsv{},
              r = rgb >> 24u,
@@ -189,15 +189,15 @@ uint32_t RgbToHsv( uint32_t rgb)
 
 uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress)
 {
-    auto shsv = RgbToHsv( scolor);
-    auto ehsv = RgbToHsv( ecolor);
+    auto shsv = rgbToHsv(scolor);
+    auto ehsv = rgbToHsv(ecolor);
 
     uint32_t h = ( shsv >> 24u) * ( 1.0 - progress) + ( ehsv >> 24u) * progress,
              s = ( ( shsv >> 16u) & 0xFFu) * ( 1.0 - progress) + ( ( ehsv >> 16u) & 0xFFu) * progress,
              v = ( ( shsv >>  8u) & 0xFFu) * ( 1.0 - progress) + ( ( ehsv >> 8u) & 0xFFu) * progress,
              a = ( scolor & 0xFFu) * ( 1.0 - progress) + ( ecolor & 0xFFu) * progress;
 
-    return HsvToRgb( h << 24u | s << 16u | v << 8u) | a;
+    return hsvToRgb(h << 24u | s << 16u | v << 8u) | a;
 }
 
 void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t total)
@@ -506,8 +506,20 @@ auto parseColorRule( const char *rule)
                 if( *rule == ':')
                 {
                     ccolor.font_size_b = getNumber(++rule);
+                    bool mid = false;
+                    if( *rule == '-')
+                    {
+                        ccolor.font_size_m = getNumber(++rule);
+                        mid = true;
+                    }
                     if( *rule == '-')
                         ccolor.font_size_e = getNumber(++rule);
+                    else if( mid)
+                    {
+                        ccolor.font_size_e = ccolor.font_size_m;
+                        ccolor.font_size_m = UINT32_MAX;
+                    }
+
                     if( ltrim( rule) && *rule == '-')
                         fillEasingMode(ccolor.font_easing_fn, ++rule, ']');
                 }
@@ -870,14 +882,19 @@ void render( const char *word, FT_Face face, const char *raster_glyph, FILE *des
                 best = each;
         }
 
-        FT_Int font_size = best.font_size_b;
+        FT_Int font_size = best.font_size_b == UINT32_MAX ? best.font_size_b = 10 : best.font_size_b;
         if( best.font_easing_fn)
         {
             size_t start = index - best.start,
                     end = best.end == -1 ? MAX( nchars - 1, 1) : best.end - best.start;
 
             auto fraction = best.font_easing_fn(( float)start / end);
-            font_size = best.font_size_b * ( 1.0 - fraction) + fraction * best.font_size_e;
+            if( best.font_size_m == UINT32_MAX && best.font_size_e != UINT32_MAX)
+                font_size = round( best.font_size_b * ( 1.0 - fraction) + fraction * best.font_size_e);
+            else if( best.font_size_m != UINT32_MAX && best.font_size_e != UINT32_MAX)
+                font_size = round( +2.0 * best.font_size_b * ( fraction - .5) * ( fraction - 1.)
+                            -4.0 * best.font_size_m * fraction * ( fraction - 1.)
+                            +2.0 * best.font_size_e * fraction * ( fraction - .5));
         }
 
 	    error = FT_Set_Pixel_Sizes( face, font_size, 0);

@@ -44,7 +44,7 @@ unsigned char *to_monochrome( FT_Bitmap bitmap);
 struct ColorRule
 {
     int32_t start = 0, end = -1;
-    uint32_t scolor = 0x000000FF, ecolor = 0x000000FF, font_size_b = 10, font_size_e = 10;
+    uint32_t scolor = 0x000000FF, ecolor = 0x000000FF, font_size_b = UINT32_MAX, font_size_m = UINT32_MAX, font_size_e = UINT32_MAX;
     std::function<float(float)> color_easing_fn, font_easing_fn;
 };
 
