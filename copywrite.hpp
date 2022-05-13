@@ -41,34 +41,11 @@ typedef FILE                * png_FILE_p;
 
 unsigned char *to_monochrome( FT_Bitmap bitmap);
 
-/*
- * Glyph: Structural representation of a character
- */
-
-struct Glyph
-{
-    FT_Int width{},
-        height{},
-        xstep{};
-    unsigned char *pixmap{};
-    FT_Vector origin{};
-
-    Glyph *next = nullptr;
-};
-
 struct ColorRule
 {
     int32_t start = 0, end = -1;
-    uint32_t scolor = 0x000000FF, ecolor = 0x000000FF;
-    uint8_t soffset = 0, eoffset = 0;
-    std::function<float(float)> easing_fn;
-};
-
-struct MetaInfo
-{
-    ColorRule tail;
-    FT_Vector size{};
-    uint32_t position = UINT32_MAX;
+    uint32_t scolor = 0x000000FF, ecolor = 0x000000FF, font_size_b = 10, font_size_e = 10;
+    std::function<float(float)> color_easing_fn, font_easing_fn;
 };
 
 struct Color
@@ -82,6 +59,22 @@ struct KDNode
     size_t index = -1;
     KDNode *left = nullptr,
             *right = nullptr;
+};
+
+/*
+ * Glyph: Structural representation of a character
+ */
+
+struct Glyph
+{
+    FT_Int width{},
+            height{},
+            xstep{},
+            index{};
+    unsigned char *pixmap{};
+    FT_Vector origin{};
+    ColorRule match;
+    Glyph *next = nullptr;
 };
 
 
@@ -105,7 +98,7 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face);
  * Render the given glyph into the final computed container
  */
 
-auto draw( Glyph glyph, FT_Vector *pen, unsigned char *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t index, const std::vector<MetaInfo>& );
+void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t total);
 
 /*
  * Display the monochrome canvas into stdout
@@ -117,7 +110,7 @@ static size_t byteCount( uint8_t c );
 
 static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
 
-void fillEasingMode(std::function<float(float)> &function, const char *&rule);
+void fillEasingMode(std::function<float(float)> &function, const char *&rule, char eoc);
 
 /*
  * Main dispatcher: Does all the rendering and display

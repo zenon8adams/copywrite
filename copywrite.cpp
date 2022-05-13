@@ -31,8 +31,10 @@
 #include <iostream>
 #include <unordered_map>
 #include <functional>
+#include <random>
 
 #define MAX(x, y) ((x) ^ (((x) ^ (y)) & -((x) < (y))))
+#define MIN(x, y) ((x) ^ (((x) ^ (y)) & -((x) > (y))))
 
 #define ALLOWANCE 6
 #define FPRINTFD( fmt, argument, include) ({ \
@@ -123,25 +125,93 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
 	return ( uint8_t)kern.x >> 6u;
 }
 
-uint32_t interpolateColor(uint32_t scolor, uint32_t ecolor, double progress)
+uint32_t HsvToRgb( uint32_t hsv)
 {
-    uint8_t r = ( scolor >> 24u) * (1.0 - progress) + ( ecolor >> 24u) * progress,
-            g = ( scolor >> 16u) * (1.0 - progress) + ( ecolor >> 16u) * progress,
-            b = ( scolor >> 8u) * (1.0 - progress) + ( ecolor >> 8u) * progress,
-            a = ( scolor & 0xFFu) * ( 1.0 - progress) + ( ecolor & 0xFFu) * progress;
+    uint32_t region, p, q, t, remainder,
+             h = hsv >> 24u,
+             s = hsv >> 16u & 0xFFu,
+             v = hsv >> 8u & 0xFFu;
 
-    return ( uint32_t)r << 24u | ( uint32_t)g << 16u | ( uint32_t)b << 8u | a;
+    if ( s == 0)
+        return v << 24u | v << 16u | v << 8u;
+
+    region = h / 43;
+    remainder = ( h - ( region * 43)) * 6;
+
+    p = ( v * ( 0xFFu - s)) >> 8u;
+    q = ( v * ( 0xFFu - ((s * remainder) >> 8u))) >> 8u;
+    t = ( v * ( 0xFFu - ((s * (0xFFu - remainder)) >> 8u))) >> 8u;
+
+    switch ( region)
+    {
+        case 0:
+            return v << 24u | t << 16u | p << 8u;
+        case 1:
+            return q << 24u | v << 16u | p << 8u;
+        case 2:
+            return p << 24u | v << 16u | t << 8u;
+        case 3:
+            return p << 24u | q << 16u | v << 8u;
+        case 4:
+            return t << 24u | p << 16u | v << 8u;
+        default:
+            return v << 24u | p << 16u | q << 8u;
+    }
 }
 
-void draw( Glyph glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t index,
-          size_t total, const std::vector<ColorRule> &rules)
+uint32_t RgbToHsv( uint32_t rgb)
+{
+    uint32_t rgbMin, rgbMax, hsv{},
+             r = rgb >> 24u,
+             g = ( rgb >> 16u) & 0xFFu,
+             b = ( rgb >> 8u) & 0xFFu;
+
+    rgbMax = MAX( r, MAX( g, b));
+    rgbMin = MIN( r, MIN( g, b));
+
+    hsv = rgbMax << 8u;
+    if ( hsv == 0)
+        return hsv;
+
+    hsv |= ( 0xFFu * ( ( int32_t)( rgbMax - rgbMin)) / ( hsv >> 8u)) << 16u;
+    if ( ( hsv >> 16u & 0xFFu) == 0)
+        return hsv;
+
+    if ( rgbMax == r)
+        hsv |= ( uint32_t)( 0 + 43 * ( g - b) / (int32_t)( rgbMax - rgbMin)) << 24u;
+    else if ( rgbMax == g)
+        hsv |= ( uint32_t)( 85 + 43 * ( b - r) / (int32_t)( rgbMax - rgbMin)) << 24u;
+    else
+        hsv |= ( uint32_t)( 171 + 43 * (int)( r - g) / (int32_t)( rgbMax - rgbMin)) << 24u;
+
+    return hsv;
+}
+
+uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress)
+{
+    auto shsv = RgbToHsv( scolor);
+    auto ehsv = RgbToHsv( ecolor);
+
+    uint32_t h = ( shsv >> 24u) * ( 1.0 - progress) + ( ehsv >> 24u) * progress,
+             s = ( ( shsv >> 16u) & 0xFFu) * ( 1.0 - progress) + ( ( ehsv >> 16u) & 0xFFu) * progress,
+             v = ( ( shsv >>  8u) & 0xFFu) * ( 1.0 - progress) + ( ( ehsv >> 8u) & 0xFFu) * progress,
+             a = ( scolor & 0xFFu) * ( 1.0 - progress) + ( ecolor & 0xFFu) * progress;
+
+    return HsvToRgb( h << 24u | s << 16u | v << 8u) | a;
+}
+
+void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t total)
 {
 	FT_Int base = height - glyph.height - mdescent;
-	ColorRule best{};
-    for( const auto& each: rules)
+
+    uint32_t color = glyph.match.scolor;
+    if( glyph.match.color_easing_fn)
     {
-        if( ( each.end == INT32_MIN && index == each.start) || ( index >= each.start && ( ( index <= each.end && each.end != INT32_MIN) || each.end == -1)))
-            best = each;
+        size_t start = glyph.index - glyph.match.start,
+                end = glyph.match.end == -1 ? MAX( total, 1) : glyph.match.end - glyph.match.start;
+
+        auto fraction = glyph.match.color_easing_fn(( float)start / end);
+        color = interpolateColor( glyph.match.scolor, glyph.match.ecolor, fraction);
     }
 
 	for( FT_Int y = glyph.origin.y, j = 0; j < glyph.height; ++y, ++j)
@@ -149,22 +219,11 @@ void draw( Glyph glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int w
         for( FT_Int x = glyph.origin.x, i = 0; i < glyph.width; ++x, ++i)
         {
             uint64_t pixel = glyph.pixmap[ j * glyph.width + i];
-            uint32_t color = best.scolor;
-            if( best.easing_fn)
-            {
-                size_t start = index - best.start,
-                    end = best.end == -1 ? total : best.end - best.start;
-
-                auto fraction = best.easing_fn( ( float)start / end);
-                color = interpolateColor( best.scolor, best.ecolor, fraction);
-            }
-
             out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | (pixel ? color : 0);
         }
     }
 
 	pen->x += glyph.xstep; // Move the pen forward for positioning of the next character
-
 }
 
 void insert( KDNode *&node, Color color, size_t index = 0, uint8_t depth = 0)
@@ -443,6 +502,16 @@ auto parseColorRule( const char *rule)
                     fprintf( stderr, "Incomplete color specification");
                     exit( EXIT_FAILURE);
                 }
+
+                if( *rule == ':')
+                {
+                    ccolor.font_size_b = getNumber(++rule);
+                    if( *rule == '-')
+                        ccolor.font_size_e = getNumber(++rule);
+                    if( ltrim( rule) && *rule == '-')
+                        fillEasingMode(ccolor.font_easing_fn, ++rule, ']');
+                }
+
                 if( *rule == ']')
                     ++rule;
                 else
@@ -482,7 +551,7 @@ auto parseColorRule( const char *rule)
                             //TODO: Report error!
                         }
 
-                        fillEasingMode( ccolor.easing_fn, rule);
+                        fillEasingMode(ccolor.color_easing_fn, rule, '}');
                     }
 
                     if( *rule == '}')
@@ -492,9 +561,6 @@ auto parseColorRule( const char *rule)
                         fprintf( stderr, "Missing end of expression `}`");
                         exit( EXIT_FAILURE);
                     }
-
-                    ccolor.soffset = 4 - strlen((const char *)( &ccolor.scolor));
-                    ccolor.eoffset = 4 - strlen((const char *)( &ccolor.ecolor));
 
                     rules.push_back( ccolor);
                     break;
@@ -511,7 +577,7 @@ auto parseColorRule( const char *rule)
     return rules;
 }
 
-void fillEasingMode(std::function<float(float)> &function, const char *&rule)
+void fillEasingMode(std::function<float(float)> &function, const char *&rule, char eoc)
 {
 
     const auto easeOutBounce = []( float progress)
@@ -748,7 +814,7 @@ void fillEasingMode(std::function<float(float)> &function, const char *&rule)
     };
 
     std::string easing;
-    while( *rule && *rule != '}')
+    while( *rule && *rule != eoc)
     {
         if( *rule != '-' && *rule != ' ')
             easing += std::tolower( *rule);
@@ -762,33 +828,80 @@ void fillEasingMode(std::function<float(float)> &function, const char *&rule)
         function = []( float progress){ return progress; };
 }
 
-void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
+size_t countCharacters( const char *pw)
+{
+    size_t value = 0;
+    while( *pw)
+    {
+        size_t ccount = byteCount( *pw);
+        value += ccount;
+        pw += ccount;
+    }
+
+    return value;
+}
+
+void render( const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
             const char *color_rule, KDNode *root)
 {
 	Glyph *head = nullptr;
 	FT_Int width 	= 0, // Total width of the buffer
 		   mdescent = 0, // Holds the baseline for the character with most descent
-		   xheight 	= 0, // Holds the height taken by character 'x' (xheight)
-		   hexcess 	= 0, // Holds the ascent height based on the
+		   mxheight = 0, // Maximum heigh of character 'x' according to various font sizes
+		   hexcess 	= 0; // Holds the ascent height based on the
 						 // presence of descented characters like 'g'
-           wlength = 0; // Holds the total word length
 	FT_UInt prev 	= 0; // Holds previous character read
 
-	FT_Error error = FT_Load_Char( face, 'x', FT_LOAD_RENDER | FT_LOAD_MONOCHROME);
-	if( !error)
-		xheight = face->glyph->bitmap.rows;
+	FT_Error error;
 
+    auto rules = color_rule == nullptr ? std::vector<ColorRule>{} : parseColorRule( color_rule);
+
+    size_t index = 0, nchars = countCharacters( word);
 	for( const char *pw = word; *pw;)
 	{
 	    FT_Int shift = byteCount( *pw);
-	    wlength += shift;
 	    FT_UInt character = collate( (uint8_t *)word, pw - word, shift);
+
+	    ColorRule best{};
+	    index += 1;
+        for( const auto& each: rules)
+        {
+            if( ( each.end == INT32_MIN && index == each.start) || ( index >= each.start && ( ( index <= each.end && each.end != INT32_MIN) || each.end == -1)))
+                best = each;
+        }
+
+        FT_Int font_size = best.font_size_b;
+        if( best.font_easing_fn)
+        {
+            size_t start = index - best.start,
+                    end = best.end == -1 ? MAX( nchars - 1, 1) : best.end - best.start;
+
+            auto fraction = best.font_easing_fn(( float)start / end);
+            font_size = best.font_size_b * ( 1.0 - fraction) + fraction * best.font_size_e;
+        }
+
+	    error = FT_Set_Pixel_Sizes( face, font_size, 0);
+
+        if( error != 0)
+        {
+            fprintf( stderr, "Setup error!");
+            exit( EXIT_FAILURE);
+        }
+
+        FT_Int xheight = 0;
+        error = FT_Load_Char( face, 'x', FT_LOAD_RENDER | FT_LOAD_MONOCHROME);
+        if( !error)
+            xheight = face->glyph->bitmap.rows;
 
 	    error = FT_Load_Char( face, character, FT_LOAD_RENDER | FT_LOAD_MONOCHROME);
     	if ( error )
       		continue;
 
+
 		Glyph current = extract( face->glyph);
+        current.index = index;
+        current.match = best;
+        mxheight = MAX( mxheight, xheight);
 		hexcess  = MAX( hexcess,( current.height - xheight));
 		mdescent = MAX( mdescent, current.origin.y);
 		current.xstep += kerning( *pw, prev, face);
@@ -803,16 +916,14 @@ void render(const char *word, FT_Face face, const char *raster_glyph, FILE *dest
 	// characters with stem like 'b' and characters with descent
 	// like 'g'
 
-	FT_Int height = hexcess + xheight + mdescent;
+	FT_Int height = hexcess + mxheight + mdescent;
 
 	auto *out = ( uint64_t *)calloc( width * height, sizeof( uint64_t));
 	FT_Vector pen;
 	memset( &pen, 0, sizeof( pen));
-	size_t index = 0;
-	auto rules = color_rule == nullptr ? std::vector<ColorRule>{} : parseColorRule( color_rule);
-	for(Glyph *current = head, *prev_link; current != nullptr;)
+	for( Glyph *current = head, *prev_link; current != nullptr;)
 	{
-        draw( *current, &pen, out, mdescent, width, height, ++index, wlength - 1, rules);
+        draw(*current, &pen, out, mdescent, width, height, nchars - 1);
 
         prev_link = current;
 		current = current->next;
@@ -1351,15 +1462,7 @@ int main( int ac, char *av[])
         exit( EXIT_FAILURE);
     }
 
-    error = FT_Set_Pixel_Sizes( face, strtol( font_size, nullptr, 10), 0);
-
-    if( error != 0)
-    {
-        fprintf( stderr, "Setup error!");
-        exit( EXIT_FAILURE);
-    }
-
-    render(word, face, raster_glyph, screen, write_as_image, color_rule, root);
+    render( word, face, raster_glyph, screen, write_as_image, color_rule, root);
 
     FT_Done_Face( face);
     FT_Done_FreeType( library);
