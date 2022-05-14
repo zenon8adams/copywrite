@@ -112,19 +112,35 @@ static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
 
 std::vector<ColorRule> parseColorRule( const char *rule);
 
+uint32_t extractColor(const char *&rule, int8_t *ratio = nullptr);
+
+uint32_t mixColor( const char *&ctx);
+
 void fillEasingMode(std::function<float(float)> &function, const char *&rule, char eoc);
 
 uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress);
 
+uint32_t decodeColorName( const char *&ctx);
+
 uint32_t rgbToHsv(uint32_t rgb);
 
 uint32_t hsvToRgb( uint32_t hsv);
+
+KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0);
+
+void insert( KDNode *&node, Color color, size_t index = 0, uint8_t depth = 0);
+
+void free( KDNode *&node);
 
 /*
  * Main dispatcher: Does all the rendering and display
  */
 
 size_t countCharacters( const char *pw);
+
+bool ltrim( const char*& p);
+
+uint32_t getNumber( const char *&ctx, uint8_t base = 10);
 
 void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
        const char *color_rule, KDNode *root);

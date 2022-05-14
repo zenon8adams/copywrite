@@ -336,7 +336,7 @@ uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress)
     return hsvToRgb(h << 24u | s << 16u | v << 8u) | a;
 }
 
-void insert( KDNode *&node, Color color, size_t index = 0, uint8_t depth = 0)
+void insert( KDNode *&node, Color color, size_t index, uint8_t depth)
 {
     if( node == nullptr)
     {
@@ -364,7 +364,7 @@ void free( KDNode *&node)
     delete node; node = nullptr;
 }
 
-KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0)
+KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best, uint8_t depth)
 {
     if( node == nullptr)
         return best;
@@ -593,7 +593,7 @@ static uint32_t collate( uint8_t *str, size_t idx, uint8_t count )
     return value;
 }
 
-uint32_t getNumber( const char *&ctx, uint8_t base = 10)
+uint32_t getNumber( const char *&ctx, uint8_t base)
 {
     uint32_t weight = 0;
     while( isxdigit( *ctx))
@@ -781,9 +781,10 @@ bool ltrim( const char*& p)
     return true;
 }
 
-uint32_t extractColor( const char *& rule)
+uint32_t extractColor(const char *&rule, int8_t *ratio)
 {
-    uint32_t ccolor;
+    ltrim( rule);
+    int8_t cratio{};
     const char *prev = rule;
     if( *rule == '#')
         ++rule;
@@ -795,7 +796,24 @@ uint32_t extractColor( const char *& rule)
     {
         auto color_name = decodeColorName( rule);
         if( *rule == ':')
-            return color_name | getNumber( ++rule, 16);
+        {
+            if( *++rule == ':')
+            {
+                cratio = getNumber( ++rule);
+                color_name |= 0xFFu;
+            }
+            else
+            {
+                color_name |= getNumber( rule, 16);
+                if( *rule == ':')
+                    cratio = getNumber( ++rule);
+            }
+
+            if( ratio != nullptr)
+                *ratio = cratio;
+
+            return color_name;
+        }
 
         return color_name | 0xFFu;
     }
@@ -805,6 +823,7 @@ uint32_t extractColor( const char *& rule)
         exit( EXIT_FAILURE);
     }
 
+    uint32_t ccolor{};
     prev = rule;
     if( isxdigit( *rule))
     {
@@ -818,6 +837,13 @@ uint32_t extractColor( const char *& rule)
         }
         else if( ccount == 6)
             ccolor = ccolor << 8u | 0xFFu;
+
+        if( *rule == ':')
+        {
+            cratio = getNumber( ++rule);
+            if( ratio != nullptr)
+                *ratio = cratio;
+        }
     }
     else
     {
@@ -828,7 +854,38 @@ uint32_t extractColor( const char *& rule)
     return ccolor;
 }
 
-// Format example: [1]{#244839};[2]{#456676};[3..5]{#594930};[4..]{#567898}
+uint32_t mixColor( const char *&ctx)
+{
+    uint32_t lcolor{}, rcolor{};
+    int8_t ratio{};
+    char op = '\0';
+    while( ltrim( ctx) && *ctx != ')')
+    {
+        if( *ctx == '+' || *ctx == '-')
+            op = *ctx;
+        else
+        {
+            op ? rcolor = extractColor(ctx, &ratio) : lcolor = extractColor(ctx, &ratio);
+            ctx -= 1;
+        }
+
+        ++ctx;
+    }
+
+    ctx += 1;
+
+    if( ratio == 0 || ratio > 100)
+        ratio = 50;
+
+    if( op == '+') // Additive color mixing
+        return interpolateColor( lcolor, rcolor, ratio / 100.0);
+    else if( op == '-')
+        ;//TODO: Mix colors using subtractive color mixing algorithm.
+
+    return lcolor;
+}
+
+// Format example: [1..2:10-20-10 -ease-in-sine]{(Black:ff + Green::50) -> (Brown:ff:30 + Red:4f:50) -ease-in-out-sine}
 std::vector<ColorRule> parseColorRule( const char *rule)
 {
     const char *prev = nullptr;
@@ -915,8 +972,15 @@ std::vector<ColorRule> parseColorRule( const char *rule)
                 ++rule;
                 if( *rule != '\0')
                 {
-                    prev = rule;
-                    ccolor.scolor = extractColor( rule);
+                    if( ltrim( rule) && *rule == '(')
+                    {
+                        ccolor.scolor = mixColor( ++rule);
+                    }
+                    else
+                    {
+                        prev = rule;
+                        ccolor.scolor = extractColor(rule);
+                    }
 
                     if( ltrim( rule) && *rule == '-')
                     {
@@ -932,10 +996,10 @@ std::vector<ColorRule> parseColorRule( const char *rule)
                             //TODO: Report error!
                         }
 
-                        ltrim( ++rule);
-
-                        if( *rule != '\0')
-                            ccolor.ecolor = extractColor( rule);
+                        if( ltrim( ++rule) && *rule == '(')
+                            ccolor.ecolor = mixColor( ++rule);
+                        else if( *rule != '\0')
+                            ccolor.ecolor = extractColor(rule);
                         else
                         {
                             //TODO: Report error!
