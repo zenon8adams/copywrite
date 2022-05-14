@@ -110,14 +110,23 @@ static size_t byteCount( uint8_t c );
 
 static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
 
+std::vector<ColorRule> parseColorRule( const char *rule);
+
 void fillEasingMode(std::function<float(float)> &function, const char *&rule, char eoc);
+
+uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress);
+
+uint32_t rgbToHsv(uint32_t rgb);
+
+uint32_t hsvToRgb( uint32_t hsv);
 
 /*
  * Main dispatcher: Does all the rendering and display
  */
 
-void
-render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
+size_t countCharacters( const char *pw);
+
+void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
        const char *color_rule, KDNode *root);
 
 void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height);

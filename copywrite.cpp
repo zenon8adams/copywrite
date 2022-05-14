@@ -119,6 +119,148 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
 	return ( uint8_t)kern.x >> 6u;
 }
 
+void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t total)
+{
+    FT_Int base = height - glyph.height - mdescent;
+
+    uint32_t color = glyph.match.scolor;
+    if( glyph.match.color_easing_fn)
+    {
+        size_t start = glyph.index - glyph.match.start,
+                end = glyph.match.end == -1 ? MAX( total, 1) : glyph.match.end - glyph.match.start;
+
+        auto fraction = glyph.match.color_easing_fn(( float)start / end);
+        color = interpolateColor( glyph.match.scolor, glyph.match.ecolor, fraction);
+    }
+
+    for( FT_Int y = glyph.origin.y, j = 0; j < glyph.height; ++y, ++j)
+    {
+        for( FT_Int x = glyph.origin.x, i = 0; i < glyph.width; ++x, ++i)
+        {
+            uint64_t pixel = glyph.pixmap[ j * glyph.width + i];
+            out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | ( pixel ? color : 0);
+        }
+    }
+
+    pen->x += glyph.xstep; // Move the pen forward for positioning of the next character
+}
+
+size_t countCharacters( const char *pw)
+{
+    size_t value = 0;
+    while( *pw)
+    {
+        size_t ccount = byteCount( *pw);
+        value += 1;
+        pw += ccount;
+    }
+
+    return value;
+}
+
+void render( const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
+             const char *color_rule, KDNode *root)
+{
+    Glyph *head = nullptr;
+    FT_Int width 	= 0, // Total width of the buffer
+            mdescent = 0, // Holds the baseline for the character with most descent
+            mxheight = 0, // Maximum heigh of character 'x' according to various font sizes
+            hexcess 	= 0; // Holds the ascent height based on the
+    // presence of descented characters like 'g'
+    FT_UInt prev 	= 0; // Holds previous character read
+
+    FT_Error error;
+
+    auto rules = color_rule == nullptr ? std::vector<ColorRule>{} : parseColorRule( color_rule);
+
+    size_t index = 0, nchars = countCharacters( word);
+    for( const char *pw = word; *pw;)
+    {
+        FT_Int shift = byteCount( *pw);
+        FT_UInt character = collate( (uint8_t *)word, pw - word, shift);
+
+        ColorRule best{};
+        index += 1;
+        for( const auto& each: rules)
+        {
+            if( ( each.end == INT32_MIN && index == each.start) || ( index >= each.start && ( ( index <= each.end && each.end != INT32_MIN) || each.end == -1)))
+                best = each;
+        }
+
+        FT_Int font_size = best.font_size_b == UINT32_MAX ? best.font_size_b = 10 : best.font_size_b;
+        if( best.font_easing_fn)
+        {
+            size_t start = index - best.start,
+                    end = best.end == -1 ? MAX( nchars - 1, 1) : best.end - best.start;
+
+            auto fraction = best.font_easing_fn(( float)start / end);
+            if( best.font_size_m == UINT32_MAX && best.font_size_e != UINT32_MAX)
+                font_size = round( best.font_size_b * ( 1.0 - fraction) + fraction * best.font_size_e);
+            else if( best.font_size_m != UINT32_MAX && best.font_size_e != UINT32_MAX)
+                font_size = round( +2.0 * best.font_size_b * ( fraction - .5) * ( fraction - 1.)
+                                   -4.0 * best.font_size_m * fraction * ( fraction - 1.)
+                                   +2.0 * best.font_size_e * fraction * ( fraction - .5));
+        }
+
+        error = FT_Set_Pixel_Sizes( face, font_size, 0);
+
+        if( error != 0)
+        {
+            fprintf( stderr, "Setup error!");
+            exit( EXIT_FAILURE);
+        }
+
+        FT_Int xheight = 0;
+        error = FT_Load_Char( face, 'x', FT_LOAD_RENDER | FT_LOAD_MONOCHROME);
+        if( !error)
+            xheight = face->glyph->bitmap.rows;
+
+        error = FT_Load_Char( face, character, FT_LOAD_RENDER | FT_LOAD_MONOCHROME);
+        if ( error )
+            continue;
+
+
+        Glyph current = extract( face->glyph);
+        current.index = index;
+        current.match = best;
+        mxheight = MAX( mxheight, xheight);
+        hexcess  = MAX( hexcess,( current.height - xheight));
+        mdescent = MAX( mdescent, current.origin.y);
+        current.xstep += kerning( *pw, prev, face);
+        width += current.xstep;
+        insert( head, current);
+
+        prev = character;
+        pw += shift;
+    }
+
+    // Final container height. Dependent on the presence of
+    // characters with stem like 'b' and characters with descent
+    // like 'g'
+
+    FT_Int height = hexcess + mxheight + mdescent;
+
+    auto *out = ( uint64_t *)calloc( width * height, sizeof( uint64_t));
+    FT_Vector pen;
+    memset( &pen, 0, sizeof( pen));
+    for( Glyph *current = head, *prev_link; current != nullptr;)
+    {
+        draw( *current, &pen, out, mdescent, width, height, nchars - 1);
+
+        prev_link = current;
+        current = current->next;
+        free(prev_link->pixmap);
+        free(prev_link);
+    }
+
+    if( as_image && destination != stdout)
+        writePNG( destination, out, width, height);
+    else
+        write(out, width, height, raster_glyph, destination, root);
+
+    free( out);
+}
+
 uint32_t hsvToRgb( uint32_t hsv)
 {
     uint32_t region, p, q, t, remainder,
@@ -192,32 +334,6 @@ uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress)
              a = ( scolor & 0xFFu) * ( 1.0 - progress) + ( ecolor & 0xFFu) * progress;
 
     return hsvToRgb(h << 24u | s << 16u | v << 8u) | a;
-}
-
-void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t total)
-{
-	FT_Int base = height - glyph.height - mdescent;
-
-    uint32_t color = glyph.match.scolor;
-    if( glyph.match.color_easing_fn)
-    {
-        size_t start = glyph.index - glyph.match.start,
-                end = glyph.match.end == -1 ? MAX( total, 1) : glyph.match.end - glyph.match.start;
-
-        auto fraction = glyph.match.color_easing_fn(( float)start / end);
-        color = interpolateColor( glyph.match.scolor, glyph.match.ecolor, fraction);
-    }
-
-	for( FT_Int y = glyph.origin.y, j = 0; j < glyph.height; ++y, ++j)
-    {
-        for( FT_Int x = glyph.origin.x, i = 0; i < glyph.width; ++x, ++i)
-        {
-            uint64_t pixel = glyph.pixmap[ j * glyph.width + i];
-            out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | ( pixel ? color : 0);
-        }
-    }
-
-	pen->x += glyph.xstep; // Move the pen forward for positioning of the next character
 }
 
 void insert( KDNode *&node, Color color, size_t index = 0, uint8_t depth = 0)
@@ -296,8 +412,7 @@ KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = n
     return best;
 }
 
-
-void write(const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination, KDNode *root)
+void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination, KDNode *root)
 {
     bool is_stdout = false;
     uint8_t raster_bytes = destination != stdout ? MAX( byteCount( *raster_glyph) - 1, 1) : is_stdout = true;
@@ -328,6 +443,115 @@ void write(const uint64_t *out, FT_Int width, FT_Int height, const char *raster_
         }
         fputc( '\n', destination );
     }
+}
+
+void writePNG(FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height)
+{
+    if(cfp == nullptr)
+        return;
+
+    png_structp png_ptr;
+    png_infop info_ptr;
+    png_uint_32 bit_depth = 8, bytes_per_pixel = 4;
+
+    png_ptr = png_create_write_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+    if( png_ptr == nullptr)
+    {
+        fclose(cfp);
+        return;
+    }
+
+    info_ptr = png_create_info_struct( png_ptr);
+    if( info_ptr == nullptr)
+    {
+        fclose(cfp);
+        png_destroy_write_struct( &png_ptr, &info_ptr);
+        return;
+    }
+
+    if( setjmp( png_jmpbuf( png_ptr)))
+    {
+        fclose(cfp);
+        png_destroy_write_struct( &png_ptr, &info_ptr);
+        return;
+    }
+
+    png_init_io(png_ptr, cfp);
+
+    png_set_IHDR( png_ptr, info_ptr, width, height, bit_depth, PNG_COLOR_TYPE_RGB_ALPHA,
+                  PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
+
+    png_text text_ptr[3];
+
+    char key0[] = "Title";
+    char text0[] = "Copywrite";
+    text_ptr[0].key = key0;
+    text_ptr[0].text = text0;
+    text_ptr[0].compression = PNG_TEXT_COMPRESSION_NONE;
+    text_ptr[0].itxt_length = 0;
+    text_ptr[0].lang = nullptr;
+    text_ptr[0].lang_key = nullptr;
+
+    char key1[] = "Author";
+    char text1[] = "Adesina Meekness";
+    text_ptr[1].key = key1;
+    text_ptr[1].text = text1;
+    text_ptr[1].compression = PNG_TEXT_COMPRESSION_NONE;
+    text_ptr[1].itxt_length = 0;
+    text_ptr[1].lang = nullptr;
+    text_ptr[1].lang_key = nullptr;
+
+    char key2[] = "Description";
+    char text2[] = "An image generated by copywrite program";
+    text_ptr[2].key = key2;
+    text_ptr[2].text = text2;
+    text_ptr[2].compression = PNG_TEXT_COMPRESSION_zTXt;
+    text_ptr[2].itxt_length = 0;
+    text_ptr[2].lang = nullptr;
+    text_ptr[2].lang_key = nullptr;
+
+    png_set_text( png_ptr, info_ptr, text_ptr, 3);
+
+    png_write_info(png_ptr, info_ptr);
+
+    if( height > PNG_SIZE_MAX / ( width * bytes_per_pixel))
+        png_error( png_ptr, "Image data buffer too large!");
+
+    auto image = ( png_bytep)png_calloc( png_ptr, height * width * bytes_per_pixel);
+    png_bytep row_pointers[ height];
+    uint8_t color_buffer[ bytes_per_pixel];
+    memset( color_buffer, 0, bytes_per_pixel);
+
+    for( png_uint_32 j = 0; j < height; ++j)
+    {
+        for( png_uint_32 i = 0; i < width; ++i)
+        {
+            uint64_t pixel = *(buffer + j * width + i);
+            png_uint_32 color = pixel & 0xFFFFFFFF;
+            png_uint_32 mbyte = ( pixel >> 32u) ? color : 0;
+            png_uint_32 index = j * width * bytes_per_pixel + i * bytes_per_pixel;
+            image[     index] = mbyte >> 24u;
+            image[ index + 1] = ( mbyte >> 16u) & 0xFFu;
+            image[ index + 2] = ( mbyte >>  8u) & 0xFFu;
+            image[ index + 3] = mbyte & 0xFFu;
+        }
+    }
+
+    if( height > PNG_UINT_32_MAX / ( sizeof(png_bytep)))
+        png_error( png_ptr, "Image too small to process!");
+
+    for( png_uint_32 i = 0; i < height; ++i)
+        row_pointers[ i] = image + i * width * bytes_per_pixel;
+
+    png_write_image( png_ptr, row_pointers);
+
+    png_write_end( png_ptr, info_ptr);
+
+    png_destroy_write_struct( &png_ptr, &info_ptr);
+
+    png_free( png_ptr, image);
+
+    fclose(cfp);
 }
 
 static size_t byteCount( uint8_t c )
@@ -382,6 +606,174 @@ uint32_t getNumber( const char *&ctx, uint8_t base = 10)
     return weight;
 }
 
+uint32_t decodeColorName( const char *&ctx)
+{
+    static const std::unordered_map<std::string, uint32_t> nameLookup =
+    {
+            { "aliceblue", 0xf0f8ff00u},
+            { "antiquewhite", 0xfaebd700u},
+            { "aqua", 0x00ffff00u},
+            { "aquamarine", 0x7fffd400u},
+            { "azure", 0xf0ffff00u},
+            { "beige", 0xf5f5dc00u},
+            { "bisque", 0xffe4c400u},
+            { "black", 0x00000000u},
+            { "blanchedalmond", 0xffebcd00u},
+            { "blue", 0x0000ff00u},
+            { "blueviolet", 0x8a2be200u},
+            { "brown", 0xa52a2a00u},
+            { "burlywood", 0xdeb88700u},
+            { "cadetblue", 0x5f9ea000u},
+            { "chartreuse", 0x7fff0000u},
+            { "chocolate", 0xd2691e00u},
+            { "coral", 0xff7f5000u},
+            { "cornflowerblue", 0x6495ed00u},
+            { "cornsilk", 0xfff8dc00u},
+            { "crimson", 0xdc143c00u},
+            { "cyan", 0x00ffff00u},
+            { "darkblue", 0x00008b00u},
+            { "darkcyan", 0x008b8b00u},
+            { "darkgoldenrod", 0xb8860b00u},
+            { "darkgray", 0xa9a9a900u},
+            { "darkgrey", 0xa9a9a900u},
+            { "darkgreen", 0x00640000u},
+            { "darkkhaki", 0xbdb76b00u},
+            { "darkmagenta", 0x8b008b00u},
+            { "darkolivegreen", 0x556b2f00u},
+            { "darkorange", 0xff8c0000u},
+            { "darkorchid", 0x9932cc00u},
+            { "darkred", 0x8b000000u},
+            { "darksalmon", 0xe9967a00u},
+            { "darkseagreen", 0x8fbc8f00u},
+            { "darkslateblue", 0x483d8b00u},
+            { "darkslategray", 0x2f4f4f00u},
+            { "darkslategrey", 0x2f4f4f00u},
+            { "darkturquoise", 0x00ced100u},
+            { "darkviolet", 0x9400d300u},
+            { "deeppink", 0xff149300u},
+            { "deepskyblue", 0x00bfff00u},
+            { "dimgray", 0x69696900u},
+            { "dimgrey", 0x69696900u},
+            { "dodgerblue", 0x1e90ff00u},
+            { "firebrick", 0xb2222200u},
+            { "floralwhite", 0xfffaf000u},
+            { "forestgreen", 0x228b2200u},
+            { "fuchsia", 0xff00ff00u},
+            { "gainsboro", 0xdcdcdc00u},
+            { "ghostwhite", 0xf8f8ff00u},
+            { "gold", 0xffd70000u},
+            { "goldenrod", 0xdaa52000u},
+            { "gray", 0x80808000u},
+            { "grey", 0x80808000u},
+            { "green", 0x00800000u},
+            { "greenyellow", 0xadff2f00u},
+            { "honeydew", 0xf0fff000u},
+            { "hotpink", 0xff69b400u},
+            { "indianred", 0xcd5c5c00u},
+            { "indigo", 0x4b008200u},
+            { "ivory", 0xfffff000u},
+            { "khaki", 0xf0e68c00u},
+            { "lavender", 0xe6e6fa00u},
+            { "lavenderblush", 0xfff0f500u},
+            { "lawngreen", 0x7cfc0000u},
+            { "lemonchiffon", 0xfffacd00u},
+            { "lightblue", 0xadd8e600u},
+            { "lightcoral", 0xf0808000u},
+            { "lightcyan", 0xe0ffff00u},
+            { "lightgoldenrodyellow", 0xfafad200u},
+            { "lightgray", 0xd3d3d300u},
+            { "lightgrey", 0xd3d3d300u},
+            { "lightgreen", 0x90ee9000u},
+            { "lightpink", 0xffb6c100u},
+            { "lightsalmon", 0xffa07a00u},
+            { "lightseagreen", 0x20b2aa00u},
+            { "lightskyblue", 0x87cefa00u},
+            { "lightslategray", 0x77889900u},
+            { "lightslategrey", 0x77889900u},
+            { "lightsteelblue", 0xb0c4de00u},
+            { "lightyellow", 0xffffe000u},
+            { "lime", 0x00ff0000u},
+            { "limegreen", 0x32cd3200u},
+            { "linen", 0xfaf0e600u},
+            { "magenta", 0xff00ff00u},
+            { "maroon", 0x80000000u},
+            { "mediumaquamarine", 0x66cdaa00u},
+            { "mediumblue", 0x0000cd00u},
+            { "mediumorchid", 0xba55d300u},
+            { "mediumpurple", 0x9370db00u},
+            { "mediumseagreen", 0x3cb37100u},
+            { "mediumslateblue", 0x7b68ee00u},
+            { "mediumspringgreen", 0x00fa9a00u},
+            { "mediumturquoise", 0x48d1cc00u},
+            { "mediumvioletred", 0xc7158500u},
+            { "midnightblue", 0x19197000u},
+            { "mintcream", 0xf5fffa00u},
+            { "mistyrose", 0xffe4e100u},
+            { "moccasin", 0xffe4b500u},
+            { "navajowhite", 0xffdead00u},
+            { "navy", 0x00008000u},
+            { "oldlace", 0xfdf5e600u},
+            { "olive", 0x80800000u},
+            { "olivedrab", 0x6b8e2300u},
+            { "orange", 0xffa50000u},
+            { "orangered", 0xff450000u},
+            { "orchid", 0xda70d600u},
+            { "palegoldenrod", 0xeee8aa00u},
+            { "palegreen", 0x98fb9800u},
+            { "paleturquoise", 0xafeeee00u},
+            { "palevioletred", 0xdb709300u},
+            { "papayawhip", 0xffefd500u},
+            { "peachpuff", 0xffdab900u},
+            { "peru", 0xcd853f00u},
+            { "pink", 0xffc0cb00u},
+            { "plum", 0xdda0dd00u},
+            { "powderblue", 0xb0e0e600u},
+            { "purple", 0x80008000u},
+            { "rebeccapurple", 0x66339900u},
+            { "red", 0xff000000u},
+            { "rosybrown", 0xbc8f8f00u},
+            { "royalblue", 0x4169e100u},
+            { "saddlebrown", 0x8b451300u},
+            { "salmon", 0xfa807200u},
+            { "sandybrown", 0xf4a46000u},
+            { "seagreen", 0x2e8b5700u},
+            { "seashell", 0xfff5ee00u},
+            { "sienna", 0xa0522d00u},
+            { "silver", 0xc0c0c000u},
+            { "skyblue", 0x87ceeb00u},
+            { "slateblue", 0x6a5acd00u},
+            { "slategray", 0x70809000u},
+            { "slategrey", 0x70809000u},
+            { "snow", 0xfffafa00u},
+            { "springgreen", 0x00ff7f00u},
+            { "steelblue", 0x4682b400u},
+            { "tan", 0xd2b48c00u},
+            { "teal", 0x00808000u},
+            { "thistle", 0xd8bfd800u},
+            { "tomato", 0xff634700u},
+            { "turquoise", 0x40e0d000u},
+            { "violet", 0xee82ee00u},
+            { "wheat", 0xf5deb300u},
+            { "white", 0xffffff00u},
+            { "whitesmoke", 0xf5f5f500u},
+            { "yellow", 0xffff0000u},
+            { "yellowgreen", 0x9acd3200u}
+    };
+
+    std::string name;
+    do
+    {
+        name += std::tolower( *ctx);
+    }
+    while( isalpha( *++ctx));
+
+    auto pos = nameLookup.find( name);
+    if( pos != nameLookup.cend())
+        return pos->second;
+
+    return 0xFFFFFFu;
+}
+
 bool ltrim( const char*& p)
 {
     while( isspace( *p))
@@ -399,6 +791,14 @@ uint32_t extractColor( const char *& rule)
         ++rule;
     else if( strncasecmp( rule, "0x", 2) == 0)
         rule += 2;
+    else if( isalpha( *rule))
+    {
+        auto color_name = decodeColorName( rule);
+        if( *rule == ':')
+            return color_name | getNumber( ++rule, 16);
+
+        return color_name | 0xFFu;
+    }
     else
     {
         fprintf( stderr, "Expected hex indicator near -> %s (allowed: `#`, `x`, `0x`)", prev);
@@ -429,7 +829,7 @@ uint32_t extractColor( const char *& rule)
 }
 
 // Format example: [1]{#244839};[2]{#456676};[3..5]{#594930};[4..]{#567898}
-auto parseColorRule( const char *rule)
+std::vector<ColorRule> parseColorRule( const char *rule)
 {
     const char *prev = nullptr;
     std::vector<ColorRule> rules;
@@ -817,122 +1217,6 @@ void fillEasingMode( std::function<float(float)> &function, const char *&rule, c
         function = []( float progress){ return progress; };
 }
 
-size_t countCharacters( const char *pw)
-{
-    size_t value = 0;
-    while( *pw)
-    {
-        size_t ccount = byteCount( *pw);
-        value += 1;
-        pw += ccount;
-    }
-
-    return value;
-}
-
-void render( const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
-            const char *color_rule, KDNode *root)
-{
-	Glyph *head = nullptr;
-	FT_Int width 	= 0, // Total width of the buffer
-		   mdescent = 0, // Holds the baseline for the character with most descent
-		   mxheight = 0, // Maximum heigh of character 'x' according to various font sizes
-		   hexcess 	= 0; // Holds the ascent height based on the
-						 // presence of descented characters like 'g'
-	FT_UInt prev 	= 0; // Holds previous character read
-
-	FT_Error error;
-
-    auto rules = color_rule == nullptr ? std::vector<ColorRule>{} : parseColorRule( color_rule);
-
-    size_t index = 0, nchars = countCharacters( word);
-	for( const char *pw = word; *pw;)
-	{
-	    FT_Int shift = byteCount( *pw);
-	    FT_UInt character = collate( (uint8_t *)word, pw - word, shift);
-
-	    ColorRule best{};
-	    index += 1;
-        for( const auto& each: rules)
-        {
-            if( ( each.end == INT32_MIN && index == each.start) || ( index >= each.start && ( ( index <= each.end && each.end != INT32_MIN) || each.end == -1)))
-                best = each;
-        }
-
-        FT_Int font_size = best.font_size_b == UINT32_MAX ? best.font_size_b = 10 : best.font_size_b;
-        if( best.font_easing_fn)
-        {
-            size_t start = index - best.start,
-                    end = best.end == -1 ? MAX( nchars - 1, 1) : best.end - best.start;
-
-            auto fraction = best.font_easing_fn(( float)start / end);
-            if( best.font_size_m == UINT32_MAX && best.font_size_e != UINT32_MAX)
-                font_size = round( best.font_size_b * ( 1.0 - fraction) + fraction * best.font_size_e);
-            else if( best.font_size_m != UINT32_MAX && best.font_size_e != UINT32_MAX)
-                font_size = round( +2.0 * best.font_size_b * ( fraction - .5) * ( fraction - 1.)
-                                       -4.0 * best.font_size_m * fraction * ( fraction - 1.)
-                                       +2.0 * best.font_size_e * fraction * ( fraction - .5));
-        }
-
-	    error = FT_Set_Pixel_Sizes( face, font_size, 0);
-
-        if( error != 0)
-        {
-            fprintf( stderr, "Setup error!");
-            exit( EXIT_FAILURE);
-        }
-
-        FT_Int xheight = 0;
-        error = FT_Load_Char( face, 'x', FT_LOAD_RENDER | FT_LOAD_MONOCHROME);
-        if( !error)
-            xheight = face->glyph->bitmap.rows;
-
-	    error = FT_Load_Char( face, character, FT_LOAD_RENDER | FT_LOAD_MONOCHROME);
-    	if ( error )
-      		continue;
-
-
-		Glyph current = extract( face->glyph);
-        current.index = index;
-        current.match = best;
-        mxheight = MAX( mxheight, xheight);
-		hexcess  = MAX( hexcess,( current.height - xheight));
-		mdescent = MAX( mdescent, current.origin.y);
-		current.xstep += kerning( *pw, prev, face);
-		width += current.xstep;
-		insert( head, current);
-
-		prev = character;
-		pw += shift;
-	}
-
-	// Final container height. Dependent on the presence of
-	// characters with stem like 'b' and characters with descent
-	// like 'g'
-
-	FT_Int height = hexcess + mxheight + mdescent;
-
-	auto *out = ( uint64_t *)calloc( width * height, sizeof( uint64_t));
-	FT_Vector pen;
-	memset( &pen, 0, sizeof( pen));
-	for( Glyph *current = head, *prev_link; current != nullptr;)
-	{
-        draw( *current, &pen, out, mdescent, width, height, nchars - 1);
-
-        prev_link = current;
-		current = current->next;
-		free(prev_link->pixmap);
-		free(prev_link);
-	}
-
-	if( as_image && destination != stdout)
-        writePNG( destination, out, width, height);
-	else
-        write(out, width, height, raster_glyph, destination, root);
-
-	free( out);
-}
-
 void requestFontList()
 {
     if( !FcInit())
@@ -962,115 +1246,6 @@ void requestFontList()
 
     if( fontSet)
         FcFontSetDestroy( fontSet);
-}
-
-void writePNG(FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height)
-{
-    if(cfp == nullptr)
-        return;
-
-    png_structp png_ptr;
-    png_infop info_ptr;
-    png_uint_32 bit_depth = 8, bytes_per_pixel = 4;
-
-    png_ptr = png_create_write_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-    if( png_ptr == nullptr)
-    {
-        fclose(cfp);
-        return;
-    }
-
-    info_ptr = png_create_info_struct( png_ptr);
-    if( info_ptr == nullptr)
-    {
-        fclose(cfp);
-        png_destroy_write_struct( &png_ptr, &info_ptr);
-        return;
-    }
-
-    if( setjmp( png_jmpbuf( png_ptr)))
-    {
-        fclose(cfp);
-        png_destroy_write_struct( &png_ptr, &info_ptr);
-        return;
-    }
-
-    png_init_io(png_ptr, cfp);
-
-    png_set_IHDR( png_ptr, info_ptr, width, height, bit_depth, PNG_COLOR_TYPE_RGB_ALPHA,
-                  PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
-
-    png_text text_ptr[3];
-
-    char key0[] = "Title";
-    char text0[] = "Copywrite";
-    text_ptr[0].key = key0;
-    text_ptr[0].text = text0;
-    text_ptr[0].compression = PNG_TEXT_COMPRESSION_NONE;
-    text_ptr[0].itxt_length = 0;
-    text_ptr[0].lang = nullptr;
-    text_ptr[0].lang_key = nullptr;
-
-    char key1[] = "Author";
-    char text1[] = "Adesina Meekness";
-    text_ptr[1].key = key1;
-    text_ptr[1].text = text1;
-    text_ptr[1].compression = PNG_TEXT_COMPRESSION_NONE;
-    text_ptr[1].itxt_length = 0;
-    text_ptr[1].lang = nullptr;
-    text_ptr[1].lang_key = nullptr;
-
-    char key2[] = "Description";
-    char text2[] = "An image generated by copywrite program";
-    text_ptr[2].key = key2;
-    text_ptr[2].text = text2;
-    text_ptr[2].compression = PNG_TEXT_COMPRESSION_zTXt;
-    text_ptr[2].itxt_length = 0;
-    text_ptr[2].lang = nullptr;
-    text_ptr[2].lang_key = nullptr;
-
-    png_set_text( png_ptr, info_ptr, text_ptr, 3);
-
-    png_write_info(png_ptr, info_ptr);
-
-    if( height > PNG_SIZE_MAX / ( width * bytes_per_pixel))
-        png_error( png_ptr, "Image data buffer too large!");
-
-    auto image = ( png_bytep)png_calloc( png_ptr, height * width * bytes_per_pixel);
-    png_bytep row_pointers[ height];
-    uint8_t color_buffer[ bytes_per_pixel];
-    memset( color_buffer, 0, bytes_per_pixel);
-
-    for( png_uint_32 j = 0; j < height; ++j)
-    {
-        for( png_uint_32 i = 0; i < width; ++i)
-        {
-            uint64_t pixel = *(buffer + j * width + i);
-            png_uint_32 color = pixel & 0xFFFFFFFF;
-            png_uint_32 mbyte = ( pixel >> 32u) ? color : 0;
-            png_uint_32 index = j * width * bytes_per_pixel + i * bytes_per_pixel;
-            image[     index] = mbyte >> 24u;
-            image[ index + 1] = ( mbyte >> 16u) & 0xFFu;
-            image[ index + 2] = ( mbyte >>  8u) & 0xFFu;
-            image[ index + 3] = mbyte & 0xFFu;
-        }
-    }
-
-    if( height > PNG_UINT_32_MAX / ( sizeof(png_bytep)))
-        png_error( png_ptr, "Image too small to process!");
-
-    for( png_uint_32 i = 0; i < height; ++i)
-        row_pointers[ i] = image + i * width * bytes_per_pixel;
-
-    png_write_image( png_ptr, row_pointers);
-
-    png_write_end( png_ptr, info_ptr);
-
-    png_destroy_write_struct( &png_ptr, &info_ptr);
-
-    png_free( png_ptr, image);
-
-    fclose(cfp);
 }
 
 int main( int ac, char *av[])
