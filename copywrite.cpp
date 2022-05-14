@@ -51,12 +51,6 @@
 
 #define FPRINTF( fmt, argument) FPRINTFD( fmt, argument, true)
 
-#define ABS( expr) ({\
-    auto value = expr;\
-    auto mask = value >> ( ( sizeof( value) << 3u) - 1u);\
-    (value ^ mask) - mask;\
-})
-
 #define EPSILON ( 1e-5)
 #define ZERO( fl) ( std::abs( fl) <= EPSILON)
 #define EQUAL( al, bl) ZERO( ( al) - ( bl))
@@ -95,7 +89,7 @@ Glyph extract( FT_GlyphSlot slot)
 	Glyph glyph;
 	glyph.width = slot->bitmap.width;
 	glyph.height = slot->bitmap.rows;
-	glyph.xstep = slot->advance.x >> 6;
+	glyph.xstep = slot->advance.x >> 6u;
 	glyph.pixmap = to_monochrome( slot->bitmap);
 	glyph.origin.x = slot->bitmap_left;
 	glyph.origin.y = glyph.height - slot->bitmap_top;
@@ -108,7 +102,7 @@ void insert( Glyph *&index, Glyph glyph)
 	if( index == nullptr)
 	{
 		index = (Glyph *)malloc( sizeof( Glyph));
-		memcpy( index, &glyph, sizeof( Glyph));
+		memcpy( ( char *)index, (const char *)&glyph, sizeof( Glyph));
 
 		return;
 	}
@@ -125,12 +119,12 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
 	return ( uint8_t)kern.x >> 6u;
 }
 
-uint32_t hsvToRgb(uint32_t hsv)
+uint32_t hsvToRgb( uint32_t hsv)
 {
     uint32_t region, p, q, t, remainder,
              h = hsv >> 24u,
-             s = hsv >> 16u & 0xFFu,
-             v = hsv >> 8u & 0xFFu;
+             s = ( hsv >> 16u) & 0xFFu,
+             v = ( hsv >> 8u) & 0xFFu;
 
     if ( s == 0)
         return v << 24u | v << 16u | v << 8u;
@@ -178,11 +172,11 @@ uint32_t rgbToHsv(uint32_t rgb)
         return hsv;
 
     if ( rgbMax == r)
-        hsv |= ( uint32_t)( 0 + 43 * ( g - b) / (int32_t)( rgbMax - rgbMin)) << 24u;
+        hsv |= ( uint32_t)( ( uint8_t)( 0 + 43 * ( int32_t)( g - b) / ( int32_t)( rgbMax - rgbMin))) << 24u;
     else if ( rgbMax == g)
-        hsv |= ( uint32_t)( 85 + 43 * ( b - r) / (int32_t)( rgbMax - rgbMin)) << 24u;
+        hsv |= ( uint32_t)( ( uint8_t)(  85 + 43 * ( int32_t)( b - r) / ( int32_t)( rgbMax - rgbMin))) << 24u;
     else
-        hsv |= ( uint32_t)( 171 + 43 * (int)( r - g) / (int32_t)( rgbMax - rgbMin)) << 24u;
+        hsv |= ( uint32_t)( ( uint8_t)( 171 + 43 * ( int32_t)( r - g) / ( int32_t)( rgbMax - rgbMin))) << 24u;
 
     return hsv;
 }
@@ -219,7 +213,7 @@ void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, F
         for( FT_Int x = glyph.origin.x, i = 0; i < glyph.width; ++x, ++i)
         {
             uint64_t pixel = glyph.pixmap[ j * glyph.width + i];
-            out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | (pixel ? color : 0);
+            out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | ( pixel ? color : 0);
         }
     }
 
@@ -254,22 +248,6 @@ void free( KDNode *&node)
     delete node; node = nullptr;
 }
 
-inline float qsqrt( float number)
-{
-    long i;
-    float xhalf, y;
-    const float threehalfs = 1.5f;
-
-    xhalf = number * .5f;
-    y  = number;
-    i  = *( long *)&y;
-    i = 0x5f3759df - ( i >> 1);
-    y = *( float *)&i;
-    y = y * ( threehalfs - ( xhalf * y * y));
-
-    return 1 / y;
-}
-
 KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0)
 {
     if( node == nullptr)
@@ -285,9 +263,9 @@ KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = n
 
     double y = .299    * r + .587   * g + .114   * b,
            u = -.14713 * r - .28886 * g + .436   * b,
-           v = .615    * r - .51499 * g - .10001 * b;
+           v = .615    * r - .51499 * g - .10001 * b,
 
-    float ndist = qsqrt( ( float)(y * y + u * u + v * v));
+           ndist = std::sqrt( y * y + u * u + v * v);
 
     if( ndist < ldist)
     {
@@ -299,20 +277,20 @@ KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = n
     if( nchannel < cchannel)
     {
         if( node->left != nullptr)
-            best = approximate(node->left, search, ldist, best, ndepth);
+            best = approximate( node->left, search, ldist, best, ndepth);
         else
             return best;
     }
     else
     {
         if( node->right != nullptr)
-            best = approximate(node->right, search, ldist, best, ndepth);
+            best = approximate( node->right, search, ldist, best, ndepth);
         else
             return best;
         left = false;
     }
 
-    if( ABS( search.rgb[ depth] - node->color.rgb[ depth]) < ldist)
+    if( std::abs( search.rgb[ depth] - node->color.rgb[ depth]) < ldist)
         best = approximate(!left ? node->left : node->right, search, ldist, best, ndepth);
 
     return best;
@@ -589,9 +567,8 @@ auto parseColorRule( const char *rule)
     return rules;
 }
 
-void fillEasingMode(std::function<float(float)> &function, const char *&rule, char eoc)
+void fillEasingMode( std::function<float(float)> &function, const char *&rule, char eoc)
 {
-
     const auto easeOutBounce = []( float progress)
     {
         const float n1 = 7.5625f;
@@ -671,21 +648,21 @@ void fillEasingMode(std::function<float(float)> &function, const char *&rule, ch
         {
             "easeincirc", []( float progress)
             {
-                return  1 - qsqrt( (float)( 1 - pow( progress, 2)));
+                return  1 - std::sqrt( (float)( 1 - pow( progress, 2)));
             }
         },
         {
             "easeoutcirc", []( float progress)
             {
-                return  qsqrt( ( float)( 1 - pow( progress - 1, 2)));
+                return  std::sqrt( ( float)( 1 - pow( progress - 1, 2)));
             }
         },
         {
             "easeinoutcirc", []( float progress)
             {
                 return  progress < 0.5
-                        ? ( 1 - qsqrt(( float)( 1 - pow( 2 * progress, 2)))) / 2
-                        : ( qsqrt( ( float)(1 - pow( -2 * progress + 2, 2))) + 1) / 2;
+                        ? ( 1 - std::sqrt(( float)( 1 - pow( 2 * progress, 2)))) / 2
+                        : ( std::sqrt( ( float)(1 - pow( -2 * progress + 2, 2))) + 1) / 2;
             }
         },
         {
@@ -846,7 +823,7 @@ size_t countCharacters( const char *pw)
     while( *pw)
     {
         size_t ccount = byteCount( *pw);
-        value += ccount;
+        value += 1;
         pw += ccount;
     }
 
@@ -893,8 +870,8 @@ void render( const char *word, FT_Face face, const char *raster_glyph, FILE *des
                 font_size = round( best.font_size_b * ( 1.0 - fraction) + fraction * best.font_size_e);
             else if( best.font_size_m != UINT32_MAX && best.font_size_e != UINT32_MAX)
                 font_size = round( +2.0 * best.font_size_b * ( fraction - .5) * ( fraction - 1.)
-                            -4.0 * best.font_size_m * fraction * ( fraction - 1.)
-                            +2.0 * best.font_size_e * fraction * ( fraction - .5));
+                                       -4.0 * best.font_size_m * fraction * ( fraction - 1.)
+                                       +2.0 * best.font_size_e * fraction * ( fraction - .5));
         }
 
 	    error = FT_Set_Pixel_Sizes( face, font_size, 0);
@@ -940,7 +917,7 @@ void render( const char *word, FT_Face face, const char *raster_glyph, FILE *des
 	memset( &pen, 0, sizeof( pen));
 	for( Glyph *current = head, *prev_link; current != nullptr;)
 	{
-        draw(*current, &pen, out, mdescent, width, height, nchars - 1);
+        draw( *current, &pen, out, mdescent, width, height, nchars - 1);
 
         prev_link = current;
 		current = current->next;

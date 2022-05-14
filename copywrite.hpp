@@ -116,8 +116,9 @@ void fillEasingMode(std::function<float(float)> &function, const char *&rule, ch
  * Main dispatcher: Does all the rendering and display
  */
 
-void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image = false,
-            const char *color_rule = nullptr, KDNode *root = nullptr);
+void
+render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
+       const char *color_rule, KDNode *root);
 
 void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height);
 
