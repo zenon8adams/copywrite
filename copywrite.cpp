@@ -888,8 +888,8 @@ XyZColor xyzFromRgb( uint32_t color)
 uint32_t xyzToRgb( XyZColor color)
 {
     auto r = color.x * 3.2404542  + color.y * -1.5371385 + color.z * -0.4985314,
-            g = color.x * -0.9692660 + color.y * 1.8760108  + color.z * 0.0415560,
-            b = color.x * 0.0556434  + color.y * -0.2040259 + color.z * 1.0572252;
+         g = color.x * -0.9692660 + color.y * 1.8760108  + color.z * 0.0415560,
+         b = color.x * 0.0556434  + color.y * -0.2040259 + color.z * 1.0572252;
 
     r = ZERO( r) ? 0.0 : MIN( (int)std::round( r * XYZ_SCALE), RGB_SCALE);
     g = ZERO( g) ? 0.0 : MIN( (int)std::round( g * XYZ_SCALE), RGB_SCALE);
