@@ -17,7 +17,7 @@
 /*                                                                         */
 /*                                                                         */
 /*  This file is part of the Copywrite project, and may only be used,      */
-/*  modified, and distributed under the terms of the FreeType project      */
+/*  modified, and distributed under the terms of the GNU project           */
 /*  license, LICENSE.TXT.  By continuing to use, modify, or distribute     */
 /*  this file you indicate that you have read the license and              */
 /*  understand and accept it fully.                                        */
@@ -65,6 +65,8 @@
 
 #define XYZ_SCALE 775
 #define RGB_SCALE 255
+
+#define HALF_RGB_SCALE 128
 
 /*
  * Converts bitmap into binary format.
@@ -870,7 +872,7 @@ uint32_t extractColor(const char *&rule, int8_t *ratio)
     return ccolor;
 }
 
-XyZColor xyzFromRgb(uint32_t color)
+XyZColor xyzFromRgb( uint32_t color)
 {
     auto r = RED( color),
             g = GREEN( color),
@@ -883,7 +885,7 @@ XyZColor xyzFromRgb(uint32_t color)
     };
 }
 
-uint32_t xyzToRgb(XyZColor color)
+uint32_t xyzToRgb( XyZColor color)
 {
     auto r = color.x * 3.2404542  + color.y * -1.5371385 + color.z * -0.4985314,
             g = color.x * -0.9692660 + color.y * 1.8760108  + color.z * 0.0415560,
@@ -1399,14 +1401,14 @@ int main( int ac, char *av[])
     KDNode *root = nullptr;
 
     insert( root, { 0, 0, 0}, 0);
-    insert( root, { 128, 0, 0}, 1);
-    insert( root, { 0, 128, 0}, 2);
-    insert( root, { 128, 128, 0}, 3);
-    insert( root, { 0, 0, 128}, 4);
-    insert( root, { 128, 0, 128}, 5);
-    insert( root, { 0, 128, 128}, 6);
+    insert( root, { HALF_RGB_SCALE, 0, 0}, 1);
+    insert( root, { 0, HALF_RGB_SCALE, 0}, 2);
+    insert( root, { HALF_RGB_SCALE, HALF_RGB_SCALE, 0}, 3);
+    insert( root, { 0, 0, HALF_RGB_SCALE}, 4);
+    insert( root, { HALF_RGB_SCALE, 0, HALF_RGB_SCALE}, 5);
+    insert( root, { 0, HALF_RGB_SCALE, HALF_RGB_SCALE}, 6);
     insert( root, { 192, 192, 192}, 7);
-    insert( root, { 128, 128, 128}, 8);
+    insert( root, { HALF_RGB_SCALE, HALF_RGB_SCALE, HALF_RGB_SCALE}, 8);
     insert( root, { RGB_SCALE, 0, 0}, 9);
     insert( root, { 0, RGB_SCALE, 0}, 10);
     insert( root, { RGB_SCALE, RGB_SCALE, 0}, 11);
@@ -1526,7 +1528,7 @@ int main( int ac, char *av[])
     insert( root, { 175, 0, 95}, 125);
     insert( root, { 175, 0, 135}, 126);
     insert( root, { 175, 0, 175}, 127);
-    insert( root, { 175, 0, 215}, 128);
+    insert( root, { 175, 0, 215}, HALF_RGB_SCALE);
     insert( root, { 175, 0, RGB_SCALE}, 129);
     insert( root, { 175, 95, 0}, 130);
     insert( root, { 175, 95, 95}, 131);
@@ -1642,7 +1644,7 @@ int main( int ac, char *av[])
     insert( root, { 98, 98, 98}, 241);
     insert( root, { 108, 108, 108}, 242);
     insert( root, { 118, 118, 118}, 243);
-    insert( root, { 128, 128, 128}, 244);
+    insert( root, { HALF_RGB_SCALE, HALF_RGB_SCALE, HALF_RGB_SCALE}, 244);
     insert( root, { 138, 138, 138}, 245);
     insert( root, { 148, 148, 148}, 246);
     insert( root, { 158, 158, 158}, 247);
