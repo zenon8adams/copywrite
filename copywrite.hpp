@@ -32,6 +32,7 @@
 #include <pngconf.h>
 #include <vector>
 #include <functional>
+#include "pigment-mixing/mixbox.h"
 
 #ifndef PNG_STDIO_SUPPORTED
 typedef FILE                * png_FILE_p;
@@ -39,18 +40,27 @@ typedef FILE                * png_FILE_p;
 
 #include  FT_FREETYPE_H
 
-unsigned char *to_monochrome( FT_Bitmap bitmap);
+unsigned char *toMonochrome(FT_Bitmap bitmap);
 
 struct ColorRule
 {
     int32_t start = 0, end = -1;
-    uint32_t scolor = 0x000000FF, ecolor = 0x000000FF, font_size_b = UINT32_MAX, font_size_m = UINT32_MAX, font_size_e = UINT32_MAX;
+    uint32_t scolor = 0x000000FF, ecolor = 0x000000FF,
+             font_size_b = UINT32_MAX, font_size_m = UINT32_MAX,
+             font_size_e = UINT32_MAX;
     std::function<float(float)> color_easing_fn, font_easing_fn;
 };
 
+// Stores the standard red, green, and blue chroma (sRGB)
 struct Color
 {
     uint8_t rgb[ 3]{};
+};
+
+// Stores the CIE 1931 chromaticity values.
+struct XyZColor
+{
+    double x, y, z;
 };
 
 struct KDNode
@@ -116,15 +126,21 @@ uint32_t extractColor(const char *&rule, int8_t *ratio = nullptr);
 
 uint32_t mixColor( const char *&ctx);
 
+uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor);
+
 void fillEasingMode(std::function<float(float)> &function, const char *&rule, char eoc);
 
 uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress);
 
 uint32_t decodeColorName( const char *&ctx);
 
-uint32_t rgbToHsv(uint32_t rgb);
+uint32_t rgbaToHsva( uint32_t rgb);
 
-uint32_t hsvToRgb( uint32_t hsv);
+uint32_t hsvaToRgba( uint32_t hsv);
+
+XyZColor xyzFromRgb( uint32_t color);
+
+uint32_t xyzToRgb( XyZColor color);
 
 KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0);
 

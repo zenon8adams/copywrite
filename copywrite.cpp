@@ -55,6 +55,17 @@
 #define ZERO( fl) ( std::abs( fl) <= EPSILON)
 #define EQUAL( al, bl) ZERO( ( al) - ( bl))
 
+#define RED( color) ( ( color) >> 24u)
+#define GREEN( color) ( ( ( color) >> 16u) & 0xFFu)
+#define BLUE( color) ( ( ( color) >> 8u) & 0xFFu)
+#define ALPHA( color) ( ( color) & 0xFFu)
+#define RGBA( red, green, blue, alpha) ( ( ( uint32_t)( red)) << 24u |\
+                                          ( ( uint32_t)( green)) << 16u | ( ( uint32_t)( blue)) << 8u | alpha)
+#define RGB( red, green, blue) RGBA( red, green, blue, 0u)
+
+#define XYZ_SCALE 775
+#define RGB_SCALE 255
+
 /*
  * Converts bitmap into binary format.
  * NB!
@@ -63,7 +74,7 @@
  * 	- Pixmap is the final monochrome output
  */
 
-unsigned char *to_monochrome( FT_Bitmap bitmap)
+unsigned char *toMonochrome( FT_Bitmap bitmap)
 {
 	FT_Int rows = bitmap.rows,
 	       cols = bitmap.width;
@@ -90,7 +101,7 @@ Glyph extract( FT_GlyphSlot slot)
 	glyph.width = slot->bitmap.width;
 	glyph.height = slot->bitmap.rows;
 	glyph.xstep = slot->advance.x >> 6u;
-	glyph.pixmap = to_monochrome( slot->bitmap);
+	glyph.pixmap = toMonochrome(slot->bitmap);
 	glyph.origin.x = slot->bitmap_left;
 	glyph.origin.y = glyph.height - slot->bitmap_top;
 
@@ -158,8 +169,7 @@ size_t countCharacters( const char *pw)
     return value;
 }
 
-void render( const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
-             const char *color_rule, KDNode *root)
+void render( const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image, const char *color_rule, KDNode *root)
 {
     Glyph *head = nullptr;
     FT_Int width 	= 0, // Total width of the buffer
@@ -219,7 +229,6 @@ void render( const char *word, FT_Face face, const char *raster_glyph, FILE *des
         if ( error )
             continue;
 
-
         Glyph current = extract( face->glyph);
         current.index = index;
         current.match = best;
@@ -261,15 +270,16 @@ void render( const char *word, FT_Face face, const char *raster_glyph, FILE *des
     free( out);
 }
 
-uint32_t hsvToRgb( uint32_t hsv)
+uint32_t hsvaToRgba( uint32_t hsv)
 {
     uint32_t region, p, q, t, remainder,
-             h = hsv >> 24u,
-             s = ( hsv >> 16u) & 0xFFu,
-             v = ( hsv >> 8u) & 0xFFu;
+             h = RED( hsv),
+             s = GREEN( hsv),
+             v = BLUE( hsv),
+             a = ALPHA( hsv);
 
     if ( s == 0)
-        return v << 24u | v << 16u | v << 8u;
+        return RGBA( v, v, v, a);
 
     region = h / 43;
     remainder = ( h - ( region * 43)) * 6;
@@ -281,37 +291,38 @@ uint32_t hsvToRgb( uint32_t hsv)
     switch ( region)
     {
         case 0:
-            return v << 24u | t << 16u | p << 8u;
+            return RGBA( v, t, p, a);
         case 1:
-            return q << 24u | v << 16u | p << 8u;
+            return RGBA( q, v, p, a);
         case 2:
-            return p << 24u | v << 16u | t << 8u;
+            return RGBA( p, v, t, a);
         case 3:
-            return p << 24u | q << 16u | v << 8u;
+            return RGBA( p, q, v, a);
         case 4:
-            return t << 24u | p << 16u | v << 8u;
+            return RGBA( t, p, v, a);
         default:
-            return v << 24u | p << 16u | q << 8u;
+            return RGBA( v, p, q, a);
     }
 }
 
-uint32_t rgbToHsv(uint32_t rgb)
+uint32_t rgbaToHsva( uint32_t rgb)
 {
     uint32_t rgbMin, rgbMax, hsv{},
-             r = rgb >> 24u,
-             g = ( rgb >> 16u) & 0xFFu,
-             b = ( rgb >> 8u) & 0xFFu;
+             r = RED( rgb),
+             g = GREEN( rgb),
+             b = BLUE( rgb),
+             a = ALPHA( rgb);
 
     rgbMax = MAX( r, MAX( g, b));
     rgbMin = MIN( r, MIN( g, b));
 
     hsv = rgbMax << 8u;
     if ( hsv == 0)
-        return hsv;
+        return hsv | a;
 
     hsv |= ( 0xFFu * ( ( int32_t)( rgbMax - rgbMin)) / ( hsv >> 8u)) << 16u;
     if ( ( hsv >> 16u & 0xFFu) == 0)
-        return hsv;
+        return hsv | a;
 
     if ( rgbMax == r)
         hsv |= ( uint32_t)( ( uint8_t)( 0 + 43 * ( int32_t)( g - b) / ( int32_t)( rgbMax - rgbMin))) << 24u;
@@ -320,48 +331,25 @@ uint32_t rgbToHsv(uint32_t rgb)
     else
         hsv |= ( uint32_t)( ( uint8_t)( 171 + 43 * ( int32_t)( r - g) / ( int32_t)( rgbMax - rgbMin))) << 24u;
 
-    return hsv;
+    return hsv | a;
+}
+
+uint32_t colorLerp( uint32_t lcolor, uint32_t rcolor, double progress)
+{
+    uint32_t r = RED( lcolor)   * ( 1.0 - progress) + RED( rcolor)   * progress,
+             g = GREEN( lcolor) * ( 1.0 - progress) + GREEN( rcolor) * progress,
+             b = BLUE( lcolor)  * ( 1.0 - progress) + BLUE( rcolor)  * progress,
+             a = ALPHA( lcolor) * ( 1.0 - progress) + BLUE( rcolor)  * progress;
+
+    return RGBA( r, g, b, a);
 }
 
 uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress)
 {
-    auto shsv = rgbToHsv(scolor);
-    auto ehsv = rgbToHsv(ecolor);
+    auto shsv = rgbaToHsva( scolor);
+    auto ehsv = rgbaToHsva( ecolor);
 
-    uint32_t h = ( shsv >> 24u) * ( 1.0 - progress) + ( ehsv >> 24u) * progress,
-             s = ( ( shsv >> 16u) & 0xFFu) * ( 1.0 - progress) + ( ( ehsv >> 16u) & 0xFFu) * progress,
-             v = ( ( shsv >>  8u) & 0xFFu) * ( 1.0 - progress) + ( ( ehsv >> 8u) & 0xFFu) * progress,
-             a = ( scolor & 0xFFu) * ( 1.0 - progress) + ( ecolor & 0xFFu) * progress;
-
-    return hsvToRgb(h << 24u | s << 16u | v << 8u) | a;
-}
-
-void insert( KDNode *&node, Color color, size_t index, uint8_t depth)
-{
-    if( node == nullptr)
-    {
-        node = new KDNode{ color, index};
-        return;
-    }
-
-    uint8_t nchannel = color.rgb[ depth],
-            cchannel = node->color.rgb[ depth],
-            ndepth   = ( depth + 1) % 3;
-    if( nchannel < cchannel)
-        insert(node->left, color, index, ndepth);
-    else
-        insert(node->right, color, index, ndepth);
-}
-
-void free( KDNode *&node)
-{
-    if( node == nullptr)
-        return;
-
-    free( node->left);
-    free( node->right);
-
-    delete node; node = nullptr;
+    return hsvaToRgba( colorLerp( shsv, ehsv, progress));
 }
 
 KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best, uint8_t depth)
@@ -412,6 +400,34 @@ KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best, ui
     return best;
 }
 
+void insert( KDNode *&node, Color color, size_t index, uint8_t depth)
+{
+    if( node == nullptr)
+    {
+        node = new KDNode{ color, index};
+        return;
+    }
+
+    uint8_t nchannel = color.rgb[ depth],
+            cchannel = node->color.rgb[ depth],
+            ndepth   = ( depth + 1) % 3;
+    if( nchannel < cchannel)
+        insert(node->left, color, index, ndepth);
+    else
+        insert(node->right, color, index, ndepth);
+}
+
+void free( KDNode *&node)
+{
+    if( node == nullptr)
+        return;
+
+    free( node->left);
+    free( node->right);
+
+    delete node; node = nullptr;
+}
+
 void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination, KDNode *root)
 {
     bool is_stdout = false;
@@ -445,7 +461,7 @@ void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster
     }
 }
 
-void writePNG(FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height)
+void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height)
 {
     if(cfp == nullptr)
         return;
@@ -829,7 +845,7 @@ uint32_t extractColor(const char *&rule, int8_t *ratio)
     {
         ccolor = getNumber(rule, 16);
         uint8_t ccount = rule - prev;
-        if(ccolor == 0 || (ccount != 6 && ccount != 8))
+        if( ccolor == 0 || ( ccount != 6 && ccount != 8))
         {
             fprintf( stderr, ccolor == 0 ? "Invalid color specification %s"
                                                 : "Color has to be 6 or 8 hex digits -> %s", prev);
@@ -852,6 +868,56 @@ uint32_t extractColor(const char *&rule, int8_t *ratio)
     }
 
     return ccolor;
+}
+
+XyZColor xyzFromRgb(uint32_t color)
+{
+    auto r = RED( color),
+            g = GREEN( color),
+            b = BLUE( color);
+
+    return {
+            .x = r * 0.4124564 + g * 0.3575761 + b * 0.1804375,
+            .y = r * 0.2126729 + g * 0.7151522 + b * 0.0721750,
+            .z = r * 0.0193339 + g * 0.1191920 + b * 0.9503041
+    };
+}
+
+uint32_t xyzToRgb(XyZColor color)
+{
+    auto r = color.x * 3.2404542  + color.y * -1.5371385 + color.z * -0.4985314,
+            g = color.x * -0.9692660 + color.y * 1.8760108  + color.z * 0.0415560,
+            b = color.x * 0.0556434  + color.y * -0.2040259 + color.z * 1.0572252;
+
+    r = ZERO( r) ? 0.0 : MIN( (int)std::round( r * XYZ_SCALE), RGB_SCALE);
+    g = ZERO( g) ? 0.0 : MIN( (int)std::round( g * XYZ_SCALE), RGB_SCALE);
+    b = ZERO( b) ? 0.0 : MIN( (int)std::round( b * XYZ_SCALE), RGB_SCALE);
+
+    return RGB( r, g, b);
+}
+
+uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor)
+{
+    /*
+     * References:
+     *  + https://en.wikipedia.org/wiki/CIE_1931_color_space
+     *  + http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
+     *
+     */
+    auto lxyz = xyzFromRgb(lcolor),
+            rxyz = xyzFromRgb(rcolor);
+
+    double lsum = lxyz.x + lxyz.y + lxyz.z,
+            rsum = rxyz.x + rxyz.y + rxyz.z,
+            lx = lxyz.x / lsum,
+            ly = lxyz.y / lsum,
+            rx = rxyz.x / rsum,
+            ry = rxyz.y / rsum,
+            xmix = ( lx * lxyz.y / ly + rx * rxyz.y / ry) / ( lxyz.y / ly + rxyz.y / ry),
+            ymix = ( lxyz.y + rxyz.y) / ( lxyz.y / ly + rxyz.y / ry),
+            zmix = 1 - xmix - ymix;
+
+    return xyzToRgb({xmix, ymix, zmix});
 }
 
 uint32_t mixColor( const char *&ctx)
@@ -877,10 +943,26 @@ uint32_t mixColor( const char *&ctx)
     if( ratio == 0 || ratio > 100)
         ratio = 50;
 
+    double progress = ratio / 100.0;
     if( op == '+') // Additive color mixing
-        return interpolateColor( lcolor, rcolor, ratio / 100.0);
+    {
+        return mixRgb( lcolor, rcolor) | ( uint32_t)(( 1 - progress) * ALPHA( lcolor) + progress * ALPHA( rcolor));
+    }
     else if( op == '-')
-        ;//TODO: Mix colors using subtractive color mixing algorithm.
+    {
+        auto lred   = RGB_SCALE - RED( lcolor),
+             lgreen = RGB_SCALE - GREEN( lcolor),
+             lblue  = RGB_SCALE - BLUE( lcolor),
+             rred   = RGB_SCALE - RED( rcolor),
+             rgreen = RGB_SCALE - GREEN( rcolor),
+             rblue  = RGB_SCALE - BLUE( rcolor);
+
+        auto r = RGB_SCALE - std::sqrt( .5 * ( lred * lred + rred * rred)),
+             g = RGB_SCALE - std::sqrt( .5 * ( lgreen * lgreen + rgreen * rgreen)),
+             b = RGB_SCALE - std::sqrt( .5 * ( lblue * lblue + rblue * rblue));
+
+        return RGBA( r, g, b, ( uint32_t)( ALPHA( lcolor) * ( 1 - progress) + progress * ALPHA( rcolor)));
+    }
 
     return lcolor;
 }
@@ -1325,229 +1407,229 @@ int main( int ac, char *av[])
     insert( root, { 0, 128, 128}, 6);
     insert( root, { 192, 192, 192}, 7);
     insert( root, { 128, 128, 128}, 8);
-    insert( root, { 255, 0, 0}, 9);
-    insert( root, { 0, 255, 0}, 10);
-    insert( root, { 255, 255, 0}, 11);
-    insert( root, { 0, 0, 255}, 12);
-    insert( root, { 255, 0, 255}, 13);
-    insert( root, { 0, 255, 255}, 14);
-    insert( root, { 255, 255, 255}, 15);
+    insert( root, { RGB_SCALE, 0, 0}, 9);
+    insert( root, { 0, RGB_SCALE, 0}, 10);
+    insert( root, { RGB_SCALE, RGB_SCALE, 0}, 11);
+    insert( root, { 0, 0, RGB_SCALE}, 12);
+    insert( root, { RGB_SCALE, 0, RGB_SCALE}, 13);
+    insert( root, { 0, RGB_SCALE, RGB_SCALE}, 14);
+    insert( root, { RGB_SCALE, RGB_SCALE, RGB_SCALE}, 15);
     insert( root, { 0, 0, 0}, 16);
     insert( root, { 0, 0, 95}, 17);
     insert( root, { 0, 0, 135}, 18);
     insert( root, { 0, 0, 175}, 19);
     insert( root, { 0, 0, 215}, 20);
-    insert( root, { 0, 0, 255}, 21);
+    insert( root, { 0, 0, RGB_SCALE}, 21);
     insert( root, { 0, 95, 0}, 22);
     insert( root, { 0, 95, 95}, 23);
     insert( root, { 0, 95, 135}, 24);
     insert( root, { 0, 95, 175}, 25);
     insert( root, { 0, 95, 215}, 26);
-    insert( root, { 0, 95, 255}, 27);
+    insert( root, { 0, 95, RGB_SCALE}, 27);
     insert( root, { 0, 135, 0}, 28);
     insert( root, { 0, 135, 95}, 29);
     insert( root, { 0, 135, 135}, 30);
     insert( root, { 0, 135, 175}, 31);
     insert( root, { 0, 135, 215}, 32);
-    insert( root, { 0, 135, 255}, 33);
+    insert( root, { 0, 135, RGB_SCALE}, 33);
     insert( root, { 0, 175, 0}, 34);
     insert( root, { 0, 175, 95}, 35);
     insert( root, { 0, 175, 135}, 36);
     insert( root, { 0, 175, 175}, 37);
     insert( root, { 0, 175, 215}, 38);
-    insert( root, { 0, 175, 255}, 39);
+    insert( root, { 0, 175, RGB_SCALE}, 39);
     insert( root, { 0, 215, 0}, 40);
     insert( root, { 0, 215, 95}, 41);
     insert( root, { 0, 215, 135}, 42);
     insert( root, { 0, 215, 175}, 43);
     insert( root, { 0, 215, 215}, 44);
-    insert( root, { 0, 215, 255}, 45);
-    insert( root, { 0, 255, 0}, 46);
-    insert( root, { 0, 255, 95}, 47);
-    insert( root, { 0, 255, 135}, 48);
-    insert( root, { 0, 255, 175}, 49);
-    insert( root, { 0, 255, 215}, 50);
-    insert( root, { 0, 255, 255}, 51);
+    insert( root, { 0, 215, RGB_SCALE}, 45);
+    insert( root, { 0, RGB_SCALE, 0}, 46);
+    insert( root, { 0, RGB_SCALE, 95}, 47);
+    insert( root, { 0, RGB_SCALE, 135}, 48);
+    insert( root, { 0, RGB_SCALE, 175}, 49);
+    insert( root, { 0, RGB_SCALE, 215}, 50);
+    insert( root, { 0, RGB_SCALE, RGB_SCALE}, 51);
     insert( root, { 95, 0, 0}, 52);
     insert( root, { 95, 0, 95}, 53);
     insert( root, { 95, 0, 135}, 54);
     insert( root, { 95, 0, 175}, 55);
     insert( root, { 95, 0, 215}, 56);
-    insert( root, { 95, 0, 255}, 57);
+    insert( root, { 95, 0, RGB_SCALE}, 57);
     insert( root, { 95, 95, 0}, 58);
     insert( root, { 95, 95, 95}, 59);
     insert( root, { 95, 95, 135}, 60);
     insert( root, { 95, 95, 175}, 61);
     insert( root, { 95, 95, 215}, 62);
-    insert( root, { 95, 95, 255}, 63);
+    insert( root, { 95, 95, RGB_SCALE}, 63);
     insert( root, { 95, 135, 0}, 64);
     insert( root, { 95, 135, 95}, 65);
     insert( root, { 95, 135, 135}, 66);
     insert( root, { 95, 135, 175}, 67);
     insert( root, { 95, 135, 215}, 68);
-    insert( root, { 95, 135, 255}, 69);
+    insert( root, { 95, 135, RGB_SCALE}, 69);
     insert( root, { 95, 175, 0}, 70);
     insert( root, { 95, 175, 95}, 71);
     insert( root, { 95, 175, 135}, 72);
     insert( root, { 95, 175, 175}, 73);
     insert( root, { 95, 175, 215}, 74);
-    insert( root, { 95, 175, 255}, 75);
+    insert( root, { 95, 175, RGB_SCALE}, 75);
     insert( root, { 95, 215, 0}, 76);
     insert( root, { 95, 215, 95}, 77);
     insert( root, { 95, 215, 135}, 78);
     insert( root, { 95, 215, 175}, 79);
     insert( root, { 95, 215, 215}, 80);
-    insert( root, { 95, 215, 255}, 81);
-    insert( root, { 95, 255, 0}, 82);
-    insert( root, { 95, 255, 95}, 83);
-    insert( root, { 95, 255, 135}, 84);
-    insert( root, { 95, 255, 175}, 85);
-    insert( root, { 95, 255, 215}, 86);
-    insert( root, { 95, 255, 255}, 87);
+    insert( root, { 95, 215, RGB_SCALE}, 81);
+    insert( root, { 95, RGB_SCALE, 0}, 82);
+    insert( root, { 95, RGB_SCALE, 95}, 83);
+    insert( root, { 95, RGB_SCALE, 135}, 84);
+    insert( root, { 95, RGB_SCALE, 175}, 85);
+    insert( root, { 95, RGB_SCALE, 215}, 86);
+    insert( root, { 95, RGB_SCALE, RGB_SCALE}, 87);
     insert( root, { 135, 0, 0}, 88);
     insert( root, { 135, 0, 95}, 89);
     insert( root, { 135, 0, 135}, 90);
     insert( root, { 135, 0, 175}, 91);
     insert( root, { 135, 0, 215}, 92);
-    insert( root, { 135, 0, 255}, 93);
+    insert( root, { 135, 0, RGB_SCALE}, 93);
     insert( root, { 135, 95, 0}, 94);
     insert( root, { 135, 95, 95}, 95);
     insert( root, { 135, 95, 135}, 96);
     insert( root, { 135, 95, 175}, 97);
     insert( root, { 135, 95, 215}, 98);
-    insert( root, { 135, 95, 255}, 99);
+    insert( root, { 135, 95, RGB_SCALE}, 99);
     insert( root, { 135, 135, 0}, 100);
     insert( root, { 135, 135, 95}, 101);
     insert( root, { 135, 135, 135}, 102);
     insert( root, { 135, 135, 175}, 103);
     insert( root, { 135, 135, 215}, 104);
-    insert( root, { 135, 135, 255}, 105);
+    insert( root, { 135, 135, RGB_SCALE}, 105);
     insert( root, { 135, 175, 0}, 106);
     insert( root, { 135, 175, 95}, 107);
     insert( root, { 135, 175, 135}, 108);
     insert( root, { 135, 175, 175}, 109);
     insert( root, { 135, 175, 215}, 110);
-    insert( root, { 135, 175, 255}, 111);
+    insert( root, { 135, 175, RGB_SCALE}, 111);
     insert( root, { 135, 215, 0}, 112);
     insert( root, { 135, 215, 95}, 113);
     insert( root, { 135, 215, 135}, 114);
     insert( root, { 135, 215, 175}, 115);
     insert( root, { 135, 215, 215}, 116);
-    insert( root, { 135, 215, 255}, 117);
-    insert( root, { 135, 255, 0}, 118);
-    insert( root, { 135, 255, 95}, 119);
-    insert( root, { 135, 255, 135}, 120);
-    insert( root, { 135, 255, 175}, 121);
-    insert( root, { 135, 255, 215}, 122);
-    insert( root, { 135, 255, 255}, 123);
+    insert( root, { 135, 215, RGB_SCALE}, 117);
+    insert( root, { 135, RGB_SCALE, 0}, 118);
+    insert( root, { 135, RGB_SCALE, 95}, 119);
+    insert( root, { 135, RGB_SCALE, 135}, 120);
+    insert( root, { 135, RGB_SCALE, 175}, 121);
+    insert( root, { 135, RGB_SCALE, 215}, 122);
+    insert( root, { 135, RGB_SCALE, RGB_SCALE}, 123);
     insert( root, { 175, 0, 0}, 124);
     insert( root, { 175, 0, 95}, 125);
     insert( root, { 175, 0, 135}, 126);
     insert( root, { 175, 0, 175}, 127);
     insert( root, { 175, 0, 215}, 128);
-    insert( root, { 175, 0, 255}, 129);
+    insert( root, { 175, 0, RGB_SCALE}, 129);
     insert( root, { 175, 95, 0}, 130);
     insert( root, { 175, 95, 95}, 131);
     insert( root, { 175, 95, 135}, 132);
     insert( root, { 175, 95, 175}, 133);
     insert( root, { 175, 95, 215}, 134);
-    insert( root, { 175, 95, 255}, 135);
+    insert( root, { 175, 95, RGB_SCALE}, 135);
     insert( root, { 175, 135, 0}, 136);
     insert( root, { 175, 135, 95}, 137);
     insert( root, { 175, 135, 135}, 138);
     insert( root, { 175, 135, 175}, 139);
     insert( root, { 175, 135, 215}, 140);
-    insert( root, { 175, 135, 255}, 141);
+    insert( root, { 175, 135, RGB_SCALE}, 141);
     insert( root, { 175, 175, 0}, 142);
     insert( root, { 175, 175, 95}, 143);
     insert( root, { 175, 175, 135}, 144);
     insert( root, { 175, 175, 175}, 145);
     insert( root, { 175, 175, 215}, 146);
-    insert( root, { 175, 175, 255}, 147);
+    insert( root, { 175, 175, RGB_SCALE}, 147);
     insert( root, { 175, 215, 0}, 148);
     insert( root, { 175, 215, 95}, 149);
     insert( root, { 175, 215, 135}, 150);
     insert( root, { 175, 215, 175}, 151);
     insert( root, { 175, 215, 215}, 152);
-    insert( root, { 175, 215, 255}, 153);
-    insert( root, { 175, 255, 0}, 154);
-    insert( root, { 175, 255, 95}, 155);
-    insert( root, { 175, 255, 135}, 156);
-    insert( root, { 175, 255, 175}, 157);
-    insert( root, { 175, 255, 215}, 158);
-    insert( root, { 175, 255, 255}, 159);
+    insert( root, { 175, 215, RGB_SCALE}, 153);
+    insert( root, { 175, RGB_SCALE, 0}, 154);
+    insert( root, { 175, RGB_SCALE, 95}, 155);
+    insert( root, { 175, RGB_SCALE, 135}, 156);
+    insert( root, { 175, RGB_SCALE, 175}, 157);
+    insert( root, { 175, RGB_SCALE, 215}, 158);
+    insert( root, { 175, RGB_SCALE, RGB_SCALE}, 159);
     insert( root, { 215, 0, 0}, 160);
     insert( root, { 215, 0, 95}, 161);
     insert( root, { 215, 0, 135}, 162);
     insert( root, { 215, 0, 175}, 163);
     insert( root, { 215, 0, 215}, 164);
-    insert( root, { 215, 0, 255}, 165);
+    insert( root, { 215, 0, RGB_SCALE}, 165);
     insert( root, { 215, 95, 0}, 166);
     insert( root, { 215, 95, 95}, 167);
     insert( root, { 215, 95, 135}, 168);
     insert( root, { 215, 95, 175}, 169);
     insert( root, { 215, 95, 215}, 170);
-    insert( root, { 215, 95, 255}, 171);
+    insert( root, { 215, 95, RGB_SCALE}, 171);
     insert( root, { 215, 135, 0}, 172);
     insert( root, { 215, 135, 95}, 173);
     insert( root, { 215, 135, 135}, 174);
     insert( root, { 215, 135, 175}, 175);
     insert( root, { 215, 135, 215}, 176);
-    insert( root, { 215, 135, 255}, 177);
+    insert( root, { 215, 135, RGB_SCALE}, 177);
     insert( root, { 215, 175, 0}, 178);
     insert( root, { 215, 175, 95}, 179);
     insert( root, { 215, 175, 135}, 180);
     insert( root, { 215, 175, 175}, 181);
     insert( root, { 215, 175, 215}, 182);
-    insert( root, { 215, 175, 255}, 183);
+    insert( root, { 215, 175, RGB_SCALE}, 183);
     insert( root, { 215, 215, 0}, 184);
     insert( root, { 215, 215, 95}, 185);
     insert( root, { 215, 215, 135}, 186);
     insert( root, { 215, 215, 175}, 187);
     insert( root, { 215, 215, 215}, 188);
-    insert( root, { 215, 215, 255}, 189);
-    insert( root, { 215, 255, 0}, 190);
-    insert( root, { 215, 255, 95}, 191);
-    insert( root, { 215, 255, 135}, 192);
-    insert( root, { 215, 255, 175}, 193);
-    insert( root, { 215, 255, 215}, 194);
-    insert( root, { 215, 255, 255}, 195);
-    insert( root, { 255, 0, 0}, 196);
-    insert( root, { 255, 0, 95}, 197);
-    insert( root, { 255, 0, 135}, 198);
-    insert( root, { 255, 0, 175}, 199);
-    insert( root, { 255, 0, 215}, 200);
-    insert( root, { 255, 0, 255}, 201);
-    insert( root, { 255, 95, 0}, 202);
-    insert( root, { 255, 95, 95}, 203);
-    insert( root, { 255, 95, 135}, 204);
-    insert( root, { 255, 95, 175}, 205);
-    insert( root, { 255, 95, 215}, 206);
-    insert( root, { 255, 95, 255}, 207);
-    insert( root, { 255, 135, 0}, 208);
-    insert( root, { 255, 135, 95}, 209);
-    insert( root, { 255, 135, 135}, 210);
-    insert( root, { 255, 135, 175}, 211);
-    insert( root, { 255, 135, 215}, 212);
-    insert( root, { 255, 135, 255}, 213);
-    insert( root, { 255, 175, 0}, 214);
-    insert( root, { 255, 175, 95}, 215);
-    insert( root, { 255, 175, 135}, 216);
-    insert( root, { 255, 175, 175}, 217);
-    insert( root, { 255, 175, 215}, 218);
-    insert( root, { 255, 175, 255}, 219);
-    insert( root, { 255, 215, 0}, 220);
-    insert( root, { 255, 215, 95}, 221);
-    insert( root, { 255, 215, 135}, 222);
-    insert( root, { 255, 215, 175}, 223);
-    insert( root, { 255, 215, 215}, 224);
-    insert( root, { 255, 215, 255}, 225);
-    insert( root, { 255, 255, 0}, 226);
-    insert( root, { 255, 255, 95}, 227);
-    insert( root, { 255, 255, 135}, 228);
-    insert( root, { 255, 255, 175}, 229);
-    insert( root, { 255, 255, 215}, 230);
-    insert( root, { 255, 255, 255}, 231);
+    insert( root, { 215, 215, RGB_SCALE}, 189);
+    insert( root, { 215, RGB_SCALE, 0}, 190);
+    insert( root, { 215, RGB_SCALE, 95}, 191);
+    insert( root, { 215, RGB_SCALE, 135}, 192);
+    insert( root, { 215, RGB_SCALE, 175}, 193);
+    insert( root, { 215, RGB_SCALE, 215}, 194);
+    insert( root, { 215, RGB_SCALE, RGB_SCALE}, 195);
+    insert( root, { RGB_SCALE, 0, 0}, 196);
+    insert( root, { RGB_SCALE, 0, 95}, 197);
+    insert( root, { RGB_SCALE, 0, 135}, 198);
+    insert( root, { RGB_SCALE, 0, 175}, 199);
+    insert( root, { RGB_SCALE, 0, 215}, 200);
+    insert( root, { RGB_SCALE, 0, RGB_SCALE}, 201);
+    insert( root, { RGB_SCALE, 95, 0}, 202);
+    insert( root, { RGB_SCALE, 95, 95}, 203);
+    insert( root, { RGB_SCALE, 95, 135}, 204);
+    insert( root, { RGB_SCALE, 95, 175}, 205);
+    insert( root, { RGB_SCALE, 95, 215}, 206);
+    insert( root, { RGB_SCALE, 95, RGB_SCALE}, 207);
+    insert( root, { RGB_SCALE, 135, 0}, 208);
+    insert( root, { RGB_SCALE, 135, 95}, 209);
+    insert( root, { RGB_SCALE, 135, 135}, 210);
+    insert( root, { RGB_SCALE, 135, 175}, 211);
+    insert( root, { RGB_SCALE, 135, 215}, 212);
+    insert( root, { RGB_SCALE, 135, RGB_SCALE}, 213);
+    insert( root, { RGB_SCALE, 175, 0}, 214);
+    insert( root, { RGB_SCALE, 175, 95}, 215);
+    insert( root, { RGB_SCALE, 175, 135}, 216);
+    insert( root, { RGB_SCALE, 175, 175}, 217);
+    insert( root, { RGB_SCALE, 175, 215}, 218);
+    insert( root, { RGB_SCALE, 175, RGB_SCALE}, 219);
+    insert( root, { RGB_SCALE, 215, 0}, 220);
+    insert( root, { RGB_SCALE, 215, 95}, 221);
+    insert( root, { RGB_SCALE, 215, 135}, 222);
+    insert( root, { RGB_SCALE, 215, 175}, 223);
+    insert( root, { RGB_SCALE, 215, 215}, 224);
+    insert( root, { RGB_SCALE, 215, RGB_SCALE}, 225);
+    insert( root, { RGB_SCALE, RGB_SCALE, 0}, 226);
+    insert( root, { RGB_SCALE, RGB_SCALE, 95}, 227);
+    insert( root, { RGB_SCALE, RGB_SCALE, 135}, 228);
+    insert( root, { RGB_SCALE, RGB_SCALE, 175}, 229);
+    insert( root, { RGB_SCALE, RGB_SCALE, 215}, 230);
+    insert( root, { RGB_SCALE, RGB_SCALE, RGB_SCALE}, 231);
     insert( root, { 8, 8, 8}, 232);
     insert( root, { 18, 18, 18}, 233);
     insert( root, { 28, 28, 28}, 234);
@@ -1571,7 +1653,7 @@ int main( int ac, char *av[])
     insert( root, { 208, 208, 208}, 252);
     insert( root, { 218, 218, 218}, 253);
     insert( root, { 228, 228, 228}, 254);
-    insert( root, { 238, 238, 238}, 255);
+    insert( root, { 238, 238, 238}, RGB_SCALE);
 
     FT_Library    library;
     FT_Face       face;
