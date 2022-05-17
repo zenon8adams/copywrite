@@ -32,7 +32,6 @@
 #include <pngconf.h>
 #include <vector>
 #include <functional>
-#include "pigment-mixing/mixbox.h"
 
 #ifndef PNG_STDIO_SUPPORTED
 typedef FILE                * png_FILE_p;
@@ -122,7 +121,7 @@ static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
 
 std::vector<ColorRule> parseColorRule( const char *rule);
 
-uint32_t extractColor(const char *&rule, int8_t *ratio = nullptr);
+uint32_t extractColor( const char *&rule);
 
 uint32_t mixColor( const char *&ctx);
 

@@ -62,6 +62,7 @@
 #define RGBA( red, green, blue, alpha) ( ( ( uint32_t)( red)) << 24u |\
                                           ( ( uint32_t)( green)) << 16u | ( ( uint32_t)( blue)) << 8u | alpha)
 #define RGB( red, green, blue) RGBA( red, green, blue, 0u)
+#define SCALE_RGB( color, scale) RGB( RED( color) * ( scale), GREEN( color) * ( scale), BLUE( color) * ( scale))
 
 #define XYZ_SCALE 775
 #define RGB_SCALE 255
@@ -341,7 +342,7 @@ uint32_t colorLerp( uint32_t lcolor, uint32_t rcolor, double progress)
     uint32_t r = RED( lcolor)   * ( 1.0 - progress) + RED( rcolor)   * progress,
              g = GREEN( lcolor) * ( 1.0 - progress) + GREEN( rcolor) * progress,
              b = BLUE( lcolor)  * ( 1.0 - progress) + BLUE( rcolor)  * progress,
-             a = ALPHA( lcolor) * ( 1.0 - progress) + BLUE( rcolor)  * progress;
+             a = ALPHA( lcolor) * ( 1.0 - progress) + ALPHA( rcolor)  * progress;
 
     return RGBA( r, g, b, a);
 }
@@ -799,10 +800,10 @@ bool ltrim( const char*& p)
     return true;
 }
 
-uint32_t extractColor(const char *&rule, int8_t *ratio)
+uint32_t extractColor( const char *&rule)
 {
     ltrim( rule);
-    int8_t cratio{};
+    int8_t cratio = -1;
     const char *prev = rule;
     if( *rule == '#')
         ++rule;
@@ -818,6 +819,7 @@ uint32_t extractColor(const char *&rule, int8_t *ratio)
             if( *++rule == ':')
             {
                 cratio = getNumber( ++rule);
+                cratio = cratio < 0 ? 0 : cratio;
                 color_name |= 0xFFu;
             }
             else
@@ -827,11 +829,16 @@ uint32_t extractColor(const char *&rule, int8_t *ratio)
                     cratio = getNumber( ++rule);
             }
 
-            if( ratio != nullptr)
-                *ratio = cratio;
+            if( cratio != -1)
+            {
+                cratio = MIN( cratio, 100);
+                double cscale = cratio / 100.0;
+                color_name = SCALE_RGB( color_name, cscale) | ALPHA( color_name);
+            }
 
             return color_name;
         }
+
 
         return color_name | 0xFFu;
     }
@@ -859,8 +866,10 @@ uint32_t extractColor(const char *&rule, int8_t *ratio)
         if( *rule == ':')
         {
             cratio = getNumber( ++rule);
-            if( ratio != nullptr)
-                *ratio = cratio;
+            cratio = cratio < 0 ? 0 : cratio;
+            cratio = MIN( cratio, 100);
+            double cscale = cratio / 100.0;
+            ccolor = SCALE_RGB( ccolor, cscale);
         }
     }
     else
@@ -925,7 +934,7 @@ uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor)
 uint32_t mixColor( const char *&ctx)
 {
     uint32_t lcolor{}, rcolor{};
-    int8_t ratio{};
+    uint8_t alpha = 0xFFu;
     char op = '\0';
     while( ltrim( ctx) && *ctx != ')')
     {
@@ -933,7 +942,7 @@ uint32_t mixColor( const char *&ctx)
             op = *ctx;
         else
         {
-            op ? rcolor = extractColor(ctx, &ratio) : lcolor = extractColor(ctx, &ratio);
+            op ? rcolor = extractColor(ctx) : lcolor = extractColor(ctx);
             ctx -= 1;
         }
 
@@ -942,14 +951,11 @@ uint32_t mixColor( const char *&ctx)
 
     ctx += 1;
 
-    if( ratio == 0 || ratio > 100)
-        ratio = 50;
+    if( ltrim( ctx) && *ctx == ':')
+        alpha = getNumber( ++ctx, 16);
 
-    double progress = ratio / 100.0;
     if( op == '+') // Additive color mixing
-    {
-        return mixRgb( lcolor, rcolor) | ( uint32_t)(( 1 - progress) * ALPHA( lcolor) + progress * ALPHA( rcolor));
-    }
+        return mixRgb( lcolor, rcolor) | alpha;
     else if( op == '-')
     {
         auto lred   = RGB_SCALE - RED( lcolor),
@@ -963,7 +969,7 @@ uint32_t mixColor( const char *&ctx)
              g = RGB_SCALE - std::sqrt( .5 * ( lgreen * lgreen + rgreen * rgreen)),
              b = RGB_SCALE - std::sqrt( .5 * ( lblue * lblue + rblue * rblue));
 
-        return RGBA( r, g, b, ( uint32_t)( ALPHA( lcolor) * ( 1 - progress) + progress * ALPHA( rcolor)));
+        return RGBA( r, g, b, alpha);
     }
 
     return lcolor;
@@ -1077,7 +1083,8 @@ std::vector<ColorRule> parseColorRule( const char *rule)
                         ++rule;
                         if( *rule != '>')
                         {
-                            //TODO: Report error!
+                            fprintf( stderr, "Expected '>' near -> %s", rule);
+                            exit( EXIT_FAILURE);
                         }
 
                         if( ltrim( ++rule) && *rule == '(')
@@ -1086,7 +1093,8 @@ std::vector<ColorRule> parseColorRule( const char *rule)
                             ccolor.ecolor = extractColor(rule);
                         else
                         {
-                            //TODO: Report error!
+                            fprintf( stderr, "Incomplete color specification");
+                            exit( EXIT_FAILURE);
                         }
 
                         fillEasingMode(ccolor.color_easing_fn, rule, '}');
@@ -1117,6 +1125,7 @@ std::vector<ColorRule> parseColorRule( const char *rule)
 
 void fillEasingMode( std::function<float(float)> &function, const char *&rule, char eoc)
 {
+    // Reference: https://easings.net/
     const auto easeOutBounce = []( float progress)
     {
         const float n1 = 7.5625f;
