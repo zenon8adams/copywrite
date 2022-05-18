@@ -35,6 +35,9 @@
 
 #define MAX(x, y) ((x) ^ (((x) ^ (y)) & -((x) < (y))))
 #define MIN(x, y) ((x) ^ (((x) ^ (y)) & -((x) > (y))))
+/*#define MOD3( value) ({\
+    auto dword = ( ( value) >> 16)\
+})*/
 
 #define ALLOWANCE 6
 #define FPRINTFD( fmt, argument, include) ({ \
@@ -172,7 +175,8 @@ size_t countCharacters( const char *pw)
     return value;
 }
 
-void render( const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image, const char *color_rule, KDNode *root)
+void render( const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
+             const char *color_rule, KDNode *root, BKNode *bkroot)
 {
     Glyph *head = nullptr;
     FT_Int width 	= 0, // Total width of the buffer
@@ -184,7 +188,7 @@ void render( const char *word, FT_Face face, const char *raster_glyph, FILE *des
 
     FT_Error error;
 
-    auto rules = color_rule == nullptr ? std::vector<ColorRule>{} : parseColorRule( color_rule);
+    auto rules = color_rule == nullptr ? std::vector<ColorRule>{} : parseColorRule( color_rule, bkroot);
 
     size_t index = 0, nchars = countCharacters( word);
     for( const char *pw = word; *pw;)
@@ -818,7 +822,9 @@ uint32_t extractColor( const char *&rule)
         {
             if( *++rule == ':')
             {
-                cratio = getNumber( ++rule);
+
+
+        cratio = getNumber( ++rule);
                 cratio = cratio < 0 ? 0 : cratio;
                 color_name |= 0xFFu;
             }
@@ -976,7 +982,7 @@ uint32_t mixColor( const char *&ctx)
 }
 
 // Format example: [1..2:10-20-10 -ease-in-sine]{(Black:ff + Green::50) -> (Brown:ff:30 + Red:4f:50) -ease-in-out-sine}
-std::vector<ColorRule> parseColorRule( const char *rule)
+std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
 {
     const char *prev = nullptr;
     std::vector<ColorRule> rules;
@@ -1046,7 +1052,7 @@ std::vector<ColorRule> parseColorRule( const char *rule)
                     }
 
                     if( ltrim( rule) && *rule == '-')
-                        fillEasingMode(ccolor.font_easing_fn, ++rule, ']');
+                        fillEasingMode(ccolor.font_easing_fn, ++rule, bkroot, ']');
                 }
 
                 if( *rule == ']')
@@ -1097,7 +1103,7 @@ std::vector<ColorRule> parseColorRule( const char *rule)
                             exit( EXIT_FAILURE);
                         }
 
-                        fillEasingMode(ccolor.color_easing_fn, rule, '}');
+                        fillEasingMode(ccolor.color_easing_fn, rule, bkroot, '}');
                     }
 
                     if( *rule == '}')
@@ -1123,7 +1129,90 @@ std::vector<ColorRule> parseColorRule( const char *rule)
     return rules;
 }
 
-void fillEasingMode( std::function<float(float)> &function, const char *&rule, char eoc)
+uint32_t editDistance( const std::string& main, const std::string& ref)
+{
+    auto mlength = main.size() + 1, rlength = ref.size() + 1;
+    uint8_t lookup[ mlength][ rlength];
+
+    for( size_t j = 0; j < rlength; ++j)
+        lookup[ 0][ j] = j;
+    for( size_t i = 0; i < mlength; ++i)
+        lookup[ i][ 0] = i;
+
+    for ( size_t j = 1; j < mlength; ++j)
+    {
+        for ( size_t i = 1; i < rlength; ++i)
+        {
+            lookup[ j][ i] = std::min( lookup[ j - 1][ i] + 1,
+                                       std::min( lookup[ j][ i - 1] + 1,
+                                                 lookup[ j - 1][ i - 1] + ( tolower( main[ j - 1]) != tolower( ref[ i - 1]))));
+        }
+    }
+
+    return lookup[ mlength - 1][ rlength - 1];
+}
+
+void insert( BKNode *&node, const char *word)
+{
+    if( node == nullptr)
+    {
+        node = new BKNode{word};
+        return;
+    }
+
+    auto dist = editDistance( node->word, word);
+
+    if( dist >= MAX_DIFF_TOLERANCE)
+        return;
+
+    if( node->next[ dist] == nullptr)
+        insert( node->next[ dist], word);
+    else
+    {
+        auto ndist = editDistance( node->next[ dist]->word, word);
+        insert( node->next[ dist]->next[ ndist], word);
+    }
+}
+
+void free( BKNode *&node)
+{
+    if( node == nullptr)
+        return;
+
+    for ( auto &next : node->next)
+    {
+        free( next);
+        delete next; next = nullptr;
+    }
+
+    delete node; node = nullptr;
+}
+
+void findWordMatch( BKNode *node, const char *word, int threshold, std::vector<std::string>& matches)
+{
+    if( node == nullptr)
+        return;
+
+    int dist = editDistance( node->word, word),
+            mindist = MAX( dist - threshold, 1),
+            maxdist = MIN( dist + threshold, MAX_DIFF_TOLERANCE - 1);
+
+    if( dist <= threshold)
+        matches.emplace_back(node->word);
+
+    for( int i = mindist; i <= maxdist; ++i)
+        findWordMatch( node->next[ i], word, threshold, matches);
+}
+
+std::vector<std::string> findWordMatch( BKNode *node, const char *word, int threshold = 4)
+{
+    std::vector<std::string> matches;
+    findWordMatch( node, word, threshold, matches);
+
+    return matches;
+}
+
+void fillEasingMode( std::function<float(float)> &function, const char *&rule, BKNode *bkroot, char eoc)
 {
     // Reference: https://easings.net/
     const auto easeOutBounce = []( float progress)
@@ -1371,7 +1460,17 @@ void fillEasingMode( std::function<float(float)> &function, const char *&rule, c
     if( fn != easingLookup.cend())
         function = fn->second;
     else
+    {
+        fprintf( stderr, "Unknown easing function specified! Default easing function will be used\n");
+        auto matches = findWordMatch( bkroot, easing.c_str());
+        if( !matches.empty())
+        {
+            fprintf( stderr, "Easing function suggestions based on your search: \n");
+            for ( size_t i = 0; i < matches.size(); ++i)
+                fprintf( stderr, "%zu]. %s\n", i + 1, matches[ i].c_str());
+        }
         function = []( float progress){ return progress; };
+    }
 }
 
 void requestFontList()
@@ -1666,6 +1765,40 @@ int main( int ac, char *av[])
     insert( root, { 228, 228, 228}, 254);
     insert( root, { 238, 238, 238}, RGB_SCALE);
 
+
+    BKNode *bkroot = nullptr;
+
+    insert(bkroot, "easeInSine");
+    insert(bkroot, "easeOutSine");
+    insert(bkroot, "easeInOutSine");
+    insert(bkroot, "easeInQuad");
+    insert(bkroot, "easeOutQuad");
+    insert(bkroot, "easeInOutQuad");
+    insert(bkroot, "easeInCubic");
+    insert(bkroot, "easeOutCubic");
+    insert(bkroot, "easeInOutCubic");
+    insert(bkroot, "easeInQuart");
+    insert(bkroot, "easeOutQuart");
+    insert(bkroot, "easeInOutQuart");
+    insert(bkroot, "easeInQuint");
+    insert(bkroot, "easeOutQuint");
+    insert(bkroot, "easeInOutQuint");
+    insert(bkroot, "easeInExpo");
+    insert(bkroot, "easeOutExpo");
+    insert(bkroot, "easeInOutExpo");
+    insert(bkroot, "easeInCirc");
+    insert(bkroot, "easeOutCirc");
+    insert(bkroot, "easeInOutCirc");
+    insert(bkroot, "easeInBack");
+    insert(bkroot, "easeOutBack");
+    insert(bkroot, "easeInOutBack");
+    insert(bkroot, "easeInElastic");
+    insert(bkroot, "easeOutElastic");
+    insert(bkroot, "easeInOutElastic");
+    insert(bkroot, "easeInBounce");
+    insert(bkroot, "easeOutBounce");
+    insert(bkroot, "easeInOutBounce");
+
     FT_Library    library;
     FT_Face       face;
     FT_Error      error;
@@ -1788,11 +1921,12 @@ int main( int ac, char *av[])
         exit( EXIT_FAILURE);
     }
 
-    render( word, face, raster_glyph, screen, write_as_image, color_rule, root);
+    render( word, face, raster_glyph, screen, write_as_image, color_rule, root, bkroot);
 
     FT_Done_Face( face);
     FT_Done_FreeType( library);
     free( root);
+    free(bkroot);
 
     return 0;
 }

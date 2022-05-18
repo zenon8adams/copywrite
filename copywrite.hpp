@@ -17,7 +17,7 @@
 /*                                                                         */
 /*                                                                         */
 /*  This file is part of the Copywrite project, and may only be used,      */
-/*  modified, and distributed under the terms of the FreeType project      */
+/*  modified, and distributed under the terms of the GNU project           */
 /*  license, LICENSE.TXT.  By continuing to use, modify, or distribute     */
 /*  this file you indicate that you have read the license and              */
 /*  understand and accept it fully.                                        */
@@ -38,6 +38,8 @@ typedef FILE                * png_FILE_p;
 #endif
 
 #include  FT_FREETYPE_H
+
+#define MAX_DIFF_TOLERANCE 10
 
 unsigned char *toMonochrome(FT_Bitmap bitmap);
 
@@ -68,6 +70,12 @@ struct KDNode
     size_t index = -1;
     KDNode *left = nullptr,
             *right = nullptr;
+};
+
+struct BKNode
+{
+    const char *word = nullptr;
+    BKNode *next[ MAX_DIFF_TOLERANCE]{};
 };
 
 /*
@@ -119,7 +127,7 @@ static size_t byteCount( uint8_t c );
 
 static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
 
-std::vector<ColorRule> parseColorRule( const char *rule);
+std::vector<ColorRule> parseColorRule(const char *rule, BKNode *bkroot);
 
 uint32_t extractColor( const char *&rule);
 
@@ -127,7 +135,7 @@ uint32_t mixColor( const char *&ctx);
 
 uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor);
 
-void fillEasingMode(std::function<float(float)> &function, const char *&rule, char eoc);
+void fillEasingMode(std::function<float(float)> &function, const char *&rule, BKNode *bkroot, char eoc);
 
 uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress);
 
@@ -158,7 +166,7 @@ bool ltrim( const char*& p);
 uint32_t getNumber( const char *&ctx, uint8_t base = 10);
 
 void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
-       const char *color_rule, KDNode *root);
+            const char *color_rule, KDNode *root, BKNode *bkroot);
 
 void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height);
 
