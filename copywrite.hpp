@@ -165,8 +165,9 @@ bool ltrim( const char*& p);
 
 uint32_t getNumber( const char *&ctx, uint8_t base = 10);
 
-void render(const char *word, FT_Face face, const char *raster_glyph, FILE *destination, bool as_image,
-            const char *color_rule, KDNode *root, BKNode *bkroot);
+void
+render(const char *word, FT_Face face, size_t default_font_size, const char *raster_glyph, FILE *destination, bool as_image,
+       const char *color_rule, KDNode *root, BKNode *bkroot);
 
 void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height);
 
