@@ -453,8 +453,9 @@ void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster
             uint64_t byte =  out[ j * width + i];
             uint32_t color = byte & 0xFFFFFFFFu;
             bool is_transparent = ( color & 0xFFu) == 0u;
-            auto nmatch = approximate( root, {( uint8_t)( color >> 24u),
-                                             ( uint8_t)( ( color >> 16u) & 0xFFu), ( uint8_t)( ( color >> 8u) & 0xFFu)}, initial);
+            auto nmatch = approximate( root, {( uint8_t)RED( color),
+                                              ( uint8_t)GREEN( color),
+                                              ( uint8_t)BLUE( color)}, initial);
             fmt[     offset] = nmatch->index / 100 + '0';
             fmt[ offset + 1] = ( nmatch->index - ( fmt[ offset] - '0') * 100) / 10 + '0';
             fmt[ offset + 2] = nmatch->index % 10  + '0';
