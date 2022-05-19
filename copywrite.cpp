@@ -795,7 +795,7 @@ uint32_t decodeColorName( const char *&ctx, BKNode *bkroot)
     else
     {
         fprintf( stderr, "Unable to find match for `%s`\n", name.c_str());
-        auto matches = findWordMatch( bkroot, name.c_str(), 1);
+        auto matches = findWordMatch( bkroot, name.c_str(), 3);
         if( !matches.empty())
         {
             fprintf( stderr, "The following colors match your search:\n");
@@ -1972,8 +1972,7 @@ int main( int ac, char *av[])
     FT_Error      error;
 
     /*
-     * Schema:
-     *  av[ 0] [1..2:10-20-10 -ease-in-sine]{(Black:ff + Green::50):40 -> (Brown:ff:30 + Red:4f:50):50 -ease-in-out-sine} text
+     * Schema: av[ 0] [--list-fonts|--font-file=FILE [--font-size=NUM] [--color-rule=RULE] [--drawing-character=CHAR] [--output FILE]] text
      */
 
     const char *fontfile = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
