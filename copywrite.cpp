@@ -32,6 +32,8 @@
 #include <unordered_map>
 #include <functional>
 #include <random>
+#include "colors_defs.hpp"
+#include "easing_defs.hpp"
 
 #define MAX(x, y) ((x) ^ (((x) ^ (y)) & -((x) < (y))))
 #define MIN(x, y) ((x) ^ (((x) ^ (y)) & -((x) > (y))))
@@ -106,7 +108,7 @@ Glyph extract( FT_GlyphSlot slot)
 	Glyph glyph;
 	glyph.width = slot->bitmap.width;
 	glyph.height = slot->bitmap.rows;
-	glyph.xstep = slot->advance.x >> 6u;
+	glyph.xstep = slot->advance.x / 64;
 	glyph.pixmap = toMonochrome(slot->bitmap);
 	glyph.origin.x = slot->bitmap_left;
 	glyph.origin.y = glyph.height - slot->bitmap_top;
@@ -635,154 +637,154 @@ uint32_t decodeColorName( const char *&ctx)
 {
     static const std::unordered_map<std::string, uint32_t> nameLookup =
     {
-            { "aliceblue", 0xf0f8ff00u},
-            { "antiquewhite", 0xfaebd700u},
-            { "aqua", 0x00ffff00u},
-            { "aquamarine", 0x7fffd400u},
-            { "azure", 0xf0ffff00u},
-            { "beige", 0xf5f5dc00u},
-            { "bisque", 0xffe4c400u},
-            { "black", 0x00000000u},
-            { "blanchedalmond", 0xffebcd00u},
-            { "blue", 0x0000ff00u},
-            { "blueviolet", 0x8a2be200u},
-            { "brown", 0xa52a2a00u},
-            { "burlywood", 0xdeb88700u},
-            { "cadetblue", 0x5f9ea000u},
-            { "chartreuse", 0x7fff0000u},
-            { "chocolate", 0xd2691e00u},
-            { "coral", 0xff7f5000u},
-            { "cornflowerblue", 0x6495ed00u},
-            { "cornsilk", 0xfff8dc00u},
-            { "crimson", 0xdc143c00u},
-            { "cyan", 0x00ffff00u},
-            { "darkblue", 0x00008b00u},
-            { "darkcyan", 0x008b8b00u},
-            { "darkgoldenrod", 0xb8860b00u},
-            { "darkgray", 0xa9a9a900u},
-            { "darkgrey", 0xa9a9a900u},
-            { "darkgreen", 0x00640000u},
-            { "darkkhaki", 0xbdb76b00u},
-            { "darkmagenta", 0x8b008b00u},
-            { "darkolivegreen", 0x556b2f00u},
-            { "darkorange", 0xff8c0000u},
-            { "darkorchid", 0x9932cc00u},
-            { "darkred", 0x8b000000u},
-            { "darksalmon", 0xe9967a00u},
-            { "darkseagreen", 0x8fbc8f00u},
-            { "darkslateblue", 0x483d8b00u},
-            { "darkslategray", 0x2f4f4f00u},
-            { "darkslategrey", 0x2f4f4f00u},
-            { "darkturquoise", 0x00ced100u},
-            { "darkviolet", 0x9400d300u},
-            { "deeppink", 0xff149300u},
-            { "deepskyblue", 0x00bfff00u},
-            { "dimgray", 0x69696900u},
-            { "dimgrey", 0x69696900u},
-            { "dodgerblue", 0x1e90ff00u},
-            { "firebrick", 0xb2222200u},
-            { "floralwhite", 0xfffaf000u},
-            { "forestgreen", 0x228b2200u},
-            { "fuchsia", 0xff00ff00u},
-            { "gainsboro", 0xdcdcdc00u},
-            { "ghostwhite", 0xf8f8ff00u},
-            { "gold", 0xffd70000u},
-            { "goldenrod", 0xdaa52000u},
-            { "gray", 0x80808000u},
-            { "grey", 0x80808000u},
-            { "green", 0x00800000u},
-            { "greenyellow", 0xadff2f00u},
-            { "honeydew", 0xf0fff000u},
-            { "hotpink", 0xff69b400u},
-            { "indianred", 0xcd5c5c00u},
-            { "indigo", 0x4b008200u},
-            { "ivory", 0xfffff000u},
-            { "khaki", 0xf0e68c00u},
-            { "lavender", 0xe6e6fa00u},
-            { "lavenderblush", 0xfff0f500u},
-            { "lawngreen", 0x7cfc0000u},
-            { "lemonchiffon", 0xfffacd00u},
-            { "lightblue", 0xadd8e600u},
-            { "lightcoral", 0xf0808000u},
-            { "lightcyan", 0xe0ffff00u},
-            { "lightgoldenrodyellow", 0xfafad200u},
-            { "lightgray", 0xd3d3d300u},
-            { "lightgrey", 0xd3d3d300u},
-            { "lightgreen", 0x90ee9000u},
-            { "lightpink", 0xffb6c100u},
-            { "lightsalmon", 0xffa07a00u},
-            { "lightseagreen", 0x20b2aa00u},
-            { "lightskyblue", 0x87cefa00u},
-            { "lightslategray", 0x77889900u},
-            { "lightslategrey", 0x77889900u},
-            { "lightsteelblue", 0xb0c4de00u},
-            { "lightyellow", 0xffffe000u},
-            { "lime", 0x00ff0000u},
-            { "limegreen", 0x32cd3200u},
-            { "linen", 0xfaf0e600u},
-            { "magenta", 0xff00ff00u},
-            { "maroon", 0x80000000u},
-            { "mediumaquamarine", 0x66cdaa00u},
-            { "mediumblue", 0x0000cd00u},
-            { "mediumorchid", 0xba55d300u},
-            { "mediumpurple", 0x9370db00u},
-            { "mediumseagreen", 0x3cb37100u},
-            { "mediumslateblue", 0x7b68ee00u},
-            { "mediumspringgreen", 0x00fa9a00u},
-            { "mediumturquoise", 0x48d1cc00u},
-            { "mediumvioletred", 0xc7158500u},
-            { "midnightblue", 0x19197000u},
-            { "mintcream", 0xf5fffa00u},
-            { "mistyrose", 0xffe4e100u},
-            { "moccasin", 0xffe4b500u},
-            { "navajowhite", 0xffdead00u},
-            { "navy", 0x00008000u},
-            { "oldlace", 0xfdf5e600u},
-            { "olive", 0x80800000u},
-            { "olivedrab", 0x6b8e2300u},
-            { "orange", 0xffa50000u},
-            { "orangered", 0xff450000u},
-            { "orchid", 0xda70d600u},
-            { "palegoldenrod", 0xeee8aa00u},
-            { "palegreen", 0x98fb9800u},
-            { "paleturquoise", 0xafeeee00u},
-            { "palevioletred", 0xdb709300u},
-            { "papayawhip", 0xffefd500u},
-            { "peachpuff", 0xffdab900u},
-            { "peru", 0xcd853f00u},
-            { "pink", 0xffc0cb00u},
-            { "plum", 0xdda0dd00u},
-            { "powderblue", 0xb0e0e600u},
-            { "purple", 0x80008000u},
-            { "rebeccapurple", 0x66339900u},
-            { "red", 0xff000000u},
-            { "rosybrown", 0xbc8f8f00u},
-            { "royalblue", 0x4169e100u},
-            { "saddlebrown", 0x8b451300u},
-            { "salmon", 0xfa807200u},
-            { "sandybrown", 0xf4a46000u},
-            { "seagreen", 0x2e8b5700u},
-            { "seashell", 0xfff5ee00u},
-            { "sienna", 0xa0522d00u},
-            { "silver", 0xc0c0c000u},
-            { "skyblue", 0x87ceeb00u},
-            { "slateblue", 0x6a5acd00u},
-            { "slategray", 0x70809000u},
-            { "slategrey", 0x70809000u},
-            { "snow", 0xfffafa00u},
-            { "springgreen", 0x00ff7f00u},
-            { "steelblue", 0x4682b400u},
-            { "tan", 0xd2b48c00u},
-            { "teal", 0x00808000u},
-            { "thistle", 0xd8bfd800u},
-            { "tomato", 0xff634700u},
-            { "turquoise", 0x40e0d000u},
-            { "violet", 0xee82ee00u},
-            { "wheat", 0xf5deb300u},
-            { "white", 0xffffff00u},
-            { "whitesmoke", 0xf5f5f500u},
-            { "yellow", 0xffff0000u},
-            { "yellowgreen", 0x9acd3200u}
+            { COLOR_ALICEBLUE,            COLORHEX_ALICEBLUE},
+            { COLOR_ANTIQUEWHITE,         COLORHEX_ANTIQUEWHITE},
+            { COLOR_AQUA,                 COLORHEX_AQUA},
+            { COLOR_AQUAMARINE,           COLORHEX_AQUAMARINE},
+            { COLOR_AZURE,                COLORHEX_AZURE},
+            { COLOR_BEIGE,                COLORHEX_BEIGE},
+            { COLOR_BISQUE,               COLORHEX_BISQUE},
+            { COLOR_BLACK,                COLORHEX_BLACK},
+            { COLOR_BLANCHEDALMOND,       COLORHEX_BLANCHEDALMOND},
+            { COLOR_BLUE,                 COLORHEX_BLUE},
+            { COLOR_BLUEVIOLET,           COLORHEX_BLUEVIOLET},
+            { COLOR_BROWN,                COLORHEX_BROWN},
+            { COLOR_BURLYWOOD,            COLORHEX_BURLYWOOD},
+            { COLOR_CADETBLUE,            COLORHEX_CADETBLUE},
+            { COLOR_CHARTREUSE,           COLORHEX_CHARTREUSE},
+            { COLOR_CHOCOLATE,            COLORHEX_CHOCOLATE},
+            { COLOR_CORAL,                COLORHEX_CORAL},
+            { COLOR_CORNFLOWERBLUE,       COLORHEX_CORNFLOWERBLUE},
+            { COLOR_CORNSILK,             COLORHEX_CORNSILK},
+            { COLOR_CRIMSON,              COLORHEX_CRIMSON},
+            { COLOR_CYAN,                 COLORHEX_CYAN},
+            { COLOR_DARKBLUE,             COLORHEX_DARKBLUE},
+            { COLOR_DARKCYAN,             COLORHEX_DARKCYAN},
+            { COLOR_DARKGOLDENROD,        COLORHEX_DARKGOLDENROD},
+            { COLOR_DARKGRAY,             COLORHEX_DARKGRAY},
+            { COLOR_DARKGREY,             COLORHEX_DARKGREY},
+            { COLOR_DARKGREEN,            COLORHEX_DARKGREEN},
+            { COLOR_DARKKHAKI,            COLORHEX_DARKKHAKI},
+            { COLOR_DARKMAGENTA,          COLORHEX_DARKMAGENTA},
+            { COLOR_DARKOLIVEGREEN,       COLORHEX_DARKOLIVEGREEN},
+            { COLOR_DARKORANGE,           COLORHEX_DARKORANGE},
+            { COLOR_DARKORCHID,           COLORHEX_DARKORCHID},
+            { COLOR_DARKRED,              COLORHEX_DARKRED},
+            { COLOR_DARKSALMON,           COLORHEX_DARKSALMON},
+            { COLOR_DARKSEAGREEN,         COLORHEX_DARKSEAGREEN},
+            { COLOR_DARKSLATEBLUE,        COLORHEX_DARKSLATEBLUE},
+            { COLOR_DARKSLATEGRAY,        COLORHEX_DARKSLATEGRAY},
+            { COLOR_DARKSLATEGREY,        COLORHEX_DARKSLATEGREY},
+            { COLOR_DARKTURQUOISE,        COLORHEX_DARKTURQUOISE},
+            { COLOR_DARKVIOLET,           COLORHEX_DARKVIOLET},
+            { COLOR_DEEPPINK,             COLORHEX_DEEPPINK},
+            { COLOR_DEEPSKYBLUE,          COLORHEX_DEEPSKYBLUE},
+            { COLOR_DIMGRAY,              COLORHEX_DIMGRAY},
+            { COLOR_DIMGREY,              COLORHEX_DIMGREY},
+            { COLOR_DODGERBLUE,           COLORHEX_DODGERBLUE},
+            { COLOR_FIREBRICK,            COLORHEX_FIREBRICK},
+            { COLOR_FLORALWHITE,          COLORHEX_FLORALWHITE},
+            { COLOR_FORESTGREEN,          COLORHEX_FORESTGREEN},
+            { COLOR_FUCHSIA,              COLORHEX_FUCHSIA},
+            { COLOR_GAINSBORO,            COLORHEX_GAINSBORO},
+            { COLOR_GHOSTWHITE,           COLORHEX_GHOSTWHITE},
+            { COLOR_GOLD,                 COLORHEX_GOLD},
+            { COLOR_GOLDENROD,            COLORHEX_GOLDENROD},
+            { COLOR_GRAY,                 COLORHEX_GRAY},
+            { COLOR_GREY,                 COLORHEX_GREY},
+            { COLOR_GREEN,                COLORHEX_GREEN},
+            { COLOR_GREENYELLOW,          COLORHEX_GREENYELLOW},
+            { COLOR_HONEYDEW,             COLORHEX_HONEYDEW},
+            { COLOR_HOTPINK,              COLORHEX_HOTPINK},
+            { COLOR_INDIANRED,            COLORHEX_INDIANRED},
+            { COLOR_INDIGO,               COLORHEX_INDIGO},
+            { COLOR_IVORY,                COLORHEX_IVORY},
+            { COLOR_KHAKI,                COLORHEX_KHAKI},
+            { COLOR_LAVENDER,             COLORHEX_LAVENDER},
+            { COLOR_LAVENDERBLUSH,        COLORHEX_LAVENDERBLUSH},
+            { COLOR_LAWNGREEN,            COLORHEX_LAWNGREEN},
+            { COLOR_LEMONCHIFFON,         COLORHEX_LEMONCHIFFON},
+            { COLOR_LIGHTBLUE,            COLORHEX_LIGHTBLUE},
+            { COLOR_LIGHTCORAL,           COLORHEX_LIGHTCORAL},
+            { COLOR_LIGHTCYAN,            COLORHEX_LIGHTCYAN},
+            { COLOR_LIGHTGOLDENRODYELLOW, COLORHEX_LIGHTGOLDENRODYELLOW},
+            { COLOR_LIGHTGRAY,            COLORHEX_LIGHTGRAY},
+            { COLOR_LIGHTGREY,            COLORHEX_LIGHTGREY},
+            { COLOR_LIGHTGREEN,           COLORHEX_LIGHTGREEN},
+            { COLOR_LIGHTPINK,            COLORHEX_LIGHTPINK},
+            { COLOR_LIGHTSALMON,          COLORHEX_LIGHTSALMON},
+            { COLOR_LIGHTSEAGREEN,        COLORHEX_LIGHTSEAGREEN},
+            { COLOR_LIGHTSKYBLUE,         COLORHEX_LIGHTSKYBLUE},
+            { COLOR_LIGHTSLATEGRAY,       COLORHEX_LIGHTSLATEGRAY},
+            { COLOR_LIGHTSLATEGREY,       COLORHEX_LIGHTSLATEGREY},
+            { COLOR_LIGHTSTEELBLUE,       COLORHEX_LIGHTSTEELBLUE},
+            { COLOR_LIGHTYELLOW,          COLORHEX_LIGHTYELLOW},
+            { COLOR_LIME,                 COLORHEX_LIME},
+            { COLOR_LIMEGREEN,            COLORHEX_LIMEGREEN},
+            { COLOR_LINEN,                COLORHEX_LINEN},
+            { COLOR_MAGENTA,              COLORHEX_MAGENTA},
+            { COLOR_MAROON,               COLORHEX_MAROON},
+            { COLOR_MEDIUMAQUAMARINE,     COLORHEX_MEDIUMAQUAMARINE},
+            { COLOR_MEDIUMBLUE,           COLORHEX_MEDIUMBLUE},
+            { COLOR_MEDIUMORCHID,         COLORHEX_MEDIUMORCHID},
+            { COLOR_MEDIUMPURPLE,         COLORHEX_MEDIUMPURPLE},
+            { COLOR_MEDIUMSEAGREEN,       COLORHEX_MEDIUMSEAGREEN},
+            { COLOR_MEDIUMSLATEBLUE,      COLORHEX_MEDIUMSLATEBLUE},
+            { COLOR_MEDIUMSPRINGGREEN,    COLORHEX_MEDIUMSPRINGGREEN},
+            { COLOR_MEDIUMTURQUOISE,      COLORHEX_MEDIUMTURQUOISE},
+            { COLOR_MEDIUMVIOLETRED,      COLORHEX_MEDIUMVIOLETRED},
+            { COLOR_MIDNIGHTBLUE,         COLORHEX_MIDNIGHTBLUE},
+            { COLOR_MINTCREAM,            COLORHEX_MINTCREAM},
+            { COLOR_MISTYROSE,            COLORHEX_MISTYROSE},
+            { COLOR_MOCCASIN,             COLORHEX_MOCCASIN},
+            { COLOR_NAVAJOWHITE,          COLORHEX_NAVAJOWHITE},
+            { COLOR_NAVY,                 COLORHEX_NAVY},
+            { COLOR_OLDLACE,              COLORHEX_OLDLACE},
+            { COLOR_OLIVE,                COLORHEX_OLIVE},
+            { COLOR_OLIVEDRAB,            COLORHEX_OLIVEDRAB},
+            { COLOR_ORANGE,               COLORHEX_ORANGE},
+            { COLOR_ORANGERED,            COLORHEX_ORANGERED},
+            { COLOR_ORCHID,               COLORHEX_ORCHID},
+            { COLOR_PALEGOLDENROD,        COLORHEX_PALEGOLDENROD},
+            { COLOR_PALEGREEN,            COLORHEX_PALEGREEN},
+            { COLOR_PALETURQUOISE,        COLORHEX_PALETURQUOISE},
+            { COLOR_PALEVIOLETRED,        COLORHEX_PALEVIOLETRED},
+            { COLOR_PAPAYAWHIP,           COLORHEX_PAPAYAWHIP},
+            { COLOR_PEACHPUFF,            COLORHEX_PEACHPUFF},
+            { COLOR_PERU,                 COLORHEX_PERU},
+            { COLOR_PINK,                 COLORHEX_PINK},
+            { COLOR_PLUM,                 COLORHEX_PLUM},
+            { COLOR_POWDERBLUE,           COLORHEX_POWDERBLUE},
+            { COLOR_PURPLE,               COLORHEX_PURPLE},
+            { COLOR_REBECCAPURPLE,        COLORHEX_REBECCAPURPLE},
+            { COLOR_RED,                  COLORHEX_RED},
+            { COLOR_ROSYBROWN,            COLORHEX_ROSYBROWN},
+            { COLOR_ROYALBLUE,            COLORHEX_ROYALBLUE},
+            { COLOR_SADDLEBROWN,          COLORHEX_SADDLEBROWN},
+            { COLOR_SALMON,               COLORHEX_SALMON},
+            { COLOR_SANDYBROWN,           COLORHEX_SANDYBROWN},
+            { COLOR_SEAGREEN,             COLORHEX_SEAGREEN},
+            { COLOR_SEASHELL,             COLORHEX_SEASHELL},
+            { COLOR_SIENNA,               COLORHEX_SIENNA},
+            { COLOR_SILVER,               COLORHEX_SILVER},
+            { COLOR_SKYBLUE,              COLORHEX_SKYBLUE},
+            { COLOR_SLATEBLUE,            COLORHEX_SLATEBLUE},
+            { COLOR_SLATEGRAY,            COLORHEX_SLATEGRAY},
+            { COLOR_SLATEGREY,            COLORHEX_SLATEGREY},
+            { COLOR_SNOW,                 COLORHEX_SNOW},
+            { COLOR_SPRINGGREEN,          COLORHEX_SPRINGGREEN},
+            { COLOR_STEELBLUE,            COLORHEX_STEELBLUE},
+            { COLOR_TAN,                  COLORHEX_TAN},
+            { COLOR_TEAL,                 COLORHEX_TEAL},
+            { COLOR_THISTLE,              COLORHEX_THISTLE},
+            { COLOR_TOMATO,               COLORHEX_TOMATO},
+            { COLOR_TURQUOISE,            COLORHEX_TURQUOISE},
+            { COLOR_VIOLET,               COLORHEX_VIOLET},
+            { COLOR_WHEAT,                COLORHEX_WHEAT},
+            { COLOR_WHITE,                COLORHEX_WHITE},
+            { COLOR_WHITESMOKE,           COLORHEX_WHITESMOKE},
+            { COLOR_YELLOW,               COLORHEX_YELLOW},
+            { COLOR_YELLOWGREEN,          COLORHEX_YELLOWGREEN},
     };
 
     std::string name;
@@ -1238,216 +1240,216 @@ void fillEasingMode( std::function<float(float)> &function, const char *&rule, B
 
     static const std::unordered_map<std::string, std::function<float( float)>> easingLookup =
     {
-        {
-            "easeinsine", []( float progress)
             {
-                return 1 - cos( ( progress * M_PI) / 2.0);
-            }
-        },
-        {
-            "easeoutsine", []( float progress)
+                FN_EASEINSINE, []( float progress)
+               {
+                   return 1 - cos( ( progress * M_PI) / 2.0);
+               }
+            },
             {
-                return sin( progress * M_PI / 2);
-            }
-        },
-        {
-            "easeinoutsine", []( float progress)
+                FN_EASEOUTSINE, []( float progress)
+               {
+                   return sin( progress * M_PI / 2);
+               }
+            },
             {
-                return -( cos( progress * M_PI) - 1) / 2;
-            }
-        },
-        {
-            "easeincubic", []( float progress)
+               FN_EASEINOUTSINE, []( float progress)
+               {
+                   return -( cos( progress * M_PI) - 1) / 2;
+               }
+            },
             {
-                return progress * progress * progress;
-            }
-        },
-        {
-            "easeoutcubic", []( float progress)
+                FN_EASEINCUBIC, []( float progress)
+               {
+                   return progress * progress * progress;
+               }
+            },
             {
-                return 1 - pow( 1 - progress, 3);
-            }
-        },
-        {
-            "easeinoutcubic", []( float progress)
+                FN_EASEOUTCUBIC, []( float progress)
+               {
+                   return 1 - pow( 1 - progress, 3);
+               }
+            },
             {
-                return progress < 0.5 ? 4 * progress * progress * progress : 1 - pow(-2 * progress + 2, 3) / 2;
-            }
-        },
-        {
-            "easeinquint", []( float progress)
+                FN_EASEINOUTCUBIC, []( float progress)
+               {
+                   return progress < 0.5 ? 4 * progress * progress * progress : 1 - pow(-2 * progress + 2, 3) / 2;
+               }
+            },
             {
-                return progress * progress * progress * progress * progress;
-            }
-        },
-        {
-            "easeoutquint", []( float progress)
+                FN_EASEINQUINT, []( float progress)
+               {
+                   return progress * progress * progress * progress * progress;
+               }
+            },
             {
-                return  1 - pow( 1 - progress, 5);
-            }
-        },
-        {
-            "easeinoutquint", []( float progress)
+                FN_EASEOUTQUINT, []( float progress)
+               {
+                   return  1 - pow( 1 - progress, 5);
+               }
+            },
             {
-                return  progress < 0.5 ? 16 * progress * progress * progress * progress * progress
-                        : 1 - pow( -2 * progress + 2, 5) / 2;
-            }
-        },
-        {
-            "easeincirc", []( float progress)
+                FN_EASEINOUTQUINT, []( float progress)
+               {
+                   return  progress < 0.5 ? 16 * progress * progress * progress * progress * progress
+                                          : 1 - pow( -2 * progress + 2, 5) / 2;
+               }
+            },
             {
-                return  1 - std::sqrt( (float)( 1 - pow( progress, 2)));
-            }
-        },
-        {
-            "easeoutcirc", []( float progress)
+                FN_EASEINCIRC, []( float progress)
+               {
+                   return  1 - std::sqrt( (float)( 1 - pow( progress, 2)));
+               }
+            },
             {
-                return  std::sqrt( ( float)( 1 - pow( progress - 1, 2)));
-            }
-        },
-        {
-            "easeinoutcirc", []( float progress)
+                FN_EASEOUTCIRC, []( float progress)
+               {
+                   return  std::sqrt( ( float)( 1 - pow( progress - 1, 2)));
+               }
+            },
             {
-                return  progress < 0.5
-                        ? ( 1 - std::sqrt(( float)( 1 - pow( 2 * progress, 2)))) / 2
-                        : ( std::sqrt( ( float)(1 - pow( -2 * progress + 2, 2))) + 1) / 2;
-            }
-        },
-        {
-            "easeinelastic", []( float progress)
+                FN_EASEINOUTCIRC, []( float progress)
+               {
+                   return  progress < 0.5
+                           ? ( 1 - std::sqrt(( float)( 1 - pow( 2 * progress, 2)))) / 2
+                           : ( std::sqrt( ( float)(1 - pow( -2 * progress + 2, 2))) + 1) / 2;
+               }
+            },
             {
-                const float c4 = ( 2 * M_PI) / 3.0f;
+                FN_EASEINELASTIC, []( float progress)
+               {
+                   const float c4 = ( 2 * M_PI) / 3.0f;
 
-                return ZERO( progress)
-                             ? 0
-                             : EQUAL( progress, 1) ? 1
-                             : -pow(2, 10 * progress - 10) * sin(( progress * 10 - 10.75) * c4);
-            }
-        },
-        {
-            "easeoutelastic", []( float progress)
+                   return ZERO( progress)
+                          ? 0
+                          : EQUAL( progress, 1) ? 1
+                                                : -pow(2, 10 * progress - 10) * sin(( progress * 10 - 10.75) * c4);
+               }
+            },
             {
-                const float c4 = ( 2 * M_PI) / 3.0f;
+                FN_EASEOUTELASTIC, []( float progress)
+               {
+                   const float c4 = ( 2 * M_PI) / 3.0f;
 
-                return ZERO( progress)
-                       ? 0
-                       : EQUAL( progress, 1) ? 1
-                       : pow( 2, -10 * progress) * sin( ( progress * 10 - 0.75) * c4) + 1;
-            }
-        },
-        {
-            "easeinoutelastic", []( float progress)
+                   return ZERO( progress)
+                          ? 0
+                          : EQUAL( progress, 1) ? 1
+                                                : pow( 2, -10 * progress) * sin( ( progress * 10 - 0.75) * c4) + 1;
+               }
+            },
             {
-                const float c5 = ( 2 * M_PI) / 4.5f;
+                FN_EASEINOUTELASTIC, []( float progress)
+               {
+                   const float c5 = ( 2 * M_PI) / 4.5f;
 
-                return ZERO( progress) ? 0 : EQUAL( progress, 1) ? 1 : progress < 0.5
-                       ? -( pow(2, 20 * progress - 10) * sin( ( 20 * progress - 11.125) * c5)) / 2
-                       : ( pow(2, -20 * progress + 10) * sin( ( 20 * progress - 11.125) * c5)) / 2 + 1;
-            }
-        },
-        {
-            "easeinquad", []( float progress)
+                   return ZERO( progress) ? 0 : EQUAL( progress, 1) ? 1 : progress < 0.5
+                                                                          ? -( pow(2, 20 * progress - 10) * sin( ( 20 * progress - 11.125) * c5)) / 2
+                                                                          : ( pow(2, -20 * progress + 10) * sin( ( 20 * progress - 11.125) * c5)) / 2 + 1;
+               }
+            },
             {
-                return progress * progress;
-            }
-        },
-        {
-            "easeoutquad", []( float progress)
+                FN_EASEINQUAD, []( float progress)
+               {
+                   return progress * progress;
+               }
+            },
             {
-                return 1 - ( 1 - progress) * ( 1 - progress);
-            }
-        },
-        {
-            "easeinoutquad", []( float progress)
+                FN_EASEOUTQUAD, []( float progress)
+               {
+                   return 1 - ( 1 - progress) * ( 1 - progress);
+               }
+            },
             {
-                return progress < 0.5 ? 2 * progress * progress : 1 - pow( -2 * progress + 2, 2) / 2;
-            }
-        },
-        {
-            "easeinquart", []( float progress)
+                FN_EASEINOUTQUAD, []( float progress)
+               {
+                   return progress < 0.5 ? 2 * progress * progress : 1 - pow( -2 * progress + 2, 2) / 2;
+               }
+            },
             {
-                return progress  * progress * progress * progress;
-            }
-        },
-        {
-            "easeoutquart", []( float progress)
+                FN_EASEINQUART, []( float progress)
+               {
+                   return progress  * progress * progress * progress;
+               }
+            },
             {
-                return 1 - pow( 1 - progress, 4);
-            }
-        },
-        {
-            "easeinoutquart", []( float progress)
+                FN_EASEOUTQUART, []( float progress)
+               {
+                   return 1 - pow( 1 - progress, 4);
+               }
+            },
             {
-                return progress < 0.5 ? 8 * progress * progress * progress * progress
-                       : 1 - pow( -2 * progress + 2, 4) / 2;
-            }
-        },
-        {
-            "easeinexpo", []( float progress)
+                FN_EASEINOUTQUART, []( float progress)
+               {
+                   return progress < 0.5 ? 8 * progress * progress * progress * progress
+                                         : 1 - pow( -2 * progress + 2, 4) / 2;
+               }
+            },
             {
-                return ZERO( progress) ? 0 : pow( 2, 10 * progress - 10);
-            }
-        },
-        {
-            "easeoutexpo", []( float progress)
+                FN_EASEINEXPO, []( float progress)
+               {
+                   return ZERO( progress) ? 0 : pow( 2, 10 * progress - 10);
+               }
+            },
             {
-                return EQUAL( progress, 1) ? 1 : 1 - pow(2, -10 * progress);
-            }
-        },
-        {
-            "easeinoutexpo", []( float progress)
+                FN_EASEOUTEXPO, []( float progress)
+               {
+                   return EQUAL( progress, 1) ? 1 : 1 - pow(2, -10 * progress);
+               }
+            },
             {
-                return ZERO( progress) ? 0
-                       : EQUAL( progress, 1) ? 1 : progress < 0.5 ? pow( 2, 20 * progress - 10) / 2
-                       : (2 - pow( 2, -20 * progress + 10)) / 2;
-            }
-        },
-        {
-            "easeinback", []( float progress)
+                FN_EASEINOUTEXPO, []( float progress)
+               {
+                   return ZERO( progress) ? 0
+                                          : EQUAL( progress, 1) ? 1 : progress < 0.5 ? pow( 2, 20 * progress - 10) / 2
+                                                                                     : (2 - pow( 2, -20 * progress + 10)) / 2;
+               }
+            },
             {
-                const float c1 = 1.70158f;
-                const float c3 = c1 + 1.0f;
+                FN_EASEINBACK, []( float progress)
+               {
+                   const float c1 = 1.70158f;
+                   const float c3 = c1 + 1.0f;
 
-                return c3 * progress * progress * progress - c1 * progress * progress;
-            }
-        },
-        {
-            "easeoutback", []( float progress)
+                   return c3 * progress * progress * progress - c1 * progress * progress;
+               }
+            },
             {
-                const float c1 = 1.70158f;
-                const float c3 = c1 + 1.0f;
+                FN_EASEOUTBACK, []( float progress)
+               {
+                   const float c1 = 1.70158f;
+                   const float c3 = c1 + 1.0f;
 
-                return 1 + c3 * pow( progress - 1, 3) + c1 * pow( progress - 1, 2);
-            }
-        },
-        {
-            "easeinoutback", []( float progress)
+                   return 1 + c3 * pow( progress - 1, 3) + c1 * pow( progress - 1, 2);
+               }
+            },
             {
-                const float c1 = 1.70158f;
-                const float c2 = c1 * 1.525f;
+                FN_EASEINOUTBACK, []( float progress)
+               {
+                   const float c1 = 1.70158f;
+                   const float c2 = c1 * 1.525f;
 
-                return progress < 0.5
-                       ? ( pow( 2 * progress, 2) * ( ( c2 + 1) * 2 * progress - c2)) / 2
-                       : ( pow( 2 * progress - 2, 2) * ( ( c2 + 1) * ( progress * 2 - 2) + c2) + 2) / 2;
-            }
-        },
-        {
-            "easeinbounce", [=]( float progress)
+                   return progress < 0.5
+                          ? ( pow( 2 * progress, 2) * ( ( c2 + 1) * 2 * progress - c2)) / 2
+                          : ( pow( 2 * progress - 2, 2) * ( ( c2 + 1) * ( progress * 2 - 2) + c2) + 2) / 2;
+               }
+            },
             {
-                return 1 - easeOutBounce( progress);
-            }
-        },
-        {
-            "easeoutbounce", easeOutBounce
-        },
-        {
-            "easeinoutbounce", [=]( float progress)
+                FN_EASEINBOUNCE, [=]( float progress)
+               {
+                   return 1 - easeOutBounce( progress);
+               }
+            },
             {
-                return progress < 0.5f
-                       ? ( 1.0f - easeOutBounce( 1.0f - 2.0f * progress)) / 2.0f
-                       : ( 1.0f + easeOutBounce( 2.0f * progress - 1.0f)) / 2.0f;
+                FN_EASEOUTBOUNCE, easeOutBounce
+            },
+            {
+                FN_EASEINOUTBOUNCE, [=]( float progress)
+               {
+                   return progress < 0.5f
+                          ? ( 1.0f - easeOutBounce( 1.0f - 2.0f * progress)) / 2.0f
+                          : ( 1.0f + easeOutBounce( 2.0f * progress - 1.0f)) / 2.0f;
+               }
             }
-        }
     };
 
     std::string easing;
@@ -1770,36 +1772,36 @@ int main( int ac, char *av[])
 
     BKNode *bkroot = nullptr;
 
-    insert(bkroot, "easeInSine");
-    insert(bkroot, "easeOutSine");
-    insert(bkroot, "easeInOutSine");
-    insert(bkroot, "easeInQuad");
-    insert(bkroot, "easeOutQuad");
-    insert(bkroot, "easeInOutQuad");
-    insert(bkroot, "easeInCubic");
-    insert(bkroot, "easeOutCubic");
-    insert(bkroot, "easeInOutCubic");
-    insert(bkroot, "easeInQuart");
-    insert(bkroot, "easeOutQuart");
-    insert(bkroot, "easeInOutQuart");
-    insert(bkroot, "easeInQuint");
-    insert(bkroot, "easeOutQuint");
-    insert(bkroot, "easeInOutQuint");
-    insert(bkroot, "easeInExpo");
-    insert(bkroot, "easeOutExpo");
-    insert(bkroot, "easeInOutExpo");
-    insert(bkroot, "easeInCirc");
-    insert(bkroot, "easeOutCirc");
-    insert(bkroot, "easeInOutCirc");
-    insert(bkroot, "easeInBack");
-    insert(bkroot, "easeOutBack");
-    insert(bkroot, "easeInOutBack");
-    insert(bkroot, "easeInElastic");
-    insert(bkroot, "easeOutElastic");
-    insert(bkroot, "easeInOutElastic");
-    insert(bkroot, "easeInBounce");
-    insert(bkroot, "easeOutBounce");
-    insert(bkroot, "easeInOutBounce");
+    insert( bkroot, FN_IEASEINSINE);
+    insert( bkroot, FN_IEASEOUTSINE);
+    insert( bkroot, FN_IEASEINOUTSINE);
+    insert( bkroot, FN_IEASEINQUAD);
+    insert( bkroot, FN_IEASEOUTQUAD);
+    insert( bkroot, FN_IEASEINOUTQUAD);
+    insert( bkroot, FN_IEASEINCUBIC);
+    insert( bkroot, FN_IEASEOUTCUBIC);
+    insert( bkroot, FN_IEASEINOUTCUBIC);
+    insert( bkroot, FN_IEASEINQUART);
+    insert( bkroot, FN_IEASEOUTQUART);
+    insert( bkroot, FN_IEASEINOUTQUART);
+    insert( bkroot, FN_IEASEINQUINT);
+    insert( bkroot, FN_IEASEOUTQUINT);
+    insert( bkroot, FN_IEASEINOUTQUINT);
+    insert( bkroot, FN_IEASEINEXPO);
+    insert( bkroot, FN_IEASEOUTEXPO);
+    insert( bkroot, FN_IEASEINOUTEXPO);
+    insert( bkroot, FN_IEASEINCIRC);
+    insert( bkroot, FN_IEASEOUTCIRC);
+    insert( bkroot, FN_IEASEINOUTCIRC);
+    insert( bkroot, FN_IEASEINBACK);
+    insert( bkroot, FN_IEASEOUTBACK);
+    insert( bkroot, FN_IEASEINOUTBACK);
+    insert( bkroot, FN_IEASEINELASTIC);
+    insert( bkroot, FN_IEASEOUTELASTIC);
+    insert( bkroot, FN_IEASEINOUTELASTIC);
+    insert( bkroot, FN_IEASEINBOUNCE);
+    insert( bkroot, FN_IEASEOUTBOUNCE);
+    insert( bkroot, FN_IEASEINOUTBOUNCE);
 
     FT_Library    library;
     FT_Face       face;
