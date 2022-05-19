@@ -633,7 +633,7 @@ uint32_t getNumber( const char *&ctx, uint8_t base)
     return weight;
 }
 
-uint32_t decodeColorName( const char *&ctx)
+uint32_t decodeColorName( const char *&ctx, BKNode *bkroot)
 {
     static const std::unordered_map<std::string, uint32_t> nameLookup =
     {
@@ -797,6 +797,17 @@ uint32_t decodeColorName( const char *&ctx)
     auto pos = nameLookup.find( name);
     if( pos != nameLookup.cend())
         return pos->second;
+    else
+    {
+        fprintf( stderr, "Unable to find match for `%s`\n", name.c_str());
+        auto matches = findWordMatch( bkroot, name.c_str(), 1);
+        if( !matches.empty())
+        {
+            fprintf( stderr, "The following colors match your search:\n");
+            for( size_t i = 0; i < matches.size(); ++i)
+               fprintf( stderr, "%zu]. %s\n", i + 1, matches[ i].c_str());
+        }
+    }
 
     return 0xFFFFFFu;
 }
@@ -808,7 +819,7 @@ bool ltrim( const char*& p)
     return true;
 }
 
-uint32_t extractColor( const char *&rule)
+uint32_t extractColor( const char *&rule, BKNode *bkroot)
 {
     ltrim( rule);
     int8_t cratio = -1;
@@ -821,7 +832,7 @@ uint32_t extractColor( const char *&rule)
         rule += 2;
     else if( isalpha( *rule))
     {
-        auto color_name = decodeColorName( rule);
+        auto color_name = decodeColorName(rule, bkroot);
         if( *rule == ':')
         {
             if( *++rule == ':')
@@ -941,7 +952,7 @@ uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor)
     return xyzToRgb({xmix, ymix, zmix});
 }
 
-uint32_t mixColor( const char *&ctx)
+uint32_t mixColor( const char *&ctx, BKNode *bkroot)
 {
     uint32_t lcolor{}, rcolor{};
     uint8_t alpha = 0xFFu;
@@ -952,7 +963,7 @@ uint32_t mixColor( const char *&ctx)
             op = *ctx;
         else
         {
-            op ? rcolor = extractColor(ctx) : lcolor = extractColor(ctx);
+            op ? rcolor = extractColor(ctx, bkroot) : lcolor = extractColor(ctx, bkroot);
             ctx -= 1;
         }
 
@@ -1074,12 +1085,12 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                 {
                     if( ltrim( rule) && *rule == '(')
                     {
-                        ccolor.scolor = mixColor( ++rule);
+                        ccolor.scolor = mixColor(++rule, nullptr);
                     }
                     else
                     {
                         prev = rule;
-                        ccolor.scolor = extractColor(rule);
+                        ccolor.scolor = extractColor(rule, bkroot);
                     }
 
                     if( ltrim( rule) && *rule == '-')
@@ -1098,9 +1109,9 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                         }
 
                         if( ltrim( ++rule) && *rule == '(')
-                            ccolor.ecolor = mixColor( ++rule);
+                            ccolor.ecolor = mixColor(++rule, nullptr);
                         else if( *rule != '\0')
-                            ccolor.ecolor = extractColor(rule);
+                            ccolor.ecolor = extractColor(rule, bkroot);
                         else
                         {
                             fprintf( stderr, "Incomplete color specification");
@@ -1208,7 +1219,7 @@ void findWordMatch( BKNode *node, const char *word, int threshold, std::vector<s
         findWordMatch( node->next[ i], word, threshold, matches);
 }
 
-std::vector<std::string> findWordMatch( BKNode *node, const char *word, int threshold = 4)
+std::vector<std::string> findWordMatch( BKNode *node, const char *word, int threshold)
 {
     std::vector<std::string> matches;
     findWordMatch( node, word, threshold, matches);
@@ -1772,6 +1783,10 @@ int main( int ac, char *av[])
 
     BKNode *bkroot = nullptr;
 
+    /*
+     * Easing function listing
+     */
+
     insert( bkroot, FN_IEASEINSINE);
     insert( bkroot, FN_IEASEOUTSINE);
     insert( bkroot, FN_IEASEINOUTSINE);
@@ -1802,6 +1817,160 @@ int main( int ac, char *av[])
     insert( bkroot, FN_IEASEINBOUNCE);
     insert( bkroot, FN_IEASEOUTBOUNCE);
     insert( bkroot, FN_IEASEINOUTBOUNCE);
+
+    /*
+     * Color name listing
+     */
+
+    insert( bkroot, ICOLOR_ALICEBLUE);
+    insert( bkroot, ICOLOR_ANTIQUEWHITE);
+    insert( bkroot, ICOLOR_AQUA);
+    insert( bkroot, ICOLOR_AQUAMARINE);
+    insert( bkroot, ICOLOR_AZURE);
+    insert( bkroot, ICOLOR_BEIGE);
+    insert( bkroot, ICOLOR_BISQUE);
+    insert( bkroot, ICOLOR_BLACK);
+    insert( bkroot, ICOLOR_BLANCHEDALMOND);
+    insert( bkroot, ICOLOR_BLUE);
+    insert( bkroot, ICOLOR_BLUEVIOLET);
+    insert( bkroot, ICOLOR_BROWN);
+    insert( bkroot, ICOLOR_BURLYWOOD);
+    insert( bkroot, ICOLOR_CADETBLUE);
+    insert( bkroot, ICOLOR_CHARTREUSE);
+    insert( bkroot, ICOLOR_CHOCOLATE);
+    insert( bkroot, ICOLOR_CORAL);
+    insert( bkroot, ICOLOR_CORNFLOWERBLUE);
+    insert( bkroot, ICOLOR_CORNSILK);
+    insert( bkroot, ICOLOR_CRIMSON);
+    insert( bkroot, ICOLOR_CYAN);
+    insert( bkroot, ICOLOR_DARKBLUE);
+    insert( bkroot, ICOLOR_DARKCYAN);
+    insert( bkroot, ICOLOR_DARKGOLDENROD);
+    insert( bkroot, ICOLOR_DARKGRAY);
+    insert( bkroot, ICOLOR_DARKGREY);
+    insert( bkroot, ICOLOR_DARKGREEN);
+    insert( bkroot, ICOLOR_DARKKHAKI);
+    insert( bkroot, ICOLOR_DARKMAGENTA);
+    insert( bkroot, ICOLOR_DARKOLIVEGREEN);
+    insert( bkroot, ICOLOR_DARKORANGE);
+    insert( bkroot, ICOLOR_DARKORCHID);
+    insert( bkroot, ICOLOR_DARKRED);
+    insert( bkroot, ICOLOR_DARKSALMON);
+    insert( bkroot, ICOLOR_DARKSEAGREEN);
+    insert( bkroot, ICOLOR_DARKSLATEBLUE);
+    insert( bkroot, ICOLOR_DARKSLATEGRAY);
+    insert( bkroot, ICOLOR_DARKSLATEGREY);
+    insert( bkroot, ICOLOR_DARKTURQUOISE);
+    insert( bkroot, ICOLOR_DARKVIOLET);
+    insert( bkroot, ICOLOR_DEEPPINK);
+    insert( bkroot, ICOLOR_DEEPSKYBLUE);
+    insert( bkroot, ICOLOR_DIMGRAY);
+    insert( bkroot, ICOLOR_DIMGREY);
+    insert( bkroot, ICOLOR_DODGERBLUE);
+    insert( bkroot, ICOLOR_FIREBRICK);
+    insert( bkroot, ICOLOR_FLORALWHITE);
+    insert( bkroot, ICOLOR_FORESTGREEN);
+    insert( bkroot, ICOLOR_FUCHSIA);
+    insert( bkroot, ICOLOR_GAINSBORO);
+    insert( bkroot, ICOLOR_GHOSTWHITE);
+    insert( bkroot, ICOLOR_GOLD);
+    insert( bkroot, ICOLOR_GOLDENROD);
+    insert( bkroot, ICOLOR_GRAY);
+    insert( bkroot, ICOLOR_GREY);
+    insert( bkroot, ICOLOR_GREEN);
+    insert( bkroot, ICOLOR_GREENYELLOW);
+    insert( bkroot, ICOLOR_HONEYDEW);
+    insert( bkroot, ICOLOR_HOTPINK);
+    insert( bkroot, ICOLOR_INDIANRED);
+    insert( bkroot, ICOLOR_INDIGO);
+    insert( bkroot, ICOLOR_IVORY);
+    insert( bkroot, ICOLOR_KHAKI);
+    insert( bkroot, ICOLOR_LAVENDER);
+    insert( bkroot, ICOLOR_LAVENDERBLUSH);
+    insert( bkroot, ICOLOR_LAWNGREEN);
+    insert( bkroot, ICOLOR_LEMONCHIFFON);
+    insert( bkroot, ICOLOR_LIGHTBLUE);
+    insert( bkroot, ICOLOR_LIGHTCORAL);
+    insert( bkroot, ICOLOR_LIGHTCYAN);
+    insert( bkroot, ICOLOR_LIGHTGOLDENRODYELLOW);
+    insert( bkroot, ICOLOR_LIGHTGRAY);
+    insert( bkroot, ICOLOR_LIGHTGREY);
+    insert( bkroot, ICOLOR_LIGHTGREEN);
+    insert( bkroot, ICOLOR_LIGHTPINK);
+    insert( bkroot, ICOLOR_LIGHTSALMON);
+    insert( bkroot, ICOLOR_LIGHTSEAGREEN);
+    insert( bkroot, ICOLOR_LIGHTSKYBLUE);
+    insert( bkroot, ICOLOR_LIGHTSLATEGRAY);
+    insert( bkroot, ICOLOR_LIGHTSLATEGREY);
+    insert( bkroot, ICOLOR_LIGHTSTEELBLUE);
+    insert( bkroot, ICOLOR_LIGHTYELLOW);
+    insert( bkroot, ICOLOR_LIME);
+    insert( bkroot, ICOLOR_LIMEGREEN);
+    insert( bkroot, ICOLOR_LINEN);
+    insert( bkroot, ICOLOR_MAGENTA);
+    insert( bkroot, ICOLOR_MAROON);
+    insert( bkroot, ICOLOR_MEDIUMAQUAMARINE);
+    insert( bkroot, ICOLOR_MEDIUMBLUE);
+    insert( bkroot, ICOLOR_MEDIUMORCHID);
+    insert( bkroot, ICOLOR_MEDIUMPURPLE);
+    insert( bkroot, ICOLOR_MEDIUMSEAGREEN);
+    insert( bkroot, ICOLOR_MEDIUMSLATEBLUE);
+    insert( bkroot, ICOLOR_MEDIUMSPRINGGREEN);
+    insert( bkroot, ICOLOR_MEDIUMTURQUOISE);
+    insert( bkroot, ICOLOR_MEDIUMVIOLETRED);
+    insert( bkroot, ICOLOR_MIDNIGHTBLUE);
+    insert( bkroot, ICOLOR_MINTCREAM);
+    insert( bkroot, ICOLOR_MISTYROSE);
+    insert( bkroot, ICOLOR_MOCCASIN);
+    insert( bkroot, ICOLOR_NAVAJOWHITE);
+    insert( bkroot, ICOLOR_NAVY);
+    insert( bkroot, ICOLOR_OLDLACE);
+    insert( bkroot, ICOLOR_OLIVE);
+    insert( bkroot, ICOLOR_OLIVEDRAB);
+    insert( bkroot, ICOLOR_ORANGE);
+    insert( bkroot, ICOLOR_ORANGERED);
+    insert( bkroot, ICOLOR_ORCHID);
+    insert( bkroot, ICOLOR_PALEGOLDENROD);
+    insert( bkroot, ICOLOR_PALEGREEN);
+    insert( bkroot, ICOLOR_PALETURQUOISE);
+    insert( bkroot, ICOLOR_PALEVIOLETRED);
+    insert( bkroot, ICOLOR_PAPAYAWHIP);
+    insert( bkroot, ICOLOR_PEACHPUFF);
+    insert( bkroot, ICOLOR_PERU);
+    insert( bkroot, ICOLOR_PINK);
+    insert( bkroot, ICOLOR_PLUM);
+    insert( bkroot, ICOLOR_POWDERBLUE);
+    insert( bkroot, ICOLOR_PURPLE);
+    insert( bkroot, ICOLOR_REBECCAPURPLE);
+    insert( bkroot, ICOLOR_RED);
+    insert( bkroot, ICOLOR_ROSYBROWN);
+    insert( bkroot, ICOLOR_ROYALBLUE);
+    insert( bkroot, ICOLOR_SADDLEBROWN);
+    insert( bkroot, ICOLOR_SALMON);
+    insert( bkroot, ICOLOR_SANDYBROWN);
+    insert( bkroot, ICOLOR_SEAGREEN);
+    insert( bkroot, ICOLOR_SEASHELL);
+    insert( bkroot, ICOLOR_SIENNA);
+    insert( bkroot, ICOLOR_SILVER);
+    insert( bkroot, ICOLOR_SKYBLUE);
+    insert( bkroot, ICOLOR_SLATEBLUE);
+    insert( bkroot, ICOLOR_SLATEGRAY);
+    insert( bkroot, ICOLOR_SLATEGREY);
+    insert( bkroot, ICOLOR_SNOW);
+    insert( bkroot, ICOLOR_SPRINGGREEN);
+    insert( bkroot, ICOLOR_STEELBLUE);
+    insert( bkroot, ICOLOR_TAN);
+    insert( bkroot, ICOLOR_TEAL);
+    insert( bkroot, ICOLOR_THISTLE);
+    insert( bkroot, ICOLOR_TOMATO);
+    insert( bkroot, ICOLOR_TURQUOISE);
+    insert( bkroot, ICOLOR_VIOLET);
+    insert( bkroot, ICOLOR_WHEAT);
+    insert( bkroot, ICOLOR_WHITE);
+    insert( bkroot, ICOLOR_WHITESMOKE);
+    insert( bkroot, ICOLOR_YELLOW);
+    insert( bkroot, ICOLOR_YELLOWGREEN);
+
 
     FT_Library    library;
     FT_Face       face;

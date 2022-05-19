@@ -39,7 +39,7 @@ typedef FILE                * png_FILE_p;
 
 #include  FT_FREETYPE_H
 
-#define MAX_DIFF_TOLERANCE 10
+#define MAX_DIFF_TOLERANCE 20
 
 unsigned char *toMonochrome(FT_Bitmap bitmap);
 
@@ -129,9 +129,9 @@ static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
 
 std::vector<ColorRule> parseColorRule(const char *rule, BKNode *bkroot);
 
-uint32_t extractColor( const char *&rule);
+uint32_t extractColor(const char *&rule, BKNode *bkroot);
 
-uint32_t mixColor( const char *&ctx);
+uint32_t mixColor(const char *&ctx, BKNode *bkroot);
 
 uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor);
 
@@ -139,7 +139,7 @@ void fillEasingMode(std::function<float(float)> &function, const char *&rule, BK
 
 uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress);
 
-uint32_t decodeColorName( const char *&ctx);
+uint32_t decodeColorName(const char *&ctx, BKNode *bkroot);
 
 uint32_t rgbaToHsva( uint32_t rgb);
 
@@ -151,9 +151,19 @@ uint32_t xyzToRgb( XyZColor color);
 
 KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0);
 
+uint32_t editDistance( const std::string& main, const std::string& ref);
+
 void insert( KDNode *&node, Color color, size_t index = 0, uint8_t depth = 0);
 
+void insert( BKNode *&node, const char *word);
+
 void free( KDNode *&node);
+
+void free( BKNode *&node);
+
+void findWordMatch( BKNode *node, const char *word, int threshold, std::vector<std::string>& matches);
+
+std::vector<std::string> findWordMatch( BKNode *node, const char *word, int threshold = 4);
 
 /*
  * Main dispatcher: Does all the rendering and display
