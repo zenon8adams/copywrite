@@ -145,6 +145,8 @@ uint32_t rgbaToHsva( uint32_t rgb);
 
 uint32_t hsvaToRgba( uint32_t hsv);
 
+uint32_t colorLerp( uint32_t lcolor, uint32_t rcolor, double progress);
+
 XyZColor xyzFromRgb( uint32_t color);
 
 uint32_t xyzToRgb( XyZColor color);

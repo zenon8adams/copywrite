@@ -177,8 +177,7 @@ size_t countCharacters( const char *pw)
     return value;
 }
 
-void
-render(const char *word, FT_Face face, size_t default_font_size, const char *raster_glyph, FILE *destination, bool as_image,
+void render(const char *word, FT_Face face, size_t default_font_size, const char *raster_glyph, FILE *destination, bool as_image,
        const char *color_rule, KDNode *root, BKNode *bkroot)
 {
     Glyph *head = nullptr;
@@ -1978,15 +1977,14 @@ int main( int ac, char *av[])
 
     /*
      * Schema:
-     *  av[ 0] [--list-fonts|--font-file=FILE [--font-size=NUM] [--drawing-character=CHAR] [--output FILE]] text
-     *
+     *  av[ 0] [1..2:10-20-10 -ease-in-sine]{(Black:ff + Green::50):40 -> (Brown:ff:30 + Red:4f:50):50 -ease-in-out-sine} text
      */
 
     const char *fontfile = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
                *raster_glyph = "\u2589",
                *color_rule = nullptr,
                *font_size = "10",
-               *word = "Hello World",
+               *word,
                *program = *av;
     bool write_as_image = false;
     FILE *screen = stdout;

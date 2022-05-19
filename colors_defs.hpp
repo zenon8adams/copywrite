@@ -1,7 +1,3 @@
-//
-// Created by zener-diode on 19/05/2022.
-//
-
 #ifndef COPYWRITE_COLORS_DEFS_HPP
 #define COPYWRITE_COLORS_DEFS_HPP
 
