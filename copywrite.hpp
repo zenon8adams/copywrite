@@ -37,7 +37,7 @@
 typedef FILE                * png_FILE_p;
 #endif
 
-#include  FT_FREETYPE_H
+#include FT_FREETYPE_H
 
 #define MAX_DIFF_TOLERANCE 20
 
@@ -127,15 +127,15 @@ static size_t byteCount( uint8_t c );
 
 static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
 
-std::vector<ColorRule> parseColorRule(const char *rule, BKNode *bkroot);
+std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot);
 
-uint32_t extractColor(const char *&rule, BKNode *bkroot);
+uint32_t extractColor( const char *&rule, BKNode *bkroot);
 
-uint32_t mixColor(const char *&ctx, BKNode *bkroot);
+uint32_t mixColor( const char *&ctx, BKNode *bkroot);
 
 uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor);
 
-void fillEasingMode(std::function<float(float)> &function, const char *&rule, BKNode *bkroot, char eoc);
+void fillEasingMode( std::function<float(float)> &function, const char *&rule, BKNode *bkroot, char eoc);
 
 uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress);
 
@@ -177,9 +177,8 @@ bool ltrim( const char*& p);
 
 uint32_t getNumber( const char *&ctx, uint8_t base = 10);
 
-void
-render(const char *word, FT_Face face, size_t default_font_size, const char *raster_glyph, FILE *destination, bool as_image,
-       const char *color_rule, KDNode *root, BKNode *bkroot);
+void render( const char *word, FT_Face face, size_t default_font_size, const char *raster_glyph, FILE *destination, bool as_image,
+        const char *color_rule, KDNode *root, BKNode *bkroot);
 
 void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height);
 

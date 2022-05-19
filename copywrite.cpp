@@ -35,13 +35,6 @@
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
 
-#define MAX(x, y) ((x) ^ (((x) ^ (y)) & -((x) < (y))))
-#define MIN(x, y) ((x) ^ (((x) ^ (y)) & -((x) > (y))))
-/*#define MOD3( value) ({\
-    auto dword = ( ( value) >> 16)\
-})*/
-
-#define ALLOWANCE 6
 #define FPRINTFD( fmt, argument, include) ({ \
     auto arglength = strlen( argument);\
     auto count = maxlength - arglength + ALLOWANCE + !include * arglength;\
@@ -54,25 +47,28 @@
         fprintf( stderr, fmt, "", spacing);\
 })
 
-#define FPRINTF( fmt, argument) FPRINTFD( fmt, argument, true)
+#define ALLOWANCE                      6
+#define MAX(x, y)                      ((x) ^ (((x) ^ (y)) & -((x) < (y))))
+#define MIN(x, y)                      ((x) ^ (((x) ^ (y)) & -((x) > (y))))
 
-#define EPSILON ( 1e-5)
-#define ZERO( fl) ( std::abs( fl) <= EPSILON)
-#define EQUAL( al, bl) ZERO( ( al) - ( bl))
+#define FPRINTF( fmt, argument)        FPRINTFD( fmt, argument, true)
 
-#define RED( color) ( ( color) >> 24u)
-#define GREEN( color) ( ( ( color) >> 16u) & 0xFFu)
-#define BLUE( color) ( ( ( color) >> 8u) & 0xFFu)
-#define ALPHA( color) ( ( color) & 0xFFu)
+#define EPSILON                        ( 1e-5)
+#define ZERO( fl)                      ( std::abs( fl) <= EPSILON)
+#define EQUAL( al, bl)                 ZERO( ( al) - ( bl))
+
+#define RED( color)                    ( ( color) >> 24u)
+#define GREEN( color)                  ( ( ( color) >> 16u) & 0xFFu)
+#define BLUE( color)                   ( ( ( color) >> 8u) & 0xFFu)
+#define ALPHA( color)                  ( ( color) & 0xFFu)
 #define RGBA( red, green, blue, alpha) ( ( ( uint32_t)( red)) << 24u |\
                                           ( ( uint32_t)( green)) << 16u | ( ( uint32_t)( blue)) << 8u | alpha)
-#define RGB( red, green, blue) RGBA( red, green, blue, 0u)
-#define SCALE_RGB( color, scale) RGB( RED( color) * ( scale), GREEN( color) * ( scale), BLUE( color) * ( scale))
+#define RGB( red, green, blue)         RGBA( red, green, blue, 0u)
+#define SCALE_RGB( color, scale)       RGB( RED( color) * ( scale), GREEN( color) * ( scale), BLUE( color) * ( scale))
 
-#define XYZ_SCALE 775
-#define RGB_SCALE 255
-
-#define HALF_RGB_SCALE 128
+#define XYZ_SCALE                      775
+#define RGB_SCALE                      255
+#define HALF_RGB_SCALE                 128
 
 /*
  * Converts bitmap into binary format.
@@ -177,8 +173,8 @@ size_t countCharacters( const char *pw)
     return value;
 }
 
-void render(const char *word, FT_Face face, size_t default_font_size, const char *raster_glyph, FILE *destination, bool as_image,
-       const char *color_rule, KDNode *root, BKNode *bkroot)
+void render( const char *word, FT_Face face, size_t default_font_size, const char *raster_glyph, FILE *destination, bool as_image,
+             const char *color_rule, KDNode *root, BKNode *bkroot)
 {
     Glyph *head = nullptr;
     FT_Int width 	= 0, // Total width of the buffer
