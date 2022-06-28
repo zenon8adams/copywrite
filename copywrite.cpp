@@ -386,8 +386,8 @@ KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best, ui
             ndepth   = ( depth + 1) % 3;
 
     int r = search.rgb[ 0] - node->color.rgb[ 0],
-            g = search.rgb[ 1] - node->color.rgb[ 1],
-            b = search.rgb[ 2] - node->color.rgb[ 2];
+        g = search.rgb[ 1] - node->color.rgb[ 1],
+        b = search.rgb[ 2] - node->color.rgb[ 2];
 
     double y = .299    * r + .587   * g + .114   * b,
            u = -.14713 * r - .28886 * g + .436   * b,
@@ -436,9 +436,9 @@ void insert( std::shared_ptr<KDNode>& node, Color color, size_t index, uint8_t d
             cchannel = node->color.rgb[ depth],
             ndepth   = ( depth + 1) % 3;
     if( nchannel < cchannel)
-        insert(node->left, color, index, ndepth);
+        insert( node->left, color, index, ndepth);
     else
-        insert(node->right, color, index, ndepth);
+        insert( node->right, color, index, ndepth);
 }
 
 void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination, KDNode *root)
@@ -448,7 +448,7 @@ void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster
     std::string sp( raster_bytes, ' ');
 
     uint8_t fmt[] = { '\x1B', '[', '3', '8', ';', '5', ';', '0', '0', '0', 'm', '\0'};
-    uint8_t offset = 7;
+    constexpr uint8_t offset = 7;
 
     for ( FT_Int j = 0; j < height; ++j)
     {
@@ -547,7 +547,9 @@ void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 h
     if( height > PNG_SIZE_MAX / ( width * bytes_per_pixel))
         png_error( png_ptr, "Image data buffer too large!");
 
-    auto image = ( png_bytep)png_calloc( png_ptr, height * width * bytes_per_pixel);
+    auto *mem = ( png_structpp)png_calloc( png_ptr, height * width * bytes_per_pixel);
+    auto deleter = [ &mem]( png_structpp ptr) { png_free( *ptr, ( png_voidp)mem); free( mem); };
+    std::unique_ptr<png_structp, decltype( deleter)> image( mem, deleter);
     png_bytep row_pointers[ height];
     uint8_t color_buffer[ bytes_per_pixel];
     memset( color_buffer, 0, bytes_per_pixel);
@@ -560,10 +562,11 @@ void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 h
             png_uint_32 color = pixel & 0xFFFFFFFF;
             png_uint_32 mbyte = ( pixel >> 32u) ? color : 0;
             png_uint_32 index = j * width * bytes_per_pixel + i * bytes_per_pixel;
-            image[     index] = mbyte >> 24u;
-            image[ index + 1] = ( mbyte >> 16u) & 0xFFu;
-            image[ index + 2] = ( mbyte >>  8u) & 0xFFu;
-            image[ index + 3] = mbyte & 0xFFu;
+            auto local_image_ref = ( uint8_t *)image.get();
+            local_image_ref[     index] = mbyte >> 24u;
+            local_image_ref[ index + 1] = ( mbyte >> 16u) & 0xFFu;
+            local_image_ref[ index + 2] = ( mbyte >>  8u) & 0xFFu;
+            local_image_ref[ index + 3] = mbyte & 0xFFu;
         }
     }
 
@@ -571,15 +574,13 @@ void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 h
         png_error( png_ptr, "Image too small to process!");
 
     for( png_uint_32 i = 0; i < height; ++i)
-        row_pointers[ i] = image + i * width * bytes_per_pixel;
+        row_pointers[ i] = ( ( uint8_t *)image.get()) + i * width * bytes_per_pixel;
 
     png_write_image( png_ptr, row_pointers);
 
     png_write_end( png_ptr, info_ptr);
 
     png_destroy_write_struct( &png_ptr, &info_ptr);
-
-    png_free( png_ptr, image);
 
     fclose(cfp);
 }
@@ -840,9 +841,7 @@ uint32_t extractColor( const char *&rule, BKNode *bkroot)
         {
             if( *++rule == ':')
             {
-
-
-        cratio = getNumber( ++rule);
+                cratio = getNumber( ++rule);
                 cratio = cratio < 0 ? 0 : cratio;
                 color_name |= 0xFFu;
             }
@@ -952,7 +951,7 @@ uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor)
             ymix = ( lxyz.y + rxyz.y) / ( lxyz.y / ly + rxyz.y / ry),
             zmix = 1 - xmix - ymix;
 
-    return xyzToRgb({xmix, ymix, zmix});
+    return xyzToRgb( { xmix, ymix, zmix});
 }
 
 uint32_t mixColor( const char *&ctx, BKNode *bkroot)
@@ -966,7 +965,7 @@ uint32_t mixColor( const char *&ctx, BKNode *bkroot)
             op = *ctx;
         else
         {
-            op ? rcolor = extractColor(ctx, bkroot) : lcolor = extractColor(ctx, bkroot);
+            op ? rcolor = extractColor( ctx, bkroot) : lcolor = extractColor( ctx, bkroot);
             ctx -= 1;
         }
 
@@ -1088,12 +1087,12 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                 {
                     if( ltrim( rule) && *rule == '(')
                     {
-                        ccolor.scolor = mixColor(++rule, nullptr);
+                        ccolor.scolor = mixColor( ++rule, nullptr);
                     }
                     else
                     {
                         prev = rule;
-                        ccolor.scolor = extractColor(rule, bkroot);
+                        ccolor.scolor = extractColor( rule, bkroot);
                     }
 
                     if( ltrim( rule) && *rule == '-')
@@ -1127,7 +1126,7 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                             ++rule;
                         }
 
-                        fillEasingMode(ccolor.color_easing_fn, rule, bkroot, '}');
+                        fillEasingMode( ccolor.color_easing_fn, rule, bkroot, '}');
                     }
 
                     if( *rule == '}')
@@ -1169,7 +1168,8 @@ uint32_t editDistance( std::string_view main, std::string_view ref)
         {
             lookup[ j][ i] = std::min( lookup[ j - 1][ i] + 1,
                                        std::min( lookup[ j][ i - 1] + 1,
-                                                 lookup[ j - 1][ i - 1] + ( tolower( main[ j - 1]) != tolower( ref[ i - 1]))));
+                                                 lookup[ j - 1][ i - 1] +
+                                                 ( tolower( main[ j - 1]) != tolower( ref[ i - 1]))));
         }
     }
 
@@ -1208,7 +1208,7 @@ void findWordMatch( BKNode *node, const char *word, int threshold, std::vector<s
             maxdist = MIN( dist + threshold, MAX_DIFF_TOLERANCE - 1);
 
     if( dist <= threshold)
-        matches.emplace_back(node->word);
+        matches.emplace_back( node->word);
 
     for( int i = mindist; i <= maxdist; ++i)
         findWordMatch( node->next[ i].get(), word, threshold, matches);
@@ -1218,7 +1218,6 @@ std::vector<std::string> findWordMatch( BKNode *node, const char *word, int thre
 {
     std::vector<std::string> matches;
     findWordMatch( node, word, threshold, matches);
-
     return matches;
 }
 
@@ -1230,15 +1229,20 @@ void fillEasingMode( std::function<float(float)> &function, const char *&rule, B
         const float n1 = 7.5625f;
         const float d1 = 2.75f;
 
-        if (progress < 1 / d1) {
+        if (progress < 1 / d1)
             return n1 * progress * progress;
-        } else if (progress < 2 / d1) {
+        else if (progress < 2 / d1)
+        {
             progress -= 1.5f / d1;
             return n1 * progress * progress + 0.75f;
-        } else if (progress < 2.5 / d1) {
+        }
+        else if (progress < 2.5 / d1)
+        {
             progress -= 2.25f / d1;
             return n1 * progress * progress + 0.9375f;
-        } else {
+        }
+        else
+        {
             progress -= 2.625f / d1;
             return n1 * progress * progress + 0.984375f;
         }
@@ -1279,7 +1283,7 @@ void fillEasingMode( std::function<float(float)> &function, const char *&rule, B
             {
                 FN_EASEINOUTCUBIC, []( float progress)
                {
-                   return progress < 0.5 ? 4 * progress * progress * progress : 1 - pow(-2 * progress + 2, 3) / 2;
+                   return progress < 0.5 ? 4 * progress * progress * progress : 1 - pow( -2 * progress + 2, 3) / 2;
                }
             },
             {
@@ -1348,9 +1352,10 @@ void fillEasingMode( std::function<float(float)> &function, const char *&rule, B
                {
                    const float c5 = ( 2 * M_PI) / 4.5f;
 
-                   return ZERO( progress) ? 0 : EQUAL( progress, 1) ? 1 : progress < 0.5
-                                                                          ? -( pow(2, 20 * progress - 10) * sin( ( 20 * progress - 11.125) * c5)) / 2
-                                                                          : ( pow(2, -20 * progress + 10) * sin( ( 20 * progress - 11.125) * c5)) / 2 + 1;
+                   return ZERO( progress) ? 0 : EQUAL( progress, 1) ? 1
+                                              : progress < 0.5 ?
+                                                -( pow(2, 20 * progress - 10) * sin( ( 20 * progress - 11.125) * c5)) / 2
+                                              : ( pow(2, -20 * progress + 10) * sin( ( 20 * progress - 11.125) * c5)) / 2 + 1;
                }
             },
             {
@@ -1489,27 +1494,27 @@ void requestFontList()
     if( !FcInit())
         return;
 
-    Owner<FcConfig *> config( FcConfigGetCurrent(), FcConfigDestroy);
+    PropertyManager<FcConfig *> config( FcConfigGetCurrent(), FcConfigDestroy);
     FcConfigSetRescanInterval( config.get(), 0);
-    Owner<FcPattern *> pattern( FcPatternCreate(), FcPatternDestroy);
-    Owner<FcObjectSet *> fontObjectSet( FcObjectSetBuild( FC_FILE, nullptr), FcObjectSetDestroy);
-    Owner<FcFontSet *> fontSet( FcFontList( config.get(), pattern.get(), fontObjectSet.get()), []( auto fontset)
+    PropertyManager<FcPattern *> pattern( FcPatternCreate(), FcPatternDestroy);
+    PropertyManager<FcObjectSet *> font_object_set( FcObjectSetBuild( FC_FILE, nullptr), FcObjectSetDestroy);
+    PropertyManager<FcFontSet *> font_set( FcFontList(config.get(), pattern.get(), font_object_set.get()), []( auto font_set_local)
     {
-      if( fontset)
-        FcFontSetDestroy( fontset);
+      if( font_set_local)
+        FcFontSetDestroy( font_set_local);
     });
 
-    if( fontSet && fontSet->nfont > 0)
+    if( font_set && font_set->nfont > 0)
     {
         int i = 0;
         do
         {
-          Owner<const char *> font( ( const char *)FcNameUnparse( fontSet->fonts[ i]),
+          PropertyManager<const char *> font( ( const char *)FcNameUnparse( font_set->fonts[ i]),
               []( auto font) { free( ( FcChar8 *)font); });
             auto *breakp = strchr( font.get(), '/');
             printf( "\t%s\n", breakp);
         }
-        while( ++i < fontSet->nfont);
+        while( ++i < font_set->nfont);
     }
     FcFini();
 }
@@ -1967,8 +1972,8 @@ int main( int ac, char *av[])
     insert( bkroot, ICOLOR_YELLOWGREEN);
 }
 
-  Owner<FT_Library> library( FT_Done_FreeType);
-  Owner<FT_Face>    face( FT_Done_Face);
+  PropertyManager<FT_Library> library( FT_Done_FreeType);
+  PropertyManager<FT_Face>    face( FT_Done_Face);
   FT_Error          error;
 
     /*

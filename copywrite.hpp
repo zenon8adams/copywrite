@@ -88,23 +88,23 @@ struct BKNode
 };
 
 template<typename Resource>
-class Owner
+class PropertyManager
 {
  public:
   template <typename Deleter>
-   Owner( Resource&& resource, Deleter&& deleter)
+   PropertyManager( Resource&& resource, Deleter&& deleter)
       : resource( std::forward<Resource>( resource)),
         destructor( std::forward<Deleter>( deleter))
   {
   }
   template <typename Deleter>
-  explicit Owner( Deleter&& deleter)
+  explicit PropertyManager( Deleter&& deleter)
   : destructor( std::forward<Deleter>( deleter))
   {
   }
 
-  Owner( const Owner&) = delete;
-  Owner( Owner&&)      = delete;
+  PropertyManager( const PropertyManager&) = delete;
+  PropertyManager( PropertyManager&&)      = delete;
 
   auto& get()
   {
@@ -121,7 +121,7 @@ class Owner
     return resource;
   }
 
-  ~Owner()
+  ~PropertyManager()
   {
       std::invoke( destructor, resource);
   }
