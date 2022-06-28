@@ -78,11 +78,12 @@
  * 	- Pixmap is the final monochrome output
  */
 
-unsigned char *toMonochrome( FT_Bitmap bitmap)
+ std::unique_ptr<unsigned char, void( *)( unsigned char *)> toMonochrome( FT_Bitmap bitmap)
 {
 	FT_Int rows = bitmap.rows,
 	       cols = bitmap.width;
-	auto *pixmap = ( unsigned char *)calloc( rows * cols, 1);
+	auto pixmap = std::unique_ptr<unsigned char, void( *)( unsigned char *)>(
+	    ( unsigned char *)calloc( rows * cols, 1), []( auto p){ free( p); });
 	for( FT_Int y = 0; y < rows; ++y)
 	{
 		for( FT_Int ibyte = 0; ibyte < bitmap.pitch; ++ibyte)
@@ -92,7 +93,7 @@ unsigned char *toMonochrome( FT_Bitmap bitmap)
 			       cbit = bitmap.buffer[ y * bitmap.pitch + ibyte],
 			       rbits = (int)(cols - ibit) < 8 ? cols - ibit : 8;
 			for( FT_Int i = 0; i < rbits; ++i)
-			   pixmap[ base + i] = ( uint8_t)cbit & (1u << ( 7u - i));
+			   pixmap.get()[ base + i] = ( uint8_t)cbit & (1u << ( 7u - i));
 		}
 	}
 
@@ -101,28 +102,25 @@ unsigned char *toMonochrome( FT_Bitmap bitmap)
 
 Glyph extract( FT_GlyphSlot slot)
 {
-	Glyph glyph;
+	Glyph glyph( toMonochrome(( slot->bitmap)));
 	glyph.width = slot->bitmap.width;
 	glyph.height = slot->bitmap.rows;
 	glyph.xstep = slot->advance.x / 64;
-	glyph.pixmap = toMonochrome(slot->bitmap);
 	glyph.origin.x = slot->bitmap_left;
 	glyph.origin.y = glyph.height - slot->bitmap_top;
 
 	return glyph;
 }
 
-void insert( Glyph *&index, Glyph glyph)
+void insert( std::unique_ptr<Glyph>& index, Glyph glyph)
 {
 	if( index == nullptr)
 	{
-		index = (Glyph *)malloc( sizeof( Glyph));
-		memcpy( ( char *)index, (const char *)&glyph, sizeof( Glyph));
-
+		index.reset( new Glyph( std::move( glyph)));
 		return;
 	}
 
-	insert( index->next, glyph);
+	insert( index->next, std::move( glyph));
 }
 
 FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
@@ -152,7 +150,7 @@ void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, F
     {
         for( FT_Int x = glyph.origin.x, i = 0; i < glyph.width; ++x, ++i)
         {
-            uint64_t pixel = glyph.pixmap[ j * glyph.width + i];
+            uint64_t pixel = glyph.pixmap.get()[ j * glyph.width + i];
             out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | ( pixel ? color : 0);
         }
     }
@@ -160,9 +158,10 @@ void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, F
     pen->x += glyph.xstep; // Move the pen forward for positioning of the next character
 }
 
-size_t countCharacters( const char *pw)
+size_t countCharacters( std::string_view word)
 {
     size_t value = 0;
+    auto *pw = word.data();
     while( *pw)
     {
         size_t ccount = byteCount( *pw);
@@ -173,10 +172,10 @@ size_t countCharacters( const char *pw)
     return value;
 }
 
-void render( const char *word, FT_Face face, size_t default_font_size, const char *raster_glyph, FILE *destination, bool as_image,
-             const char *color_rule, KDNode *root, BKNode *bkroot)
+void render( std::string_view word, FT_Face face, size_t default_font_size, const char *raster_glyph, FILE *destination, bool as_image,
+            const char *color_rule, const std::shared_ptr<KDNode>& root, const std::shared_ptr<BKNode>& bkroot)
 {
-    Glyph *head = nullptr;
+    std::unique_ptr<Glyph> head;
     FT_Int width 	= 0, // Total width of the buffer
             mdescent = 0, // Holds the baseline for the character with most descent
             mxheight = 0, // Maximum heigh of character 'x' according to various font sizes
@@ -186,13 +185,13 @@ void render( const char *word, FT_Face face, size_t default_font_size, const cha
 
     FT_Error error;
 
-    auto rules = color_rule == nullptr ? std::vector<ColorRule>{} : parseColorRule( color_rule, bkroot);
+    auto rules = color_rule == nullptr ? std::vector<ColorRule>{} : parseColorRule( color_rule, bkroot.get());
 
     size_t index = 0, nchars = countCharacters( word);
-    for( const char *pw = word; *pw;)
+    for( const char *pw = word.data(); *pw;)
     {
         FT_Int shift = byteCount( *pw);
-        FT_UInt character = collate( (uint8_t *)word, pw - word, shift);
+        FT_UInt character = collate( (uint8_t *)word.data(), pw - word.data(), shift);
 
         ColorRule best{};
         index += 1;
@@ -242,7 +241,7 @@ void render( const char *word, FT_Face face, size_t default_font_size, const cha
         mdescent = MAX( mdescent, current.origin.y);
         current.xstep += kerning( *pw, prev, face);
         width += current.xstep;
-        insert( head, current);
+        insert( head, std::move( current));
 
         prev = character;
         pw += shift;
@@ -254,25 +253,22 @@ void render( const char *word, FT_Face face, size_t default_font_size, const cha
 
     FT_Int height = hexcess + mxheight + mdescent;
 
-    auto *out = ( uint64_t *)calloc( width * height, sizeof( uint64_t));
+    std::unique_ptr<uint64_t, void( *)( uint64_t *)> out( ( uint64_t *)calloc( width * height, sizeof( uint64_t)),
+        []( uint64_t *p) { free( p);});
+
     FT_Vector pen;
     memset( &pen, 0, sizeof( pen));
-    for( Glyph *current = head, *prev_link; current != nullptr;)
+    for( std::shared_ptr<Glyph> current = std::move( head), prev_link; current != nullptr;)
     {
-        draw( *current, &pen, out, mdescent, width, height, nchars - 1);
-
+        draw( *current, &pen, out.get(), mdescent, width, height, nchars - 1);
         prev_link = current;
-        current = current->next;
-        free(prev_link->pixmap);
-        free(prev_link);
+        current = std::move( current->next);
     }
 
     if( as_image && destination != stdout)
-        writePNG( destination, out, width, height);
+        writePNG( destination, out.get(), width, height);
     else
-        write(out, width, height, raster_glyph, destination, root);
-
-    free( out);
+        write( out.get(), width, height, raster_glyph, destination, root.get());
 }
 
 uint32_t hsvaToRgba( uint32_t hsv)
@@ -386,30 +382,30 @@ KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best, ui
     if( nchannel < cchannel)
     {
         if( node->left != nullptr)
-            best = approximate( node->left, search, ldist, best, ndepth);
+            best = approximate( node->left.get(), search, ldist, best, ndepth);
         else
             return best;
     }
     else
     {
         if( node->right != nullptr)
-            best = approximate( node->right, search, ldist, best, ndepth);
+            best = approximate( node->right.get(), search, ldist, best, ndepth);
         else
             return best;
         left = false;
     }
 
     if( std::abs( search.rgb[ depth] - node->color.rgb[ depth]) < ldist)
-        best = approximate(!left ? node->left : node->right, search, ldist, best, ndepth);
+        best = approximate( !left ? node->left.get() : node->right.get(), search, ldist, best, ndepth);
 
     return best;
 }
 
-void insert( KDNode *&node, Color color, size_t index, uint8_t depth)
+void insert( std::shared_ptr<KDNode>& node, Color color, size_t index, uint8_t depth)
 {
     if( node == nullptr)
     {
-        node = new KDNode{ color, index};
+        node = std::make_shared<KDNode>( color, index);
         return;
     }
 
@@ -420,17 +416,6 @@ void insert( KDNode *&node, Color color, size_t index, uint8_t depth)
         insert(node->left, color, index, ndepth);
     else
         insert(node->right, color, index, ndepth);
-}
-
-void free( KDNode *&node)
-{
-    if( node == nullptr)
-        return;
-
-    free( node->left);
-    free( node->right);
-
-    delete node; node = nullptr;
 }
 
 void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination, KDNode *root)
@@ -630,7 +615,7 @@ uint32_t getNumber( const char *&ctx, uint8_t base)
 
 uint32_t decodeColorName( const char *&ctx, BKNode *bkroot)
 {
-    static const std::unordered_map<std::string, uint32_t> nameLookup =
+    static const std::unordered_map<std::string_view, uint32_t> nameLookup =
     {
             { COLOR_ALICEBLUE,            COLORHEX_ALICEBLUE},
             { COLOR_ANTIQUEWHITE,         COLORHEX_ANTIQUEWHITE},
@@ -1139,7 +1124,7 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
     return rules;
 }
 
-uint32_t editDistance( const std::string& main, const std::string& ref)
+uint32_t editDistance( std::string_view main, std::string_view ref)
 {
     auto mlength = main.size() + 1, rlength = ref.size() + 1;
     uint8_t lookup[ mlength][ rlength];
@@ -1162,11 +1147,11 @@ uint32_t editDistance( const std::string& main, const std::string& ref)
     return lookup[ mlength - 1][ rlength - 1];
 }
 
-void insert( BKNode *&node, const char *word)
+void insert( std::shared_ptr<BKNode> &node, std::string_view word)
 {
     if( node == nullptr)
     {
-        node = new BKNode{word};
+        node = std::make_shared<BKNode>( word);
         return;
     }
 
@@ -1184,20 +1169,6 @@ void insert( BKNode *&node, const char *word)
     }
 }
 
-void free( BKNode *&node)
-{
-    if( node == nullptr)
-        return;
-
-    for ( auto &next : node->next)
-    {
-        free( next);
-        delete next; next = nullptr;
-    }
-
-    delete node; node = nullptr;
-}
-
 void findWordMatch( BKNode *node, const char *word, int threshold, std::vector<std::string>& matches)
 {
     if( node == nullptr)
@@ -1211,7 +1182,7 @@ void findWordMatch( BKNode *node, const char *word, int threshold, std::vector<s
         matches.emplace_back(node->word);
 
     for( int i = mindist; i <= maxdist; ++i)
-        findWordMatch( node->next[ i], word, threshold, matches);
+        findWordMatch( node->next[ i].get(), word, threshold, matches);
 }
 
 std::vector<std::string> findWordMatch( BKNode *node, const char *word, int threshold)
@@ -1471,7 +1442,8 @@ void fillEasingMode( std::function<float(float)> &function, const char *&rule, B
         function = fn->second;
     else
     {
-        fprintf( stderr, "Unknown easing function specified! Default easing function will be used\n");
+        fprintf( stderr, "Unknown easing function `%s` specified!"
+                         " Default easing function will be used\n", easing.c_str());
         auto matches = findWordMatch( bkroot, easing.c_str());
         if( !matches.empty())
         {
@@ -1488,300 +1460,299 @@ void requestFontList()
     if( !FcInit())
         return;
 
-    FcConfig *config = FcConfigGetCurrent();
-    FcConfigSetRescanInterval( config, 0);
-    FcPattern *pattern = FcPatternCreate();
-    FcObjectSet *fontObjectSet = FcObjectSetBuild( FC_FILE, nullptr);
-    FcFontSet *fontSet = FcFontList( config, pattern, fontObjectSet);
+    Owner<FcConfig *> config( FcConfigGetCurrent(), FcConfigDestroy);
+    FcConfigSetRescanInterval( config.get(), 0);
+    Owner<FcPattern *> pattern( FcPatternCreate(), FcPatternDestroy);
+    Owner<FcObjectSet *> fontObjectSet( FcObjectSetBuild( FC_FILE, nullptr), FcObjectSetDestroy);
+    Owner<FcFontSet *> fontSet( FcFontList( config.get(), pattern.get(), fontObjectSet.get()), []( auto fontset)
+    {
+      if( fontset)
+        FcFontSetDestroy( fontset);
+    });
 
     if( fontSet && fontSet->nfont > 0)
     {
         int i = 0;
         do
         {
-            const char *font = ( const char *)FcNameUnparse( fontSet->fonts[ i]),
-                *breakp = strchr( font, '/');
-
+          Owner<const char *> font( ( const char *)FcNameUnparse( fontSet->fonts[ i]),
+              []( auto font) { free( ( FcChar8 *)font); });
+            auto *breakp = strchr( font.get(), '/');
             printf( "\t%s\n", breakp);
-
-            free( ( FcChar8 *)font);
         }
         while( ++i < fontSet->nfont);
-
     }
-
-    if( fontSet)
-        FcFontSetDestroy( fontSet);
+    FcFini();
 }
 
 int main( int ac, char *av[])
 {
-    KDNode *kdroot = nullptr;
+  std::shared_ptr<KDNode> kdroot;
+  {
+      insert( kdroot, { 0, 0, 0}, 0);
+      insert( kdroot, { HALF_RGB_SCALE, 0, 0}, 1);
+      insert( kdroot, { 0, HALF_RGB_SCALE, 0}, 2);
+      insert( kdroot, { HALF_RGB_SCALE, HALF_RGB_SCALE, 0}, 3);
+      insert( kdroot, { 0, 0, HALF_RGB_SCALE}, 4);
+      insert( kdroot, { HALF_RGB_SCALE, 0, HALF_RGB_SCALE}, 5);
+      insert( kdroot, { 0, HALF_RGB_SCALE, HALF_RGB_SCALE}, 6);
+      insert( kdroot, { 192, 192, 192}, 7);
+      insert( kdroot, { HALF_RGB_SCALE, HALF_RGB_SCALE, HALF_RGB_SCALE}, 8);
+      insert( kdroot, { RGB_SCALE, 0, 0}, 9);
+      insert( kdroot, { 0, RGB_SCALE, 0}, 10);
+      insert( kdroot, { RGB_SCALE, RGB_SCALE, 0}, 11);
+      insert( kdroot, { 0, 0, RGB_SCALE}, 12);
+      insert( kdroot, { RGB_SCALE, 0, RGB_SCALE}, 13);
+      insert( kdroot, { 0, RGB_SCALE, RGB_SCALE}, 14);
+      insert( kdroot, { RGB_SCALE, RGB_SCALE, RGB_SCALE}, 15);
+      insert( kdroot, { 0, 0, 0}, 16);
+      insert( kdroot, { 0, 0, 95}, 17);
+      insert( kdroot, { 0, 0, 135}, 18);
+      insert( kdroot, { 0, 0, 175}, 19);
+      insert( kdroot, { 0, 0, 215}, 20);
+      insert( kdroot, { 0, 0, RGB_SCALE}, 21);
+      insert( kdroot, { 0, 95, 0}, 22);
+      insert( kdroot, { 0, 95, 95}, 23);
+      insert( kdroot, { 0, 95, 135}, 24);
+      insert( kdroot, { 0, 95, 175}, 25);
+      insert( kdroot, { 0, 95, 215}, 26);
+      insert( kdroot, { 0, 95, RGB_SCALE}, 27);
+      insert( kdroot, { 0, 135, 0}, 28);
+      insert( kdroot, { 0, 135, 95}, 29);
+      insert( kdroot, { 0, 135, 135}, 30);
+      insert( kdroot, { 0, 135, 175}, 31);
+      insert( kdroot, { 0, 135, 215}, 32);
+      insert( kdroot, { 0, 135, RGB_SCALE}, 33);
+      insert( kdroot, { 0, 175, 0}, 34);
+      insert( kdroot, { 0, 175, 95}, 35);
+      insert( kdroot, { 0, 175, 135}, 36);
+      insert( kdroot, { 0, 175, 175}, 37);
+      insert( kdroot, { 0, 175, 215}, 38);
+      insert( kdroot, { 0, 175, RGB_SCALE}, 39);
+      insert( kdroot, { 0, 215, 0}, 40);
+      insert( kdroot, { 0, 215, 95}, 41);
+      insert( kdroot, { 0, 215, 135}, 42);
+      insert( kdroot, { 0, 215, 175}, 43);
+      insert( kdroot, { 0, 215, 215}, 44);
+      insert( kdroot, { 0, 215, RGB_SCALE}, 45);
+      insert( kdroot, { 0, RGB_SCALE, 0}, 46);
+      insert( kdroot, { 0, RGB_SCALE, 95}, 47);
+      insert( kdroot, { 0, RGB_SCALE, 135}, 48);
+      insert( kdroot, { 0, RGB_SCALE, 175}, 49);
+      insert( kdroot, { 0, RGB_SCALE, 215}, 50);
+      insert( kdroot, { 0, RGB_SCALE, RGB_SCALE}, 51);
+      insert( kdroot, { 95, 0, 0}, 52);
+      insert( kdroot, { 95, 0, 95}, 53);
+      insert( kdroot, { 95, 0, 135}, 54);
+      insert( kdroot, { 95, 0, 175}, 55);
+      insert( kdroot, { 95, 0, 215}, 56);
+      insert( kdroot, { 95, 0, RGB_SCALE}, 57);
+      insert( kdroot, { 95, 95, 0}, 58);
+      insert( kdroot, { 95, 95, 95}, 59);
+      insert( kdroot, { 95, 95, 135}, 60);
+      insert( kdroot, { 95, 95, 175}, 61);
+      insert( kdroot, { 95, 95, 215}, 62);
+      insert( kdroot, { 95, 95, RGB_SCALE}, 63);
+      insert( kdroot, { 95, 135, 0}, 64);
+      insert( kdroot, { 95, 135, 95}, 65);
+      insert( kdroot, { 95, 135, 135}, 66);
+      insert( kdroot, { 95, 135, 175}, 67);
+      insert( kdroot, { 95, 135, 215}, 68);
+      insert( kdroot, { 95, 135, RGB_SCALE}, 69);
+      insert( kdroot, { 95, 175, 0}, 70);
+      insert( kdroot, { 95, 175, 95}, 71);
+      insert( kdroot, { 95, 175, 135}, 72);
+      insert( kdroot, { 95, 175, 175}, 73);
+      insert( kdroot, { 95, 175, 215}, 74);
+      insert( kdroot, { 95, 175, RGB_SCALE}, 75);
+      insert( kdroot, { 95, 215, 0}, 76);
+      insert( kdroot, { 95, 215, 95}, 77);
+      insert( kdroot, { 95, 215, 135}, 78);
+      insert( kdroot, { 95, 215, 175}, 79);
+      insert( kdroot, { 95, 215, 215}, 80);
+      insert( kdroot, { 95, 215, RGB_SCALE}, 81);
+      insert( kdroot, { 95, RGB_SCALE, 0}, 82);
+      insert( kdroot, { 95, RGB_SCALE, 95}, 83);
+      insert( kdroot, { 95, RGB_SCALE, 135}, 84);
+      insert( kdroot, { 95, RGB_SCALE, 175}, 85);
+      insert( kdroot, { 95, RGB_SCALE, 215}, 86);
+      insert( kdroot, { 95, RGB_SCALE, RGB_SCALE}, 87);
+      insert( kdroot, { 135, 0, 0}, 88);
+      insert( kdroot, { 135, 0, 95}, 89);
+      insert( kdroot, { 135, 0, 135}, 90);
+      insert( kdroot, { 135, 0, 175}, 91);
+      insert( kdroot, { 135, 0, 215}, 92);
+      insert( kdroot, { 135, 0, RGB_SCALE}, 93);
+      insert( kdroot, { 135, 95, 0}, 94);
+      insert( kdroot, { 135, 95, 95}, 95);
+      insert( kdroot, { 135, 95, 135}, 96);
+      insert( kdroot, { 135, 95, 175}, 97);
+      insert( kdroot, { 135, 95, 215}, 98);
+      insert( kdroot, { 135, 95, RGB_SCALE}, 99);
+      insert( kdroot, { 135, 135, 0}, 100);
+      insert( kdroot, { 135, 135, 95}, 101);
+      insert( kdroot, { 135, 135, 135}, 102);
+      insert( kdroot, { 135, 135, 175}, 103);
+      insert( kdroot, { 135, 135, 215}, 104);
+      insert( kdroot, { 135, 135, RGB_SCALE}, 105);
+      insert( kdroot, { 135, 175, 0}, 106);
+      insert( kdroot, { 135, 175, 95}, 107);
+      insert( kdroot, { 135, 175, 135}, 108);
+      insert( kdroot, { 135, 175, 175}, 109);
+      insert( kdroot, { 135, 175, 215}, 110);
+      insert( kdroot, { 135, 175, RGB_SCALE}, 111);
+      insert( kdroot, { 135, 215, 0}, 112);
+      insert( kdroot, { 135, 215, 95}, 113);
+      insert( kdroot, { 135, 215, 135}, 114);
+      insert( kdroot, { 135, 215, 175}, 115);
+      insert( kdroot, { 135, 215, 215}, 116);
+      insert( kdroot, { 135, 215, RGB_SCALE}, 117);
+      insert( kdroot, { 135, RGB_SCALE, 0}, 118);
+      insert( kdroot, { 135, RGB_SCALE, 95}, 119);
+      insert( kdroot, { 135, RGB_SCALE, 135}, 120);
+      insert( kdroot, { 135, RGB_SCALE, 175}, 121);
+      insert( kdroot, { 135, RGB_SCALE, 215}, 122);
+      insert( kdroot, { 135, RGB_SCALE, RGB_SCALE}, 123);
+      insert( kdroot, { 175, 0, 0}, 124);
+      insert( kdroot, { 175, 0, 95}, 125);
+      insert( kdroot, { 175, 0, 135}, 126);
+      insert( kdroot, { 175, 0, 175}, 127);
+      insert( kdroot, { 175, 0, 215}, HALF_RGB_SCALE);
+      insert( kdroot, { 175, 0, RGB_SCALE}, 129);
+      insert( kdroot, { 175, 95, 0}, 130);
+      insert( kdroot, { 175, 95, 95}, 131);
+      insert( kdroot, { 175, 95, 135}, 132);
+      insert( kdroot, { 175, 95, 175}, 133);
+      insert( kdroot, { 175, 95, 215}, 134);
+      insert( kdroot, { 175, 95, RGB_SCALE}, 135);
+      insert( kdroot, { 175, 135, 0}, 136);
+      insert( kdroot, { 175, 135, 95}, 137);
+      insert( kdroot, { 175, 135, 135}, 138);
+      insert( kdroot, { 175, 135, 175}, 139);
+      insert( kdroot, { 175, 135, 215}, 140);
+      insert( kdroot, { 175, 135, RGB_SCALE}, 141);
+      insert( kdroot, { 175, 175, 0}, 142);
+      insert( kdroot, { 175, 175, 95}, 143);
+      insert( kdroot, { 175, 175, 135}, 144);
+      insert( kdroot, { 175, 175, 175}, 145);
+      insert( kdroot, { 175, 175, 215}, 146);
+      insert( kdroot, { 175, 175, RGB_SCALE}, 147);
+      insert( kdroot, { 175, 215, 0}, 148);
+      insert( kdroot, { 175, 215, 95}, 149);
+      insert( kdroot, { 175, 215, 135}, 150);
+      insert( kdroot, { 175, 215, 175}, 151);
+      insert( kdroot, { 175, 215, 215}, 152);
+      insert( kdroot, { 175, 215, RGB_SCALE}, 153);
+      insert( kdroot, { 175, RGB_SCALE, 0}, 154);
+      insert( kdroot, { 175, RGB_SCALE, 95}, 155);
+      insert( kdroot, { 175, RGB_SCALE, 135}, 156);
+      insert( kdroot, { 175, RGB_SCALE, 175}, 157);
+      insert( kdroot, { 175, RGB_SCALE, 215}, 158);
+      insert( kdroot, { 175, RGB_SCALE, RGB_SCALE}, 159);
+      insert( kdroot, { 215, 0, 0}, 160);
+      insert( kdroot, { 215, 0, 95}, 161);
+      insert( kdroot, { 215, 0, 135}, 162);
+      insert( kdroot, { 215, 0, 175}, 163);
+      insert( kdroot, { 215, 0, 215}, 164);
+      insert( kdroot, { 215, 0, RGB_SCALE}, 165);
+      insert( kdroot, { 215, 95, 0}, 166);
+      insert( kdroot, { 215, 95, 95}, 167);
+      insert( kdroot, { 215, 95, 135}, 168);
+      insert( kdroot, { 215, 95, 175}, 169);
+      insert( kdroot, { 215, 95, 215}, 170);
+      insert( kdroot, { 215, 95, RGB_SCALE}, 171);
+      insert( kdroot, { 215, 135, 0}, 172);
+      insert( kdroot, { 215, 135, 95}, 173);
+      insert( kdroot, { 215, 135, 135}, 174);
+      insert( kdroot, { 215, 135, 175}, 175);
+      insert( kdroot, { 215, 135, 215}, 176);
+      insert( kdroot, { 215, 135, RGB_SCALE}, 177);
+      insert( kdroot, { 215, 175, 0}, 178);
+      insert( kdroot, { 215, 175, 95}, 179);
+      insert( kdroot, { 215, 175, 135}, 180);
+      insert( kdroot, { 215, 175, 175}, 181);
+      insert( kdroot, { 215, 175, 215}, 182);
+      insert( kdroot, { 215, 175, RGB_SCALE}, 183);
+      insert( kdroot, { 215, 215, 0}, 184);
+      insert( kdroot, { 215, 215, 95}, 185);
+      insert( kdroot, { 215, 215, 135}, 186);
+      insert( kdroot, { 215, 215, 175}, 187);
+      insert( kdroot, { 215, 215, 215}, 188);
+      insert( kdroot, { 215, 215, RGB_SCALE}, 189);
+      insert( kdroot, { 215, RGB_SCALE, 0}, 190);
+      insert( kdroot, { 215, RGB_SCALE, 95}, 191);
+      insert( kdroot, { 215, RGB_SCALE, 135}, 192);
+      insert( kdroot, { 215, RGB_SCALE, 175}, 193);
+      insert( kdroot, { 215, RGB_SCALE, 215}, 194);
+      insert( kdroot, { 215, RGB_SCALE, RGB_SCALE}, 195);
+      insert( kdroot, { RGB_SCALE, 0, 0}, 196);
+      insert( kdroot, { RGB_SCALE, 0, 95}, 197);
+      insert( kdroot, { RGB_SCALE, 0, 135}, 198);
+      insert( kdroot, { RGB_SCALE, 0, 175}, 199);
+      insert( kdroot, { RGB_SCALE, 0, 215}, 200);
+      insert( kdroot, { RGB_SCALE, 0, RGB_SCALE}, 201);
+      insert( kdroot, { RGB_SCALE, 95, 0}, 202);
+      insert( kdroot, { RGB_SCALE, 95, 95}, 203);
+      insert( kdroot, { RGB_SCALE, 95, 135}, 204);
+      insert( kdroot, { RGB_SCALE, 95, 175}, 205);
+      insert( kdroot, { RGB_SCALE, 95, 215}, 206);
+      insert( kdroot, { RGB_SCALE, 95, RGB_SCALE}, 207);
+      insert( kdroot, { RGB_SCALE, 135, 0}, 208);
+      insert( kdroot, { RGB_SCALE, 135, 95}, 209);
+      insert( kdroot, { RGB_SCALE, 135, 135}, 210);
+      insert( kdroot, { RGB_SCALE, 135, 175}, 211);
+      insert( kdroot, { RGB_SCALE, 135, 215}, 212);
+      insert( kdroot, { RGB_SCALE, 135, RGB_SCALE}, 213);
+      insert( kdroot, { RGB_SCALE, 175, 0}, 214);
+      insert( kdroot, { RGB_SCALE, 175, 95}, 215);
+      insert( kdroot, { RGB_SCALE, 175, 135}, 216);
+      insert( kdroot, { RGB_SCALE, 175, 175}, 217);
+      insert( kdroot, { RGB_SCALE, 175, 215}, 218);
+      insert( kdroot, { RGB_SCALE, 175, RGB_SCALE}, 219);
+      insert( kdroot, { RGB_SCALE, 215, 0}, 220);
+      insert( kdroot, { RGB_SCALE, 215, 95}, 221);
+      insert( kdroot, { RGB_SCALE, 215, 135}, 222);
+      insert( kdroot, { RGB_SCALE, 215, 175}, 223);
+      insert( kdroot, { RGB_SCALE, 215, 215}, 224);
+      insert( kdroot, { RGB_SCALE, 215, RGB_SCALE}, 225);
+      insert( kdroot, { RGB_SCALE, RGB_SCALE, 0}, 226);
+      insert( kdroot, { RGB_SCALE, RGB_SCALE, 95}, 227);
+      insert( kdroot, { RGB_SCALE, RGB_SCALE, 135}, 228);
+      insert( kdroot, { RGB_SCALE, RGB_SCALE, 175}, 229);
+      insert( kdroot, { RGB_SCALE, RGB_SCALE, 215}, 230);
+      insert( kdroot, { RGB_SCALE, RGB_SCALE, RGB_SCALE}, 231);
+      insert( kdroot, { 8, 8, 8}, 232);
+      insert( kdroot, { 18, 18, 18}, 233);
+      insert( kdroot, { 28, 28, 28}, 234);
+      insert( kdroot, { 38, 38, 38}, 235);
+      insert( kdroot, { 48, 48, 48}, 236);
+      insert( kdroot, { 58, 58, 58}, 237);
+      insert( kdroot, { 68, 68, 68}, 238);
+      insert( kdroot, { 78, 78, 78}, 239);
+      insert( kdroot, { 88, 88, 88}, 240);
+      insert( kdroot, { 98, 98, 98}, 241);
+      insert( kdroot, { 108, 108, 108}, 242);
+      insert( kdroot, { 118, 118, 118}, 243);
+      insert( kdroot, { HALF_RGB_SCALE, HALF_RGB_SCALE, HALF_RGB_SCALE}, 244);
+      insert( kdroot, { 138, 138, 138}, 245);
+      insert( kdroot, { 148, 148, 148}, 246);
+      insert( kdroot, { 158, 158, 158}, 247);
+      insert( kdroot, { 168, 168, 168}, 248);
+      insert( kdroot, { 178, 178, 178}, 249);
+      insert( kdroot, { 188, 188, 188}, 250);
+      insert( kdroot, { 198, 198, 198}, 251);
+      insert( kdroot, { 208, 208, 208}, 252);
+      insert( kdroot, { 218, 218, 218}, 253);
+      insert( kdroot, { 228, 228, 228}, 254);
+      insert( kdroot, { 238, 238, 238}, RGB_SCALE);
+  }
 
-    insert( kdroot, { 0, 0, 0}, 0);
-    insert( kdroot, { HALF_RGB_SCALE, 0, 0}, 1);
-    insert( kdroot, { 0, HALF_RGB_SCALE, 0}, 2);
-    insert( kdroot, { HALF_RGB_SCALE, HALF_RGB_SCALE, 0}, 3);
-    insert( kdroot, { 0, 0, HALF_RGB_SCALE}, 4);
-    insert( kdroot, { HALF_RGB_SCALE, 0, HALF_RGB_SCALE}, 5);
-    insert( kdroot, { 0, HALF_RGB_SCALE, HALF_RGB_SCALE}, 6);
-    insert( kdroot, { 192, 192, 192}, 7);
-    insert( kdroot, { HALF_RGB_SCALE, HALF_RGB_SCALE, HALF_RGB_SCALE}, 8);
-    insert( kdroot, { RGB_SCALE, 0, 0}, 9);
-    insert( kdroot, { 0, RGB_SCALE, 0}, 10);
-    insert( kdroot, { RGB_SCALE, RGB_SCALE, 0}, 11);
-    insert( kdroot, { 0, 0, RGB_SCALE}, 12);
-    insert( kdroot, { RGB_SCALE, 0, RGB_SCALE}, 13);
-    insert( kdroot, { 0, RGB_SCALE, RGB_SCALE}, 14);
-    insert( kdroot, { RGB_SCALE, RGB_SCALE, RGB_SCALE}, 15);
-    insert( kdroot, { 0, 0, 0}, 16);
-    insert( kdroot, { 0, 0, 95}, 17);
-    insert( kdroot, { 0, 0, 135}, 18);
-    insert( kdroot, { 0, 0, 175}, 19);
-    insert( kdroot, { 0, 0, 215}, 20);
-    insert( kdroot, { 0, 0, RGB_SCALE}, 21);
-    insert( kdroot, { 0, 95, 0}, 22);
-    insert( kdroot, { 0, 95, 95}, 23);
-    insert( kdroot, { 0, 95, 135}, 24);
-    insert( kdroot, { 0, 95, 175}, 25);
-    insert( kdroot, { 0, 95, 215}, 26);
-    insert( kdroot, { 0, 95, RGB_SCALE}, 27);
-    insert( kdroot, { 0, 135, 0}, 28);
-    insert( kdroot, { 0, 135, 95}, 29);
-    insert( kdroot, { 0, 135, 135}, 30);
-    insert( kdroot, { 0, 135, 175}, 31);
-    insert( kdroot, { 0, 135, 215}, 32);
-    insert( kdroot, { 0, 135, RGB_SCALE}, 33);
-    insert( kdroot, { 0, 175, 0}, 34);
-    insert( kdroot, { 0, 175, 95}, 35);
-    insert( kdroot, { 0, 175, 135}, 36);
-    insert( kdroot, { 0, 175, 175}, 37);
-    insert( kdroot, { 0, 175, 215}, 38);
-    insert( kdroot, { 0, 175, RGB_SCALE}, 39);
-    insert( kdroot, { 0, 215, 0}, 40);
-    insert( kdroot, { 0, 215, 95}, 41);
-    insert( kdroot, { 0, 215, 135}, 42);
-    insert( kdroot, { 0, 215, 175}, 43);
-    insert( kdroot, { 0, 215, 215}, 44);
-    insert( kdroot, { 0, 215, RGB_SCALE}, 45);
-    insert( kdroot, { 0, RGB_SCALE, 0}, 46);
-    insert( kdroot, { 0, RGB_SCALE, 95}, 47);
-    insert( kdroot, { 0, RGB_SCALE, 135}, 48);
-    insert( kdroot, { 0, RGB_SCALE, 175}, 49);
-    insert( kdroot, { 0, RGB_SCALE, 215}, 50);
-    insert( kdroot, { 0, RGB_SCALE, RGB_SCALE}, 51);
-    insert( kdroot, { 95, 0, 0}, 52);
-    insert( kdroot, { 95, 0, 95}, 53);
-    insert( kdroot, { 95, 0, 135}, 54);
-    insert( kdroot, { 95, 0, 175}, 55);
-    insert( kdroot, { 95, 0, 215}, 56);
-    insert( kdroot, { 95, 0, RGB_SCALE}, 57);
-    insert( kdroot, { 95, 95, 0}, 58);
-    insert( kdroot, { 95, 95, 95}, 59);
-    insert( kdroot, { 95, 95, 135}, 60);
-    insert( kdroot, { 95, 95, 175}, 61);
-    insert( kdroot, { 95, 95, 215}, 62);
-    insert( kdroot, { 95, 95, RGB_SCALE}, 63);
-    insert( kdroot, { 95, 135, 0}, 64);
-    insert( kdroot, { 95, 135, 95}, 65);
-    insert( kdroot, { 95, 135, 135}, 66);
-    insert( kdroot, { 95, 135, 175}, 67);
-    insert( kdroot, { 95, 135, 215}, 68);
-    insert( kdroot, { 95, 135, RGB_SCALE}, 69);
-    insert( kdroot, { 95, 175, 0}, 70);
-    insert( kdroot, { 95, 175, 95}, 71);
-    insert( kdroot, { 95, 175, 135}, 72);
-    insert( kdroot, { 95, 175, 175}, 73);
-    insert( kdroot, { 95, 175, 215}, 74);
-    insert( kdroot, { 95, 175, RGB_SCALE}, 75);
-    insert( kdroot, { 95, 215, 0}, 76);
-    insert( kdroot, { 95, 215, 95}, 77);
-    insert( kdroot, { 95, 215, 135}, 78);
-    insert( kdroot, { 95, 215, 175}, 79);
-    insert( kdroot, { 95, 215, 215}, 80);
-    insert( kdroot, { 95, 215, RGB_SCALE}, 81);
-    insert( kdroot, { 95, RGB_SCALE, 0}, 82);
-    insert( kdroot, { 95, RGB_SCALE, 95}, 83);
-    insert( kdroot, { 95, RGB_SCALE, 135}, 84);
-    insert( kdroot, { 95, RGB_SCALE, 175}, 85);
-    insert( kdroot, { 95, RGB_SCALE, 215}, 86);
-    insert( kdroot, { 95, RGB_SCALE, RGB_SCALE}, 87);
-    insert( kdroot, { 135, 0, 0}, 88);
-    insert( kdroot, { 135, 0, 95}, 89);
-    insert( kdroot, { 135, 0, 135}, 90);
-    insert( kdroot, { 135, 0, 175}, 91);
-    insert( kdroot, { 135, 0, 215}, 92);
-    insert( kdroot, { 135, 0, RGB_SCALE}, 93);
-    insert( kdroot, { 135, 95, 0}, 94);
-    insert( kdroot, { 135, 95, 95}, 95);
-    insert( kdroot, { 135, 95, 135}, 96);
-    insert( kdroot, { 135, 95, 175}, 97);
-    insert( kdroot, { 135, 95, 215}, 98);
-    insert( kdroot, { 135, 95, RGB_SCALE}, 99);
-    insert( kdroot, { 135, 135, 0}, 100);
-    insert( kdroot, { 135, 135, 95}, 101);
-    insert( kdroot, { 135, 135, 135}, 102);
-    insert( kdroot, { 135, 135, 175}, 103);
-    insert( kdroot, { 135, 135, 215}, 104);
-    insert( kdroot, { 135, 135, RGB_SCALE}, 105);
-    insert( kdroot, { 135, 175, 0}, 106);
-    insert( kdroot, { 135, 175, 95}, 107);
-    insert( kdroot, { 135, 175, 135}, 108);
-    insert( kdroot, { 135, 175, 175}, 109);
-    insert( kdroot, { 135, 175, 215}, 110);
-    insert( kdroot, { 135, 175, RGB_SCALE}, 111);
-    insert( kdroot, { 135, 215, 0}, 112);
-    insert( kdroot, { 135, 215, 95}, 113);
-    insert( kdroot, { 135, 215, 135}, 114);
-    insert( kdroot, { 135, 215, 175}, 115);
-    insert( kdroot, { 135, 215, 215}, 116);
-    insert( kdroot, { 135, 215, RGB_SCALE}, 117);
-    insert( kdroot, { 135, RGB_SCALE, 0}, 118);
-    insert( kdroot, { 135, RGB_SCALE, 95}, 119);
-    insert( kdroot, { 135, RGB_SCALE, 135}, 120);
-    insert( kdroot, { 135, RGB_SCALE, 175}, 121);
-    insert( kdroot, { 135, RGB_SCALE, 215}, 122);
-    insert( kdroot, { 135, RGB_SCALE, RGB_SCALE}, 123);
-    insert( kdroot, { 175, 0, 0}, 124);
-    insert( kdroot, { 175, 0, 95}, 125);
-    insert( kdroot, { 175, 0, 135}, 126);
-    insert( kdroot, { 175, 0, 175}, 127);
-    insert( kdroot, { 175, 0, 215}, HALF_RGB_SCALE);
-    insert( kdroot, { 175, 0, RGB_SCALE}, 129);
-    insert( kdroot, { 175, 95, 0}, 130);
-    insert( kdroot, { 175, 95, 95}, 131);
-    insert( kdroot, { 175, 95, 135}, 132);
-    insert( kdroot, { 175, 95, 175}, 133);
-    insert( kdroot, { 175, 95, 215}, 134);
-    insert( kdroot, { 175, 95, RGB_SCALE}, 135);
-    insert( kdroot, { 175, 135, 0}, 136);
-    insert( kdroot, { 175, 135, 95}, 137);
-    insert( kdroot, { 175, 135, 135}, 138);
-    insert( kdroot, { 175, 135, 175}, 139);
-    insert( kdroot, { 175, 135, 215}, 140);
-    insert( kdroot, { 175, 135, RGB_SCALE}, 141);
-    insert( kdroot, { 175, 175, 0}, 142);
-    insert( kdroot, { 175, 175, 95}, 143);
-    insert( kdroot, { 175, 175, 135}, 144);
-    insert( kdroot, { 175, 175, 175}, 145);
-    insert( kdroot, { 175, 175, 215}, 146);
-    insert( kdroot, { 175, 175, RGB_SCALE}, 147);
-    insert( kdroot, { 175, 215, 0}, 148);
-    insert( kdroot, { 175, 215, 95}, 149);
-    insert( kdroot, { 175, 215, 135}, 150);
-    insert( kdroot, { 175, 215, 175}, 151);
-    insert( kdroot, { 175, 215, 215}, 152);
-    insert( kdroot, { 175, 215, RGB_SCALE}, 153);
-    insert( kdroot, { 175, RGB_SCALE, 0}, 154);
-    insert( kdroot, { 175, RGB_SCALE, 95}, 155);
-    insert( kdroot, { 175, RGB_SCALE, 135}, 156);
-    insert( kdroot, { 175, RGB_SCALE, 175}, 157);
-    insert( kdroot, { 175, RGB_SCALE, 215}, 158);
-    insert( kdroot, { 175, RGB_SCALE, RGB_SCALE}, 159);
-    insert( kdroot, { 215, 0, 0}, 160);
-    insert( kdroot, { 215, 0, 95}, 161);
-    insert( kdroot, { 215, 0, 135}, 162);
-    insert( kdroot, { 215, 0, 175}, 163);
-    insert( kdroot, { 215, 0, 215}, 164);
-    insert( kdroot, { 215, 0, RGB_SCALE}, 165);
-    insert( kdroot, { 215, 95, 0}, 166);
-    insert( kdroot, { 215, 95, 95}, 167);
-    insert( kdroot, { 215, 95, 135}, 168);
-    insert( kdroot, { 215, 95, 175}, 169);
-    insert( kdroot, { 215, 95, 215}, 170);
-    insert( kdroot, { 215, 95, RGB_SCALE}, 171);
-    insert( kdroot, { 215, 135, 0}, 172);
-    insert( kdroot, { 215, 135, 95}, 173);
-    insert( kdroot, { 215, 135, 135}, 174);
-    insert( kdroot, { 215, 135, 175}, 175);
-    insert( kdroot, { 215, 135, 215}, 176);
-    insert( kdroot, { 215, 135, RGB_SCALE}, 177);
-    insert( kdroot, { 215, 175, 0}, 178);
-    insert( kdroot, { 215, 175, 95}, 179);
-    insert( kdroot, { 215, 175, 135}, 180);
-    insert( kdroot, { 215, 175, 175}, 181);
-    insert( kdroot, { 215, 175, 215}, 182);
-    insert( kdroot, { 215, 175, RGB_SCALE}, 183);
-    insert( kdroot, { 215, 215, 0}, 184);
-    insert( kdroot, { 215, 215, 95}, 185);
-    insert( kdroot, { 215, 215, 135}, 186);
-    insert( kdroot, { 215, 215, 175}, 187);
-    insert( kdroot, { 215, 215, 215}, 188);
-    insert( kdroot, { 215, 215, RGB_SCALE}, 189);
-    insert( kdroot, { 215, RGB_SCALE, 0}, 190);
-    insert( kdroot, { 215, RGB_SCALE, 95}, 191);
-    insert( kdroot, { 215, RGB_SCALE, 135}, 192);
-    insert( kdroot, { 215, RGB_SCALE, 175}, 193);
-    insert( kdroot, { 215, RGB_SCALE, 215}, 194);
-    insert( kdroot, { 215, RGB_SCALE, RGB_SCALE}, 195);
-    insert( kdroot, { RGB_SCALE, 0, 0}, 196);
-    insert( kdroot, { RGB_SCALE, 0, 95}, 197);
-    insert( kdroot, { RGB_SCALE, 0, 135}, 198);
-    insert( kdroot, { RGB_SCALE, 0, 175}, 199);
-    insert( kdroot, { RGB_SCALE, 0, 215}, 200);
-    insert( kdroot, { RGB_SCALE, 0, RGB_SCALE}, 201);
-    insert( kdroot, { RGB_SCALE, 95, 0}, 202);
-    insert( kdroot, { RGB_SCALE, 95, 95}, 203);
-    insert( kdroot, { RGB_SCALE, 95, 135}, 204);
-    insert( kdroot, { RGB_SCALE, 95, 175}, 205);
-    insert( kdroot, { RGB_SCALE, 95, 215}, 206);
-    insert( kdroot, { RGB_SCALE, 95, RGB_SCALE}, 207);
-    insert( kdroot, { RGB_SCALE, 135, 0}, 208);
-    insert( kdroot, { RGB_SCALE, 135, 95}, 209);
-    insert( kdroot, { RGB_SCALE, 135, 135}, 210);
-    insert( kdroot, { RGB_SCALE, 135, 175}, 211);
-    insert( kdroot, { RGB_SCALE, 135, 215}, 212);
-    insert( kdroot, { RGB_SCALE, 135, RGB_SCALE}, 213);
-    insert( kdroot, { RGB_SCALE, 175, 0}, 214);
-    insert( kdroot, { RGB_SCALE, 175, 95}, 215);
-    insert( kdroot, { RGB_SCALE, 175, 135}, 216);
-    insert( kdroot, { RGB_SCALE, 175, 175}, 217);
-    insert( kdroot, { RGB_SCALE, 175, 215}, 218);
-    insert( kdroot, { RGB_SCALE, 175, RGB_SCALE}, 219);
-    insert( kdroot, { RGB_SCALE, 215, 0}, 220);
-    insert( kdroot, { RGB_SCALE, 215, 95}, 221);
-    insert( kdroot, { RGB_SCALE, 215, 135}, 222);
-    insert( kdroot, { RGB_SCALE, 215, 175}, 223);
-    insert( kdroot, { RGB_SCALE, 215, 215}, 224);
-    insert( kdroot, { RGB_SCALE, 215, RGB_SCALE}, 225);
-    insert( kdroot, { RGB_SCALE, RGB_SCALE, 0}, 226);
-    insert( kdroot, { RGB_SCALE, RGB_SCALE, 95}, 227);
-    insert( kdroot, { RGB_SCALE, RGB_SCALE, 135}, 228);
-    insert( kdroot, { RGB_SCALE, RGB_SCALE, 175}, 229);
-    insert( kdroot, { RGB_SCALE, RGB_SCALE, 215}, 230);
-    insert( kdroot, { RGB_SCALE, RGB_SCALE, RGB_SCALE}, 231);
-    insert( kdroot, { 8, 8, 8}, 232);
-    insert( kdroot, { 18, 18, 18}, 233);
-    insert( kdroot, { 28, 28, 28}, 234);
-    insert( kdroot, { 38, 38, 38}, 235);
-    insert( kdroot, { 48, 48, 48}, 236);
-    insert( kdroot, { 58, 58, 58}, 237);
-    insert( kdroot, { 68, 68, 68}, 238);
-    insert( kdroot, { 78, 78, 78}, 239);
-    insert( kdroot, { 88, 88, 88}, 240);
-    insert( kdroot, { 98, 98, 98}, 241);
-    insert( kdroot, { 108, 108, 108}, 242);
-    insert( kdroot, { 118, 118, 118}, 243);
-    insert( kdroot, { HALF_RGB_SCALE, HALF_RGB_SCALE, HALF_RGB_SCALE}, 244);
-    insert( kdroot, { 138, 138, 138}, 245);
-    insert( kdroot, { 148, 148, 148}, 246);
-    insert( kdroot, { 158, 158, 158}, 247);
-    insert( kdroot, { 168, 168, 168}, 248);
-    insert( kdroot, { 178, 178, 178}, 249);
-    insert( kdroot, { 188, 188, 188}, 250);
-    insert( kdroot, { 198, 198, 198}, 251);
-    insert( kdroot, { 208, 208, 208}, 252);
-    insert( kdroot, { 218, 218, 218}, 253);
-    insert( kdroot, { 228, 228, 228}, 254);
-    insert( kdroot, { 238, 238, 238}, RGB_SCALE);
-
-
-    BKNode *bkroot = nullptr;
+  std::shared_ptr<BKNode> bkroot;
 
     /*
      * Easing function listing
      */
-
+{
     insert( bkroot, FN_IEASEINSINE);
     insert( bkroot, FN_IEASEOUTSINE);
     insert( bkroot, FN_IEASEINOUTSINE);
@@ -1965,11 +1936,11 @@ int main( int ac, char *av[])
     insert( bkroot, ICOLOR_WHITESMOKE);
     insert( bkroot, ICOLOR_YELLOW);
     insert( bkroot, ICOLOR_YELLOWGREEN);
+}
 
-
-    FT_Library    library;
-    FT_Face       face;
-    FT_Error      error;
+  Owner<FT_Library> library( FT_Done_FreeType);
+  Owner<FT_Face>    face( FT_Done_Face);
+  FT_Error          error;
 
     /*
      * Schema: av[ 0] [--list-fonts|--font-file=FILE [--font-size=NUM] [--color-rule=RULE] [--drawing-character=CHAR] [--output FILE]] text
@@ -2071,7 +2042,7 @@ int main( int ac, char *av[])
         exit( EXIT_FAILURE);
     }
 
-    error = FT_Init_FreeType( &library );
+    error = FT_Init_FreeType( &library.get());
 
     if( error != 0)
     {
@@ -2079,7 +2050,7 @@ int main( int ac, char *av[])
       exit( EXIT_FAILURE);
     }
 
-    error = FT_New_Face( library, fontfile, 0, &face);
+    error = FT_New_Face( library.get(), fontfile, 0, &face.get());
 
     if( error != 0)
     {
@@ -2087,12 +2058,8 @@ int main( int ac, char *av[])
         exit( EXIT_FAILURE);
     }
 
-    render( word, face, std::strtol( font_size, nullptr, 10), raster_glyph, screen, write_as_image, color_rule, kdroot, bkroot);
-
-    FT_Done_Face( face);
-    FT_Done_FreeType( library);
-    free( kdroot);
-    free(bkroot);
+    render( word, face.get(), std::strtol( font_size, nullptr, 10),
+            raster_glyph, screen, write_as_image, color_rule, kdroot, bkroot);
 
     return 0;
 }
