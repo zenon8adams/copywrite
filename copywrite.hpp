@@ -46,10 +46,11 @@ std::unique_ptr<unsigned char, void( *)( unsigned char *)> toMonochrome(FT_Bitma
 
 struct ColorRule
 {
-    int32_t start = 0, end = -1;
+    int32_t start = 0, end = -1, cover_start = 0, cover_width = -1;
     uint32_t scolor = 0x000000FF, ecolor = 0x000000FF,
              font_size_b = UINT32_MAX, font_size_m = UINT32_MAX,
              font_size_e = UINT32_MAX;
+    bool soak{ false};
     std::function<float(float)> color_easing_fn, font_easing_fn;
 };
 
@@ -142,9 +143,9 @@ struct Glyph
             index{};
     std::unique_ptr<unsigned char, void( *)( unsigned char *)> pixmap;
     FT_Vector origin{};
-    ColorRule match;
+    std::shared_ptr<ColorRule> match;
     std::unique_ptr<Glyph> next{};
-    Glyph( std::unique_ptr<unsigned char, void( *)( unsigned char *)> pixmap)
+    explicit Glyph( std::unique_ptr<unsigned char, void( *)( unsigned char *)> pixmap)
     : pixmap( std::move( pixmap))
     {
     }

@@ -31,7 +31,6 @@
 #include <iostream>
 #include <unordered_map>
 #include <functional>
-#include <random>
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
 
@@ -135,15 +134,27 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
 void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t total)
 {
     FT_Int base = height - glyph.height - mdescent;
-
-    uint32_t color = glyph.match.scolor;
-    if( glyph.match.color_easing_fn)
+    auto& match = glyph.match;
+    uint32_t color = match->scolor;
+    auto color_is_constant = true;
+    std::unique_ptr<uint32_t[]> row_colors;
+    if( !match->soak && match->color_easing_fn)
     {
-        size_t start = glyph.index - glyph.match.start,
-                end = glyph.match.end == -1 ? MAX( total, 1) : glyph.match.end - glyph.match.start;
-
-        auto fraction = glyph.match.color_easing_fn(( float)start / end);
-        color = interpolateColor( glyph.match.scolor, glyph.match.ecolor, fraction);
+        size_t start = glyph.index - match->start,
+                end = match->end == -1 ? MAX( total, 1) : match->end - match->start;
+        auto fraction = match->color_easing_fn(( float)start / end);
+        color = interpolateColor( match->scolor, match->ecolor, fraction);
+    }
+    else if( match->soak && match->color_easing_fn)
+    {
+      row_colors.reset( new uint32_t[ glyph.width]);
+      for( FT_Int i = 0; i < glyph.width; ++i)
+      {
+        auto fraction = match->color_easing_fn( ( float)match->cover_start++ / match->cover_width);
+        color = interpolateColor( match->scolor, match->ecolor, fraction);
+        row_colors.get()[ i] = color;
+      }
+      color_is_constant = false;
     }
 
     for( FT_Int y = glyph.origin.y, j = 0; j < glyph.height; ++y, ++j)
@@ -151,6 +162,7 @@ void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, F
         for( FT_Int x = glyph.origin.x, i = 0; i < glyph.width; ++x, ++i)
         {
             uint64_t pixel = glyph.pixmap.get()[ j * glyph.width + i];
+            color = color_is_constant ? color : row_colors.get()[ i];
             out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | ( pixel ? color : 0);
         }
     }
@@ -185,35 +197,44 @@ void render( std::string_view word, FT_Face face, size_t default_font_size, cons
 
     FT_Error error;
 
-    auto rules = color_rule == nullptr ? std::vector<ColorRule>{} : parseColorRule( color_rule, bkroot.get());
+    auto map = []( auto color_rule, auto bkroot)
+    {
+      auto rules = parseColorRule( color_rule, bkroot);
+      std::vector<std::shared_ptr<ColorRule>> new_rules( rules.size());
+      std::transform( rules.cbegin(), rules.cend(), new_rules.begin(),
+          []( auto rule) { return std::make_shared<ColorRule>( rule);});
+      return new_rules;
+    };
 
+    auto rules = color_rule == nullptr ? std::vector<std::shared_ptr<ColorRule>>{} :  map( color_rule, bkroot.get());
+    auto dummy = ColorRule{};
     size_t index = 0, nchars = countCharacters( word);
     for( const char *pw = word.data(); *pw;)
     {
         FT_Int shift = byteCount( *pw);
         FT_UInt character = collate( (uint8_t *)word.data(), pw - word.data(), shift);
 
-        ColorRule best{};
+        std::shared_ptr<ColorRule> best( &dummy, []( auto dummy){});
         index += 1;
-        for( const auto& each: rules)
+        for( auto& each: rules)
         {
-            if( ( each.end == INT32_MIN && index == each.start) || ( index >= each.start && ( ( index <= each.end && each.end != INT32_MIN) || each.end == -1)))
+            if( ( each->end == INT32_MIN && index == each->start) ||
+                ( index >= each->start && ( ( index <= each->end && each->end != INT32_MIN) || each->end == -1)))
                 best = each;
         }
 
-        FT_Int font_size = best.font_size_b == UINT32_MAX ? best.font_size_b = default_font_size : best.font_size_b;
-        if( best.font_easing_fn)
+        FT_Int font_size = best->font_size_b == UINT32_MAX ? best->font_size_b = default_font_size : best->font_size_b;
+        if( best->font_easing_fn)
         {
-            size_t start = index - best.start,
-                    end = best.end == -1 ? MAX( nchars - 1, 1) : best.end - best.start;
-
-            auto fraction = best.font_easing_fn(( float)start / end);
-            if( best.font_size_m == UINT32_MAX && best.font_size_e != UINT32_MAX)
-                font_size = round( best.font_size_b * ( 1.0 - fraction) + fraction * best.font_size_e);
-            else if( best.font_size_m != UINT32_MAX && best.font_size_e != UINT32_MAX)
-                font_size = round( +2.0 * best.font_size_b * ( fraction - .5) * ( fraction - 1.)
-                                   -4.0 * best.font_size_m * fraction * ( fraction - 1.)
-                                   +2.0 * best.font_size_e * fraction * ( fraction - .5));
+            size_t start = index - best->start,
+                    end = best->end == -1 ? MAX( nchars - 1, 1) : best->end - best->start;
+            auto fraction = best->font_easing_fn(( float)start / end);
+            if( best->font_size_m == UINT32_MAX && best->font_size_e != UINT32_MAX)
+                font_size = round( best->font_size_b * ( 1.0 - fraction) + fraction * best->font_size_e);
+            else if( best->font_size_m != UINT32_MAX && best->font_size_e != UINT32_MAX)
+                font_size = round( +2.0 * best->font_size_b * ( fraction - .5) * ( fraction - 1.)
+                                   -4.0 * best->font_size_m * fraction * ( fraction - 1.)
+                                   +2.0 * best->font_size_e * fraction * ( fraction - .5));
         }
 
         error = FT_Set_Pixel_Sizes( face, font_size, 0);
@@ -234,6 +255,8 @@ void render( std::string_view word, FT_Face face, size_t default_font_size, cons
             continue;
 
         Glyph current = extract( face->glyph);
+        if( best->soak && best->color_easing_fn)
+          best->cover_width += current.width;
         current.index = index;
         current.match = best;
         mxheight = MAX( mxheight, xheight);
@@ -1098,6 +1121,12 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                             exit( EXIT_FAILURE);
                         }
 
+                        if( ltrim( rule) && *rule == '+')
+                        {
+                            ccolor.soak = true;
+                            ++rule;
+                        }
+
                         fillEasingMode(ccolor.color_easing_fn, rule, bkroot, '}');
                     }
 
@@ -1429,7 +1458,7 @@ void fillEasingMode( std::function<float(float)> &function, const char *&rule, B
             }
     };
 
-    std::string easing;
+    std::string easing{};
     while( *rule && *rule != eoc)
     {
         if( *rule != '-' && *rule != ' ')
