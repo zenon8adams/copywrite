@@ -33,25 +33,49 @@
 #include <vector>
 #include <functional>
 #include <memory>
+#include <cmath>
 
 #ifndef PNG_STDIO_SUPPORTED
 typedef FILE                * png_FILE_p;
 #endif
 
 #include FT_FREETYPE_H
+#include "geo_vector.hpp"
 
 #define MAX_DIFF_TOLERANCE 20
 
 std::unique_ptr<unsigned char, void( *)( unsigned char *)> toMonochrome(FT_Bitmap bitmap);
 
+enum class GradientType { Linear, Radial};
+
+struct BaseGradient
+{
+  int32_t startx{}, width{}, height{};
+  GradientType gradient_type{ GradientType::Linear};
+};
+
+struct RadialGradient : BaseGradient
+{
+  Vec3D props;
+  explicit RadialGradient( float x, float y, float z)
+  : props( x, y, z), BaseGradient{ .gradient_type = GradientType::Radial}
+  {
+  }
+};
+
+struct LinearGradient : BaseGradient
+{
+};
+
 struct ColorRule
 {
-    int32_t start = 0, end = -1, cover_start = 0, cover_width = -1;
+    int32_t start = 0, end = -1;
     uint32_t scolor = 0x000000FF, ecolor = 0x000000FF,
              font_size_b = UINT32_MAX, font_size_m = UINT32_MAX,
              font_size_e = UINT32_MAX;
     bool soak{ false};
-    std::function<float(float)> color_easing_fn, font_easing_fn;
+    std::shared_ptr<BaseGradient> gradient;
+  std::function<float(float)> color_easing_fn, font_easing_fn;
 };
 
 // Stores the standard red, green, and blue chroma (sRGB)
@@ -86,6 +110,19 @@ struct BKNode
   {
   }
 };
+
+float clamp(float x, float lowerlimit, float upperlimit)
+{
+  return x < lowerlimit ? lowerlimit : x > upperlimit ? upperlimit : x;
+}
+
+float smoothstep( float left, float right, float x)
+{
+  // Scale, and clamp x to 0..1 range
+  x = clamp(( x - left) / ( right - left), 0.f, 1.f);
+  // Evaluate Perlin polynomial
+  return x * x * x * (x * (x * 6.f - 15.f) + 10.f);
+}
 
 template<typename Resource>
 class PropertyManager

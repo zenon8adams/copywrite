@@ -33,6 +33,7 @@
 #include <functional>
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
+#include "geo_vector.hpp"
 
 #define FPRINTFD( fmt, argument, include) ({ \
     auto arglength = strlen( argument);\
@@ -136,34 +137,69 @@ void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, F
     FT_Int base = height - glyph.height - mdescent;
     auto& match = glyph.match;
     uint32_t color = match->scolor;
-    auto color_is_constant = true;
     std::unique_ptr<uint32_t[]> row_colors;
-    if( !match->soak && match->color_easing_fn)
-    {
-        size_t start = glyph.index - match->start,
-                end = match->end == -1 ? MAX( total, 1) : match->end - match->start;
-        auto fraction = match->color_easing_fn(( float)start / end);
-        color = interpolateColor( match->scolor, match->ecolor, fraction);
-    }
-    else if( match->soak && match->color_easing_fn)
-    {
-      row_colors.reset( new uint32_t[ glyph.width]);
-      for( FT_Int i = 0; i < glyph.width; ++i)
-      {
-        auto fraction = match->color_easing_fn( ( float)match->cover_start++ / match->cover_width);
-        color = interpolateColor( match->scolor, match->ecolor, fraction);
-        row_colors.get()[ i] = color;
-      }
-      color_is_constant = false;
-    }
+  	size_t start = glyph.index - match->start,
+	  	   end = match->end == -1 ? MAX( total, 1) : match->end - match->start;
+	if( match->color_easing_fn)
+	{
+	  if( !match->soak)
+	  {
+		auto fraction = match->color_easing_fn(( float)start / end);
+		color = interpolateColor( match->scolor, match->ecolor, fraction);
+	  }
+	  else
+	  {
+		row_colors.reset( new uint32_t[ glyph.width]);
+		for( FT_Int i = 0; i < glyph.width; ++i)
+		{
+		  auto fraction = match->color_easing_fn( ( float)match->gradient->startx++ / match->gradient->width);
+		  color = interpolateColor( match->scolor, match->ecolor, fraction);
+		  row_colors.get()[ i] = color;
+		}
+	  }
+	}
 
+    auto cwidth = match->soak ? match->gradient->width : ( int32_t)end, cheight = match->gradient->height;
     for( FT_Int y = glyph.origin.y, j = 0; j < glyph.height; ++y, ++j)
     {
         for( FT_Int x = glyph.origin.x, i = 0; i < glyph.width; ++x, ++i)
         {
-            uint64_t pixel = glyph.pixmap.get()[ j * glyph.width + i];
-            color = color_is_constant ? color : row_colors.get()[ i];
-            out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | ( pixel ? color : 0);
+          if( match->color_easing_fn)
+		  {
+			if( match->gradient->gradient_type == GradientType::Radial)
+			{
+			  auto& props = static_cast<RadialGradient *>( match->gradient.get())->props;
+			  /*
+			   * Computes the radial-gradient of color starting at `match->gradient_origin`
+			   */
+			  auto xy = Vec2D( !match->soak ?
+							   start : match->gradient->startx - glyph.width + i, y + base)
+				  / Vec2D( cwidth, cheight);
+			  xy -= Vec2D( props.x, props.y);
+			  auto scale = cwidth / cheight;
+			  if( cwidth > cheight)         // Converts the resulting elliptical shape into a circle.
+				xy.x *= scale;
+			  else
+				xy.y *= scale;
+			  auto d = xy.length();
+			  auto r = props.z;               // Defines the spread distance.
+			  auto c = smoothstep( r + d + 1., 3. * r - 1., d); // Spread the circle around to form a smooth gradient.
+			  auto startcolor = Vec3D( ( float)RED( match->scolor) / RGB_SCALE,
+									   ( float)GREEN( match->scolor) / RGB_SCALE,
+									   ( float)BLUE( match->scolor) / RGB_SCALE),
+				  endcolor   = Vec3D( ( float)RED( match->ecolor) / RGB_SCALE,
+									  ( float)GREEN( match->ecolor) / RGB_SCALE,
+									  ( float)BLUE( match->ecolor) / RGB_SCALE),
+				  finalcolor = startcolor.lerp( endcolor, c);
+			  color = RGBA( finalcolor.x * RGB_SCALE, finalcolor.y * RGB_SCALE,
+							finalcolor.z * RGB_SCALE, ALPHA( color));
+			}
+			else if( match->soak)
+			  color = row_colors.get()[ i];
+		  }
+          
+          uint64_t pixel = glyph.pixmap.get()[ j * glyph.width + i];
+          out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | ( pixel ? color : 0);
         }
     }
 
@@ -255,8 +291,6 @@ void render( std::string_view word, FT_Face face, size_t default_font_size, cons
             continue;
 
         Glyph current = extract( face->glyph);
-        if( best->soak && best->color_easing_fn)
-          best->cover_width += current.width;
         current.index = index;
         current.match = best;
         mxheight = MAX( mxheight, xheight);
@@ -264,6 +298,9 @@ void render( std::string_view word, FT_Face face, size_t default_font_size, cons
         mdescent = MAX( mdescent, current.origin.y);
         current.xstep += kerning( *pw, prev, face);
         width += current.xstep;
+        if( best->soak && best->color_easing_fn)
+          best->gradient->width += current.width;
+		best->gradient->height = hexcess + mxheight + mdescent;
         insert( head, std::move( current));
 
         prev = character;
@@ -998,6 +1035,38 @@ uint32_t mixColor( const char *&ctx, BKNode *bkroot)
     return lcolor;
 }
 
+template <size_t count>
+std::array<float, count> parseFloats( const char *&rule)
+{
+   std::array<float, count> response;
+   for( auto& result : response)
+   {
+	   result = 0;
+	   float post_decimal_point_value = 0, shift = 1;
+	   if( ltrim( rule) && ( *rule == '(' || *rule == ','))
+		 ++rule;
+	   bool seen_dot = false;
+	   do
+	   {
+		 if( ltrim( rule) && *rule == '.')
+		 {
+		   seen_dot = true;
+		   ++rule;
+		   continue;
+		 }
+		 seen_dot ? post_decimal_point_value += ( shift *= .1f) * ( *rule - '0') :
+					result = result * 10.f + ( *rule - '0');
+		 ++rule;
+	   }
+	   while( *rule != ')' && *rule != ',');
+	   result += post_decimal_point_value;
+   };
+   if( *rule == ')')
+     ++rule;
+   
+   return response;
+}
+
 // Format example: [1..2:10-20-10 -ease-in-sine]{(Black:ff + Green::50) -> (Brown:ff:30 + Red:4f:50) -ease-in-out-sine}
 std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
 {
@@ -1119,6 +1188,14 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                             fprintf( stderr, "Incomplete color specification");
                             exit( EXIT_FAILURE);
                         }
+
+                        if( ltrim( rule) && *rule == '-' && std::tolower( rule[ 1]) == 'r')
+                        {
+                          	auto [ x, y, z] = parseFloats<3>( rule += 2);
+                          	ccolor.gradient.reset( new RadialGradient( x, y, z));
+                        }
+                        else
+                          ccolor.gradient.reset( new LinearGradient());
 
                         if( ltrim( rule) && *rule == '+')
                         {
