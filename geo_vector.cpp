@@ -1,29 +1,6 @@
+#include <cstdint>
+#include <iostream>
 #include "geo_vector.hpp"
-
-Vec2D::Vec2D( float x, float y)
-    : x( x), y( y)
-{
-}
-Vec2D Vec2D::operator-( Vec2D right) const
-{
-  return {x - right.x, y - right.y};
-}
-
-Vec2D& Vec2D::operator-=( Vec2D right)
-{
-  return *this = *this - right;
-}
-
-Vec2D Vec2D::operator/( Vec2D right) const
-{
-  return { x / right.x, y / right.y};
-}
-
-[[nodiscard]] float Vec2D::length() const
-{
-  return std::sqrt( x * x + y * y);
-}
-
 
 Vec3D::Vec3D( float x, float y, float z)
     : x( x), y( y), z( z)

@@ -46,7 +46,7 @@ typedef FILE                * png_FILE_p;
 
 std::unique_ptr<unsigned char, void( *)( unsigned char *)> toMonochrome(FT_Bitmap bitmap);
 
-enum class GradientType { Linear, Radial};
+enum class GradientType { Linear, Radial, Conic};
 
 struct BaseGradient
 {
@@ -58,7 +58,7 @@ struct RadialGradient : BaseGradient
 {
   Vec3D props;
   explicit RadialGradient( float x, float y, float z)
-  : props( x, y, z), BaseGradient{ .gradient_type = GradientType::Radial}
+	  : props( x, y, z), BaseGradient{ .gradient_type = GradientType::Radial}
   {
   }
 };
@@ -67,16 +67,52 @@ struct LinearGradient : BaseGradient
 {
 };
 
+template <typename T>
+class PropertyProxy
+{
+ public:
+  template <typename = std::enable_if<std::is_default_constructible_v<T>>>
+  PropertyProxy()
+  {
+  }
+  
+  explicit PropertyProxy( T value)
+  : value( value)
+  {
+  }
+  
+  operator T() const
+  {
+    return value;
+  }
+  
+  T operator=( T another)
+  {
+    changed_since_initialization = true;
+     return value = std::forward<T>( another);
+  }
+  
+  [[nodiscard]] bool changed() const
+  {
+    return changed_since_initialization;
+  }
+ private:
+  T value;
+  bool changed_since_initialization{ false};
+};
+
 struct ColorRule
 {
     int32_t start = 0, end = -1;
-    uint32_t scolor = 0x000000FF, ecolor = 0x000000FF,
+    PropertyProxy<uint32_t> scolor{ 0x000000FFu}, ecolor{ 0x000000FFu};
+    uint32_t /*scolor = 0x000000FF, ecolor = 0x000000FF,*/
              font_size_b = UINT32_MAX, font_size_m = UINT32_MAX,
              font_size_e = UINT32_MAX;
     bool soak{ false};
-    std::shared_ptr<BaseGradient> gradient;
+    std::shared_ptr<BaseGradient> gradient{ new LinearGradient()};
   std::function<float(float)> color_easing_fn, font_easing_fn;
 };
+
 
 // Stores the standard red, green, and blue chroma (sRGB)
 struct Color
@@ -88,6 +124,14 @@ struct Color
 struct XyZColor
 {
     double x, y, z;
+};
+
+struct ConicGradient : BaseGradient
+{
+  std::vector<std::pair<Color, size_t>> color_variations;
+  ConicGradient() : BaseGradient{ .gradient_type = GradientType::Conic}
+  {
+  }
 };
 
 struct KDNode
@@ -104,25 +148,17 @@ struct KDNode
 struct BKNode
 {
   std::string_view word;
+  enum class Group{ Easing, Color} group;
   std::shared_ptr<BKNode> next[ MAX_DIFF_TOLERANCE]{};
-  explicit BKNode( std::string_view word)
-  : word( word)
+  explicit BKNode( std::string_view word, Group group)
+  : word( word), group( group)
   {
   }
 };
 
-float clamp(float x, float lowerlimit, float upperlimit)
-{
-  return x < lowerlimit ? lowerlimit : x > upperlimit ? upperlimit : x;
-}
+float clamp(float x, float lowerlimit, float upperlimit);
 
-float smoothstep( float left, float right, float x)
-{
-  // Scale, and clamp x to 0..1 range
-  x = clamp(( x - left) / ( right - left), 0.f, 1.f);
-  // Evaluate Perlin polynomial
-  return x * x * x * (x * (x * 6.f - 15.f) + 10.f);
-}
+float smoothstep( float left, float right, float x);
 
 template<typename Resource>
 class PropertyManager
@@ -167,6 +203,18 @@ class PropertyManager
   Resource resource;
   std::function<void( Resource)> destructor;
 };
+
+template<typename Pred, typename First, typename... Others>
+bool compareAnd( First base, Others... others)
+{
+  return ( ... && Pred()( base, others));
+}
+
+template<typename Pred, typename First, typename... Others>
+bool compareOr( First base, Others... others)
+{
+  return ( ... || Pred()( base, others));
+}
 
 /*
  * Glyph: Structural representation of a character
@@ -251,11 +299,12 @@ uint32_t editDistance( std::string_view main, std::string_view ref);
 
 void insert( std::shared_ptr<KDNode> &node, Color color, size_t index = 0, uint8_t depth = 0);
 
-void insert( std::shared_ptr<BKNode> &node, std::string_view word);
+void insert( std::shared_ptr<BKNode> &node, std::string_view word, BKNode::Group word_group);
 
-void findWordMatch( BKNode *node, const char *word, int threshold, std::vector<std::string>& matches);
+void findWordMatch( BKNode *node, std::string_view word, BKNode::Group word_group,
+				   int threshold, std::vector<std::string> &matches);
 
-std::vector<std::string> findWordMatch( BKNode *node, const char *word, int threshold = 4);
+std::vector<std::string> findWordMatch(BKNode *node, std::string_view word, BKNode::Group word_group, int threshold);
 
 /*
  * Main dispatcher: Does all the rendering and display
