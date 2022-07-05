@@ -6,8 +6,8 @@
 template <typename T = float, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 struct Vec2D
 {
-  T x{}, y{};
-  Vec2D( T x, T y)
+  T x, y;
+  Vec2D( T x = {}, T y = {})
   : x( x), y( y)
   {
   }
@@ -35,12 +35,6 @@ struct Vec2D
   [[nodiscard]] float length() const
   {
     return std::sqrt( x * x + y * y);
-  }
-  
-  float angle( Vec2D right) const
-  {
-    auto interm = ( *this * right) / ( length() * right.length());
-    return std::acos( interm) + ( interm < 0) * M_PI;
   }
 };
 

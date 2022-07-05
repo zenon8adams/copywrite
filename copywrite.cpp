@@ -202,15 +202,19 @@ void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, F
 			}
 			else if( is_conic_gradient)
 			{
+			  auto gradient = static_cast<ConicGradient *>( match->gradient.get());
+			  auto origin = gradient->origin; // Object construction does not call assignment operator
 			  Vec2D<float> center( cwidth / 2.f, cheight / 2.f);
+			  if( gradient->origin.changed()) // Explicit access is needed is `origin` object is not copy assigned
+			    center = Vec2D<float>( origin.x * ( cwidth - 1), origin.y * ( cheight - 1));
 			  auto diff = ( Vec2D<float>( x + pen->x, base + pen->y + y) - center);
 			  float angle;
-			  if( diff.x < 0)
+			  if( diff.x < 0)	// Calculate the angle as ranging from 0 to 360deg.
 				angle = 270.f - ( std::atan2( diff.y, -diff.x) * DEG_SCALE);
 			  else
 				angle = 90.f + ( std::atan2( diff.y, diff.x) * DEG_SCALE);
-			  
-			  auto stops = static_cast<ConicGradient *>( match->gradient.get())->color_variations;
+
+			  auto stops = gradient->color_variations;
 			  if( !stops.empty())
 			  {
 				auto prev_stop = *stops.begin();
@@ -1111,7 +1115,7 @@ std::array<float, count> parseFloats( const char *&rule)
 					result = result * 10.f + ( *rule - '0');
 		 ++rule;
 	   }
-	   while( *rule != ')' && *rule != ',');
+	   while( *rule && *rule != ')' && *rule != ',');
 	   result += post_decimal_point_value;
    }
    if( *rule == ')')
@@ -1123,7 +1127,7 @@ std::array<float, count> parseFloats( const char *&rule)
 std::vector<std::string> partition( std::string_view sgradient)
 {
    std::cmatch search_result;
-   std::regex  key( R"(\s*,\s*)");
+   std::regex  key( R"(\s*,\s*(?=[a-zA-Z]))"); // Find a `,` and assert that the comma is followed by an alphabet.
   std::cregex_iterator begin( sgradient.cbegin(), sgradient.cend(), key),
   					   end, prev;
   
@@ -1141,57 +1145,78 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
    ConicGradient actual_gradient;
    std::string gradient_part;
    size_t start_angle = 0;
-   while( *rule && *rule != ')')
-     gradient_part += *rule++;
-   if( *rule == ')')
+   if( *rule == '(')
+   {
      ++rule;
-   else
-   {
-     // TODO: Report error of missing parenthesis
-   }
-   
-   auto stops = partition( gradient_part);
-   std::smatch match_results;
-   std::regex  matcher( R"(^(.+?)(?:\s+(\d+)deg)?(?:\s+(\d+)deg)?\s*$)");
-   for( size_t i = 0; i < stops.size(); ++i)
-   {
-	 size_t end_angle{ SIZE_MAX};
-	 std::smatch previous_outcome;
-	 auto active = stops[ i];
-	 do
+	 while( *rule && *rule != ')')
+	   gradient_part += *rule++;
+	 if( *rule == ')')
+	   ++rule;
+	 else
 	 {
-	   if( std::regex_match( active.cbegin(), active.cend(), match_results, matcher))
+	   // TODO: Report error of missing parenthesis
+	 }
+  
+	 auto stops = partition( gradient_part);
+	 size_t pos;
+	 if( !stops.empty() && ( pos = stops[ 0].find( "at")) != std::string::npos)
+	 {
+	   std::string srange = stops[ 0].substr( pos + 3);
+	   const char *srange_ptr = &srange[ 0];
+	   stops[ 0] = stops[ 0].substr( 0, pos - 1);
+	   auto floats = parseFloats<2>( srange_ptr);
+	   actual_gradient.origin = Vec2D( floats[ 0], floats[ 1]);
+	 }
+	 std::smatch match_results;
+	 std::regex  matcher( R"(^(.+?)(?:\s+(\d+)deg)?(?:\s+(\d+)deg)?\s*$)");
+	 for( size_t i = 0; i < stops.size(); ++i)
+	 {
+	   size_t end_angle{ SIZE_MAX};
+	   std::smatch previous_outcome;
+	   auto active = stops[ i];
+	   do
 	   {
-		 if( match_results[ 2].matched)
+		 if( std::regex_match( active.cbegin(), active.cend(), match_results, matcher))
 		 {
-		   if( end_angle == SIZE_MAX)
-			 end_angle = std::stoul( match_results[ 2 + match_results[ 3].matched].str());
-		   active = match_results[ 1].str();
-		 }
-		 else
-		 {
-		   auto initial_run = previous_outcome.empty();
-		   auto maybe_color = initial_run ? match_results[ 1].str() :  previous_outcome[ 1].str();
-		   if( maybe_color == "from")
-		     start_angle = i == 0 ? end_angle : start_angle;
+		   if( match_results[ 2].matched)
+		   {
+			 if( end_angle == SIZE_MAX)
+			   end_angle = std::stoul( match_results[ 2 + match_results[ 3].matched].str());
+			 active = match_results[ 1].str();
+		   }
 		   else
 		   {
-		     const char *underlying_data = maybe_color.data();
-		     auto color_components = isalpha( *underlying_data) ? decodeColorName( underlying_data, bkroot)
-		     	                                                : extractColor( underlying_data, bkroot);
-		     actual_gradient.color_variations.emplace_back( Color{ ( uint8_t)RED( color_components),
-															       ( uint8_t)GREEN( color_components),
-															       ( uint8_t)BLUE( color_components)},
-		     	                                            initial_run ? SIZE_MAX : end_angle);
+			 auto initial_run = previous_outcome.empty();
+			 auto maybe_color = initial_run ? match_results[ 1].str() :  previous_outcome[ 1].str();
+			 if( maybe_color == "from")
+			   start_angle = i == 0 ? end_angle : start_angle;
+			 else
+			 {
+			   const char *underlying_data = maybe_color.data();
+			   auto color_components = isalpha( *underlying_data) ? decodeColorName( underlying_data, bkroot)
+																  : extractColor( underlying_data, bkroot);
+			   actual_gradient.color_variations.emplace_back( Color{ ( uint8_t)RED( color_components),
+																	 ( uint8_t)GREEN( color_components),
+																	 ( uint8_t)BLUE( color_components)},
+															  initial_run ? SIZE_MAX : end_angle);
+			 }
+			 break;
 		   }
-		   break;
+		   previous_outcome = match_results;
 		 }
-		 previous_outcome = match_results;
+		 else
+		   break;
 	   }
-	   else
-		 break;
+	   while( true);
 	 }
-	 while( true);
+   }
+   else if( !( color_rule.scolor.changed() && color_rule.ecolor.changed()))
+   {
+     if( color_rule.scolor.changed())
+       fprintf( stderr, "One color is not enough to define a conic gradient\n");
+     else
+       fprintf( stderr, "Conic gradient specified without colors\n");
+     exit( EXIT_FAILURE);
    }
    
    auto& cstops = actual_gradient.color_variations;
@@ -1201,8 +1226,8 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
 										( uint8_t)BLUE( color_rule.scolor)
 									  }, SIZE_MAX});
    if( color_rule.ecolor.changed())
-     cstops.emplace_back( Color{ ( uint8_t)RED( color_rule.scolor), ( uint8_t)GREEN( color_rule.scolor),
-						         ( uint8_t)BLUE( color_rule.scolor)}, SIZE_MAX);
+     cstops.emplace_back( Color{ ( uint8_t)RED( color_rule.ecolor), ( uint8_t)GREEN( color_rule.ecolor),
+						         ( uint8_t)BLUE( color_rule.ecolor)}, SIZE_MAX);
    size_t cstops_length = cstops.size();
    if( cstops_length > 0)
    {
@@ -1388,7 +1413,7 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
 						  }
                           else if( lc == 'c')
                             ccolor.gradient.reset( new ConicGradient{
-                              generateConicGradient( rule += 2, ccolor, bkroot)});
+                              generateConicGradient( ++rule, ccolor, bkroot)});
 						}
 
                         if( ltrim( rule) && *rule == '+')

@@ -67,7 +67,7 @@ struct LinearGradient : BaseGradient
 {
 };
 
-template <typename T>
+template <typename T, typename = void>
 class PropertyProxy
 {
  public:
@@ -101,6 +101,42 @@ class PropertyProxy
   bool changed_since_initialization{ false};
 };
 
+template <typename T>
+class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
+{
+ public:
+  template <typename = std::enable_if<std::is_default_constructible_v<T>>>
+  PropertyProxy()
+  {
+  }
+  
+  template <typename... Args>
+  explicit PropertyProxy( Args&&... values)
+	  : T( std::forward<T>( values)...), value( values...)
+  {
+  }
+  
+  operator T() const
+  {
+	return value;
+  }
+  
+  T operator=( T another)
+  {
+	changed_since_initialization = true;
+	T::operator=( std::forward<T>( another));
+	return value = std::forward<T>( another);
+  }
+  
+  [[nodiscard]] bool changed() const
+  {
+	return changed_since_initialization;
+  }
+  T value;
+ private:
+  bool changed_since_initialization{ false};
+};
+
 struct ColorRule
 {
     int32_t start = 0, end = -1;
@@ -128,6 +164,7 @@ struct XyZColor
 
 struct ConicGradient : BaseGradient
 {
+  PropertyProxy<Vec2D<float>> origin{};
   std::vector<std::pair<Color, size_t>> color_variations;
   ConicGradient() : BaseGradient{ .gradient_type = GradientType::Conic}
   {
