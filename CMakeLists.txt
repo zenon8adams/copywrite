@@ -7,7 +7,7 @@ set(SYSTEM_INCLUDE_PATH "${CMAKE_SYSTEM_INCLUDE_PATH}/../")
 set(SYSTEM_LOCAL_INCLUDE_PATH "${SYSTEM_INCLUDE_PATH}../local/include")
 set(CMAKE_CXX_FLAGS "-ggdb -fsanitize=address -fno-trapping-math")
 
-add_executable(copywrite copywrite.cpp copywrite.hpp colors_defs.hpp easing_defs.hpp geo_vector.cpp geo_vector.hpp)
+add_executable(copywrite copywrite.cpp copywrite.hpp colors_defs.hpp easing_defs.hpp geo_vector.cpp geo_vector.hpp composition_defs.hpp)
 
 target_include_directories( copywrite PRIVATE "${SYSTEM_LOCAL_INCLUDE_PATH}/freetype2/" "${SYSTEM_LOCAL_INCLUDE_PATH}/freetype2/freetype")
 

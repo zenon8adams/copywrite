@@ -36,6 +36,7 @@
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
 #include "geo_vector.hpp"
+#include "composition_defs.hpp"
 
 #define FPRINTFD( fmt, argument, include) ({ \
     auto arglength = strlen( argument);\
@@ -233,6 +234,9 @@ void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, F
 				else
 				{
 				  auto fraction = ( angle - prev_stop.second) / ( cur_stop.second - prev_stop.second);
+				  auto clone = fraction;
+				  if( match->color_easing_fn)
+				    fraction = match->color_easing_fn( fraction);
 				  color = colorLerp( RGBA( prev_stop.first.rgb[ 0], prev_stop.first.rgb[ 1],
 										   prev_stop.first.rgb[ 2], 255),
 									 RGBA( cur_stop.first.rgb[ 0], cur_stop.first.rgb[ 1],
@@ -278,10 +282,10 @@ size_t countCharacters( std::string_view word)
     return value;
 }
 
-void render( std::string_view word, FT_Face face, size_t default_font_size, const char *raster_glyph,
-			 FILE *destination, bool as_image, const char *color_rule,
-			 const std::shared_ptr<KDNode>& root, const std::shared_ptr<BKNode>& bkroot)
+void render(std::string_view word, FT_Face face, ApplicationHyperparameters &guide)
 {
+   auto& color_rule = guide.color_rule;
+   
     std::unique_ptr<Glyph> head;
     FT_Int width 	= 0, // Total width of the buffer
             mdescent = 0, // Holds the baseline for the character with most descent
@@ -301,7 +305,8 @@ void render( std::string_view word, FT_Face face, size_t default_font_size, cons
       return new_rules;
     };
 
-    auto rules = color_rule == nullptr ? std::vector<std::shared_ptr<ColorRule>>{} :  map( color_rule, bkroot.get());
+    auto rules = color_rule == nullptr ? std::vector<std::shared_ptr<ColorRule>>{}
+                                       : map( color_rule, guide.bkroot.get());
     auto dummy = ColorRule{};
     size_t index = 0, nchars = countCharacters( word);
     for( const char *pw = word.data(); *pw;)
@@ -318,7 +323,8 @@ void render( std::string_view word, FT_Face face, size_t default_font_size, cons
                 best = each;
         }
 
-        FT_Int font_size = best->font_size_b == UINT32_MAX ? best->font_size_b = default_font_size : best->font_size_b;
+        FT_Int font_size = best->font_size_b == UINT32_MAX ? best->font_size_b = guide.font_size
+        	                                               : best->font_size_b;
         if( best->font_easing_fn)
         {
             size_t start = index - best->start,
@@ -384,10 +390,23 @@ void render( std::string_view word, FT_Face face, size_t default_font_size, cons
         current = std::move( current->next);
     }
     
-    if( as_image && destination != stdout)
-        writePNG( destination, out.get(), width, height);
+    PropertyManager<FILE *> destination( stdout, []( FILE *maybe_destructible)
+    {
+      if( maybe_destructible != stdout)
+        fclose( maybe_destructible);
+    });
+    
+    if( guide.dest_filename != nullptr)
+	{
+      auto *handle = fopen( guide.dest_filename, "wb");
+      if( handle)
+        destination.get() = handle;
+	}
+    
+    if( guide.as_image && guide.dest_filename)
+        writePNG( destination.get(), out.get(), width, height);
     else
-        write( out.get(), width, height, raster_glyph, destination, root.get());
+        write( out.get(), width, height, guide.raster_glyph, destination.get(), guide.kdroot.get());
 }
 
 uint32_t hsvaToRgba( uint32_t hsv)
@@ -1140,6 +1159,7 @@ std::vector<std::string> partition( std::string_view sgradient)
   
   return results;
 }
+
 ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_rule, BKNode *bkroot)
 {
    ConicGradient actual_gradient;
@@ -1786,6 +1806,52 @@ void fillEasingMode( std::function<float(float)> &function, const char *&rule, B
     }
 }
 
+CompositionRule::CompositionModel selectCompositionModel( std::string_view given)
+{
+   static const std::unordered_map<std::string_view, CompositionRule::CompositionModel> possibilities
+   {
+	   { COPY			 , CompositionRule::CompositionModel::Copy},
+	   { DESTINATION_ATOP, CompositionRule::CompositionModel::DestinationAtop},
+	   { DESTINATION_IN  , CompositionRule::CompositionModel::DestinationIn},
+	   { DESTINATION_OVER, CompositionRule::CompositionModel::DestinationOver},
+	   { DESTINATION_OUT , CompositionRule::CompositionModel::DestinationOut},
+	   { LIGHTER 		 , CompositionRule::CompositionModel::Lighter},
+	   { SOURCE_ATOP 	 , CompositionRule::CompositionModel::SourceAtop},
+	   { SOURCE_IN 		 , CompositionRule::CompositionModel::SourceIn},
+	   { SOURCE_OVER 	 , CompositionRule::CompositionModel::SourceOver},
+	   { SOURCE_OUT 	 , CompositionRule::CompositionModel::SourceOut},
+	   { XOR 			 , CompositionRule::CompositionModel::Xor},
+   };
+   
+   std::string clone( given.size(), 0);
+   std::transform( given.cbegin(), given.cend(), clone.begin(), tolower);
+   auto index = possibilities.find( clone);
+   if( index == possibilities.cend())
+     return CompositionRule::CompositionModel::NotApplicable;
+   
+   return index->second;
+}
+
+CompositionRule parseCompositionRule( std::string_view rule)
+{
+  std::cmatch match_results;
+  //Match any of the following:
+  //1. from 30deg, mode=source-over
+  //2. from 30deg, at .5, 0.45, mode=source-over
+  //3. mode=source-over or mode=lighter
+  std::regex  matcher( R"(^(?:from\s+([+-]?\d{1,3})deg(?:\s+at\s+(\d*.\d+|\d+\.\d*),\s*(\d*.\d+|\d+\.\d*))?,\s*)?)"
+                       R"(mode=([a-zA-Z]+(?:-[a-zA-Z]+)?)$)");
+  if( std::regex_match( rule.cbegin(), rule.cend(), match_results, matcher))
+  {
+	return {
+		.origin = Vec2D( std::stof( match_results[ 2].str(), nullptr), std::stof( match_results[ 3].str(), nullptr)),
+		.angle = std::stoi( match_results[ 1].str(), nullptr, 10),
+		.model = selectCompositionModel( match_results[ 4].str())
+	};
+  }
+  return {};
+}
+
 void requestFontList()
 {
     if( !FcInit())
@@ -1819,7 +1885,9 @@ void requestFontList()
 
 int main( int ac, char *av[])
 {
-  std::shared_ptr<KDNode> kdroot;
+   ApplicationHyperparameters business_rules;
+   
+  auto& kdroot = business_rules.kdroot;
   {
       insert( kdroot, { 0, 0, 0}, 0);
       insert( kdroot, { HALF_RGB_SCALE, 0, 0}, 1);
@@ -2079,12 +2147,12 @@ int main( int ac, char *av[])
       insert( kdroot, { 238, 238, 238}, RGB_SCALE);
   }
 
-  std::shared_ptr<BKNode> bkroot;
+  auto& bkroot = business_rules.bkroot;
 
     /*
      * Easing function listing
      */
-{
+  {
     insert( bkroot, FN_IEASEINSINE,       BKNode::Group::Easing);
     insert( bkroot, FN_IEASEOUTSINE,      BKNode::Group::Easing);
     insert( bkroot, FN_IEASEINOUTSINE,    BKNode::Group::Easing);
@@ -2268,7 +2336,7 @@ int main( int ac, char *av[])
     insert( bkroot, ICOLOR_WHITESMOKE,           BKNode::Group::Color);
     insert( bkroot, ICOLOR_YELLOW,               BKNode::Group::Color);
     insert( bkroot, ICOLOR_YELLOWGREEN,          BKNode::Group::Color);
-}
+  }
 
   PropertyManager<FT_Library> library( FT_Done_FreeType);
   PropertyManager<FT_Face>    face( FT_Done_Face);
@@ -2277,15 +2345,11 @@ int main( int ac, char *av[])
     /*
      * Schema: av[ 0] [--list-fonts|--font-file=FILE [--font-size=NUM] [--color-rule=RULE] [--drawing-character=CHAR] [--output FILE]] text
      */
-
-    const char *fontfile = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-               *raster_glyph = "\u2589",
-               *color_rule = nullptr,
+  
+  const char *fontfile = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
                *font_size = "10",
                *word,
                *program = *av;
-    bool write_as_image = false;
-    FILE *screen = stdout;
 
     while( --ac > 0 && ( *++av)[ 0] == '-')
     {
@@ -2301,21 +2365,24 @@ int main( int ac, char *av[])
             exit( EXIT_SUCCESS);
         }
         else if( strcmp( directive, "as-image") == 0)
-            write_as_image = true;
+            business_rules.as_image = true;
         else if( strcmp( directive, "output") == 0 && ac > 0)
         {
             ac -= 1;
-            screen = fopen( *++av, "wb");
-            screen = screen == nullptr ? stdout : screen;
+            business_rules.dest_filename = *++av;
         }
         else if( strstr( directive, "font-file") != nullptr)
             selection = &fontfile;
         else if( strstr( directive, "color-rule") != nullptr)
-            selection = &color_rule;
+            selection = &business_rules.color_rule;
+		else if( strstr( directive, "composition-rule") != nullptr)
+		  selection = &business_rules.composition_rule;
         else if( strstr( directive, "font-size") != nullptr)
             selection = &font_size;
         else if( strstr( directive, "drawing-character") != nullptr)
-            selection = &raster_glyph;
+            selection = &business_rules.raster_glyph;
+        else if( strstr( directive, "composition-image") != nullptr)
+          	selection = &business_rules.src_filename;
 
         if( selection != nullptr && ( index = strchr( directive, '=')) != nullptr)
             *selection = index + 1;
@@ -2325,6 +2392,8 @@ int main( int ac, char *av[])
             break;
         }
     }
+    
+    business_rules.font_size = strtol( font_size, nullptr, 10);
 
     if( ac == 1)
         word = *av;
@@ -2389,9 +2458,8 @@ int main( int ac, char *av[])
         fprintf( stderr, "Font file is invalid!");
         exit( EXIT_FAILURE);
     }
-
-    render( word, face.get(), std::strtol( font_size, nullptr, 10),
-            raster_glyph, screen, write_as_image, color_rule, kdroot, bkroot);
+  
+  	render( word, face.get(), business_rules);
 
     return 0;
 }

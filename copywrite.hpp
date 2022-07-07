@@ -106,33 +106,31 @@ class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
 {
  public:
   template <typename = std::enable_if<std::is_default_constructible_v<T>>>
-  PropertyProxy()
+  PropertyProxy(): T()
   {
   }
   
   template <typename... Args>
   explicit PropertyProxy( Args&&... values)
-	  : T( std::forward<T>( values)...), value( values...)
+	  : T( std::forward<T>( values)...)
   {
   }
   
   operator T() const
   {
-	return value;
+	return *this;
   }
   
   T operator=( T another)
   {
 	changed_since_initialization = true;
-	T::operator=( std::forward<T>( another));
-	return value = std::forward<T>( another);
+	return T::operator=( std::forward<T>( another));
   }
   
   [[nodiscard]] bool changed() const
   {
 	return changed_since_initialization;
   }
-  T value;
  private:
   bool changed_since_initialization{ false};
 };
@@ -193,6 +191,7 @@ struct BKNode
   }
 };
 
+
 float clamp(float x, float lowerlimit, float upperlimit);
 
 float smoothstep( float left, float right, float x);
@@ -202,14 +201,14 @@ class PropertyManager
 {
  public:
   template <typename Deleter>
-   PropertyManager( Resource&& resource, Deleter&& deleter)
+   PropertyManager( Resource resource, Deleter&& deleter)
       : resource( std::forward<Resource>( resource)),
-        destructor( std::forward<Deleter>( deleter))
+        destructor( std::forward<Deleter&&>( deleter))
   {
   }
   template <typename Deleter>
   explicit PropertyManager( Deleter&& deleter)
-  : destructor( std::forward<Deleter>( deleter))
+  : destructor( std::forward<Deleter&&>( deleter))
   {
   }
 
@@ -353,8 +352,45 @@ bool ltrim( const char*& p);
 
 uint32_t getNumber( const char *&ctx, uint8_t base = 10);
 
-void render(std::string_view word, FT_Face face, size_t default_font_size, const char *raster_glyph, FILE *destination, bool as_image,
-            const char *color_rule, const std::shared_ptr<KDNode>& root, const std::shared_ptr<BKNode> &bkroot);
+struct CompositionRule
+{
+  enum class CompositionModel
+  {
+	Copy,
+	DestinationAtop,
+	DestinationIn,
+	DestinationOver,
+	DestinationOut,
+	Lighter,
+	NotApplicable,
+	SourceAtop,
+	SourceIn,
+	SourceOver,
+	SourceOut,
+	Xor
+  }			   model{ CompositionModel::NotApplicable};
+  Vec2D<float> origin{};
+  int 	   	   angle{};
+};
+
+CompositionRule::CompositionModel selectCompositionModel( std::string_view given);
+CompositionRule parseCompositionRule( std::string_view rule);
+
+struct ApplicationHyperparameters
+{
+  const char 			 *raster_glyph{ "\u2589"},
+             			 *color_rule{ nullptr},
+             			 *composition_rule{ nullptr},
+             			 *src_filename{ nullptr},
+    				     *dest_filename{ nullptr};
+  std::shared_ptr<KDNode> kdroot;
+  std::shared_ptr<BKNode> bkroot;
+  size_t 				  font_size{10};
+  bool 					  as_image{ false};
+  CompositionRule		  composition;
+};
+
+void render( std::string_view word, FT_Face face, ApplicationHyperparameters &guide);
 
 void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height);
 
