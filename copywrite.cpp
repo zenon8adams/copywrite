@@ -142,7 +142,7 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
 	return ( uint8_t)kern.x >> 6u;
 }
 
-void draw(const Glyph &glyph, FT_Vector *pen, FrameBuffer<uint32_t> &frame, FT_Int mdescent, size_t total)
+void draw( const Glyph &glyph, FT_Vector *pen, FrameBuffer<uint32_t> &frame, FT_Int mdescent, size_t total)
 {
     auto width = frame.width,
          height = frame.height;
@@ -171,7 +171,7 @@ void draw(const Glyph &glyph, FT_Vector *pen, FrameBuffer<uint32_t> &frame, FT_I
 		}
 	  }
 	}
-
+	
     auto cwidth = match->soak ? match->gradient->width : ( int32_t)end, cheight = match->gradient->height;
     for( FT_Int y = glyph.origin.y, j = 0; j < glyph.height; ++y, ++j)
     {
@@ -216,11 +216,6 @@ void draw(const Glyph &glyph, FT_Vector *pen, FrameBuffer<uint32_t> &frame, FT_I
 			    center = Vec2D<float>( origin.x * ( cwidth - 1), origin.y * ( cheight - 1));
 			  auto diff = ( Vec2D<float>( x + pen->x, base + pen->y + y) - center);
 			  float angle = diff.angle();
-//			  if( diff.x < 0)	// Calculate the angle as ranging from 0 to 360deg.
-//				angle = 270.f - ( std::atan2( diff.y, -diff.x) * DEG_SCALE);
-//			  else
-//				angle = 90.f + ( std::atan2( diff.y, diff.x) * DEG_SCALE);
-
 			  auto stops = gradient->color_variations;
 			  if( !stops.empty())
 			  {
@@ -254,7 +249,8 @@ void draw(const Glyph &glyph, FT_Vector *pen, FrameBuffer<uint32_t> &frame, FT_I
 			  color = row_colors.get()[ i];
 		  }
           uint32_t pixel = glyph.pixmap.get()[ j * glyph.width + i];
-		  frame.buffer.get()[ ( base + pen->y + y) * width + x + pen->x] |= pixel ? color : 0;
+          auto& dest = frame.buffer.get()[ ( base + pen->y + y) * width + x + pen->x];
+		  dest = pixel ? color : dest;
         }
     }
     
@@ -293,10 +289,10 @@ void render( std::string_view word, FT_Library library, FT_Face face, Applicatio
    auto& color_rule = guide.color_rule;
    
     std::unique_ptr<Glyph> head;
-    FT_Int width 	= 0, // Total width of the buffer
+    FT_Int width 	 = 0, // Total width of the buffer
             mdescent = 0, // Holds the baseline for the character with most descent
             mxheight = 0, // Maximum heigh of character 'x' according to various font sizes
-            hexcess 	= 0; // Holds the ascent height based on the
+            hexcess  = 0; // Holds the ascent height based on the
     // presence of descented characters like 'g'
     FT_UInt prev 	= 0; // Holds previous character read
 
@@ -383,15 +379,17 @@ void render( std::string_view word, FT_Library library, FT_Face face, Applicatio
     // like 'g'
 
     FT_Int height = hexcess + mxheight + mdescent;
-
-    std::shared_ptr<uint32_t> out( (uint32_t *)malloc( width * height * sizeof( uint32_t)), []( auto *p){ free( p);});
-
+	uint32_t background_color = guide.background_color;
+	size_t out_size = width * height;
+    std::shared_ptr<uint32_t> out( ( uint32_t *)malloc( out_size * sizeof( uint32_t)), []( auto *p){ free( p);});
+    std::fill_n( out.get(), out_size, background_color);
+    
     FT_Vector pen;
     memset( &pen, 0, sizeof( pen));
     auto frame = FrameBuffer<uint32_t>{ out, width, height};
     for( std::shared_ptr<Glyph> current = std::move( head), prev_link; current != nullptr;)
     {
-	  draw( *current, &pen, frame, mdescent, nchars - 1);
+	  draw(*current, &pen, frame, mdescent, nchars - 1);
         prev_link = current;
         current = std::move( current->next);
     }
@@ -416,7 +414,8 @@ void render( std::string_view word, FT_Library library, FT_Face face, Applicatio
     else
 	  write( buffer, guide.raster_glyph, destination.get(), guide.kdroot.get());
     
-  	composite( guide, buffer);
+    if( guide.composition_rule)
+  		composite( guide, buffer);
 }
 
 uint32_t hsvaToRgba( uint32_t hsv)
@@ -566,7 +565,7 @@ void insert( std::shared_ptr<KDNode>& node, Color color, size_t index, uint8_t d
         insert( node->right, color, index, ndepth);
 }
 
-void write(FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destination, KDNode *root)
+void write( FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destination, KDNode *root)
 {
     bool is_stdout = false;
     uint8_t raster_bytes = destination != stdout ? MAX( byteCount( *raster_glyph) - 1, 1) : is_stdout = true;
@@ -616,7 +615,7 @@ bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test)
    return is_in;
 }
 
-void composite(ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame)
+void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame)
 {
    auto c_rule = parseCompositionRule( guide.composition_rule);
    if( c_rule.model == CompositionRule::CompositionModel::NotApplicable)
@@ -631,8 +630,8 @@ void composite(ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame
    auto swidth     = s_frame.width,
         sheight    = s_frame.height;
 
-   auto pos = Vec2D<float>( /*c_rule.position.x * ( dwidth - 1)  + ( 1 - c_rule.position.x) * - swidth  + 1*/0,
-   	                        /*c_rule.position.y * ( dheight - 1) + ( 1 - c_rule.position.y) * - sheight + 1*/0),
+   auto pos = Vec2D<float>( c_rule.position.x * ( dwidth - 1)  + ( 1 - c_rule.position.x) * - swidth  + 1,
+   	                        c_rule.position.y * ( dheight - 1) + ( 1 - c_rule.position.y) * - sheight + 1),
 		center = Vec2D<float>( pos.x + swidth / 2.f, pos.y + sheight / 2.f);
 
    // Defines the rotated corners of the given image.
@@ -786,26 +785,40 @@ void composite(ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame
 	  auto *src_ptr = d_frame.buffer.get();
 	  uint32_t &pixel = image.buffer.get()[ d_index];
 	  auto point = Vec2D<float>( x, y);
-	  printf("Coord: %d, %d\n", x, y);
 	  if( intersects( corners, point) && intersects( big_corners, point))
 	  {
 	    auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
-		int index    = ( uint)std::ceil( s_coord.y * s_frame.width + s_coord.x);
-		printf( "x,y: (%d, %d), s_coord: (%f, %f)\n", x, y, s_coord.x, s_coord.y);
-//		printf( "s_coord: (%f, %f)\n", s_coord.x, s_coord.y);
-//		pixel        = s_frame.buffer.get()[ index];
+		int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+//		printf( "x,y: (%d, %d), s_coord: (%f, %f), index: %d\n", x, y, s_coord.x, s_coord.y, index);
+		pixel        = s_frame.buffer.get()[ index];
 	  }
 	  else
 	  	pixel = RGBA( src_ptr[ s_index], src_ptr[ s_index + 1],
 	  	              src_ptr[ s_index + 2], src_ptr[ s_index + 3]);
 	}
   }
-  FILE *final = fopen( "final.png", "wb");
 
-  writePNG( final, image);
+  /*for( float y = 0; y < s_frame.height; y += .5)
+  {
+    for( float x = 0; x < s_frame.width; x += .5)
+	{
+      auto point = ( Vec2D<float>( x, y) - center).rotate( c_rule.angle) + center - pos;
+      if( intersects( corners, point) && intersects( big_corners, point))
+	  {
+        int d_index = std::ceil( point.y) * d_frame.width + std::round( point.x);
+		uint32_t &pixel = image.buffer.get()[ d_index];
+		int s_index = (int)	y * s_frame.width + (int)x;
+		pixel = s_frame.buffer.get()[ s_index];
+	  }
+	}
+  }*/
+
+  FILE *final = fopen( "final.png", "wb");
   
+  writePNG(final, image);
+
 //   models[ ENUM_CAST( c_rule.model)]();
-   
+ 
    printf( "width: %f, height: %f\n", width, height);
    FILE *handle = fopen( "sample.txt", "w");
 //   for( float y = smallbox_top_edge.y; y < smallbox_top_edge.y + height; ++y)
@@ -955,7 +968,7 @@ FrameBuffer<png_byte> readPNG( std::string_view filename)
    return std::move( frame);
 }
 
-void writePNG(FILE *cfp, FrameBuffer<uint32_t> &frame)
+void writePNG( FILE *cfp, FrameBuffer<uint32_t> &frame)
 {
     if(cfp == nullptr)
         return;
@@ -963,7 +976,6 @@ void writePNG(FILE *cfp, FrameBuffer<uint32_t> &frame)
     png_structp png_ptr;
     png_infop info_ptr;
     png_uint_32 bit_depth = 8, bytes_per_pixel = 4;
-    
     auto width = frame.width, height = frame.height;
 
     png_ptr = png_create_write_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
@@ -987,15 +999,6 @@ void writePNG(FILE *cfp, FrameBuffer<uint32_t> &frame)
     png_set_IHDR( png_ptr, info_ptr, width, height, bit_depth, PNG_COLOR_TYPE_RGB_ALPHA,
                   PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
     
-    if( frame.metadata.get())
-	{
-      auto background = *static_cast<Color *>( frame.metadata.get());
-      png_color_16 color{ .red   = background.rgb[ 0],
-						  .green = background.rgb[ 1],
-      					  .blue  = background.rgb[ 2]};
-      png_set_bKGD( png_ptr, info_ptr, &color);
-	}
-
     png_text text_ptr[3];
 
     char key0[] = "Title";
@@ -2722,6 +2725,7 @@ int main( int ac, char *av[])
   
   const char *fontfile = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
                *font_size = "10",
+               *background_color{ nullptr},
                *word,
                *program = *av;
 
@@ -2753,6 +2757,8 @@ int main( int ac, char *av[])
 		  selection = &business_rules.composition_rule;
         else if( strstr( directive, "font-size") != nullptr)
             selection = &font_size;
+        else if( strstr( directive, "background-color") != nullptr)
+          selection = &background_color;
         else if( strstr( directive, "drawing-character") != nullptr)
             selection = &business_rules.raster_glyph;
         else if( strstr( directive, "composition-image") != nullptr)
@@ -2767,6 +2773,8 @@ int main( int ac, char *av[])
         }
     }
     
+    if( background_color)
+      business_rules.background_color = extractColor( background_color, business_rules.bkroot.get());
     business_rules.font_size = strtol( font_size, nullptr, 10);
 
     if( ac == 1)

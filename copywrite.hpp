@@ -88,9 +88,9 @@ class PropertyProxy
     return value;
   }
   
-  [[nodiscard]] T cast() const
+  [[nodiscard]] T cast()
   {
-	return *static_cast<T *>( this);
+	return value;
   }
   
   template <typename Callable>
@@ -342,6 +342,8 @@ struct FrameBuffer
   }
 };
 
+struct ApplicationHyperparameters;
+
 void draw(const Glyph &glyph, FT_Vector *pen, FrameBuffer<uint32_t> &frame, FT_Int mdescent, size_t total);
 
 /*
@@ -435,6 +437,7 @@ struct ApplicationHyperparameters
   std::shared_ptr<KDNode> kdroot;
   std::shared_ptr<BKNode> bkroot;
   size_t 				  font_size{10};
+  PropertyProxy<uint32_t> background_color{};
   bool 					  as_image{ false};
   CompositionRule		  composition;
 };
@@ -447,7 +450,7 @@ void composite(ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame
 
 FrameBuffer<png_byte> readPNG( std::string_view filename);
 
-void writePNG(FILE *cfp, FrameBuffer<uint32_t> &frame);
+void writePNG( FILE *cfp, FrameBuffer<uint32_t> &frame);
 
 void requestFontList();
 

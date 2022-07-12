@@ -94,6 +94,7 @@ struct Vec2D
     auto rad = static_cast<float>( -angle * RAD_SCALE);
     return Vec2D<float>{
        std::cos( rad) * x + std::sin( rad) * y,
+       
       -std::sin( rad) * x + std::cos( rad) * y
     };
   }
