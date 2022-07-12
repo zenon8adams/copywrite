@@ -7,10 +7,10 @@
 #define DESTINATION_OVER "destination-over"
 #define DESTINATION_OUT  "destination-out"
 #define LIGHTER 		 "lighter"
-#define SOURCE_ATOP 	 "sourceAtop"
-#define SOURCE_IN 		 "sourceIn"
-#define SOURCE_OVER 	 "sourceOver"
-#define SOURCE_OUT 		 "sourceOut"
+#define SOURCE_ATOP 	 "source-atop"
+#define SOURCE_IN 		 "source-in"
+#define SOURCE_OVER 	 "source-over"
+#define SOURCE_OUT 		 "source-out"
 #define XOR 			 "xor"
 
 #endif //COPYWRITE__COMPOSITION_DEFS_HPP_

@@ -44,7 +44,9 @@ typedef FILE                * png_FILE_p;
 
 #define MAX_DIFF_TOLERANCE 20
 
-std::unique_ptr<unsigned char, void( *)( unsigned char *)> toMonochrome(FT_Bitmap bitmap);
+typedef void( *DeleterType)( unsigned char *);
+
+std::unique_ptr<unsigned char, DeleterType> toMonochrome( FT_Bitmap bitmap);
 
 enum class GradientType { Linear, Radial, Conic};
 
@@ -86,8 +88,21 @@ class PropertyProxy
     return value;
   }
   
+  [[nodiscard]] T cast() const
+  {
+	return *static_cast<T *>( this);
+  }
+  
+  template <typename Callable>
+  void setCallAfterModified( Callable&& callable)
+  {
+	state_change_callable = callable;
+  }
+  
   T operator=( T another)
   {
+    if( state_change_callable)
+      std::invoke( state_change_callable, value);
     changed_since_initialization = true;
      return value = std::forward<T>( another);
   }
@@ -98,6 +113,7 @@ class PropertyProxy
   }
  private:
   T value;
+  std::function<void( T)> state_change_callable;
   bool changed_since_initialization{ false};
 };
 
@@ -115,14 +131,28 @@ class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
 	  : T( std::forward<T>( values)...)
   {
   }
+
+  template <typename Callable>
+  void setCallAfterModified( Callable&& callable)
+  {
+	state_change_callable = callable;
+  }
   
-  operator T() const
+  operator T()
   {
 	return *this;
   }
   
+  T& cast()
+  {
+    return *this;
+  }
+  
   T operator=( T another)
   {
+    if( state_change_callable)
+      std::invoke( state_change_callable, *static_cast<T*>( this));
+    
 	changed_since_initialization = true;
 	return T::operator=( std::forward<T>( another));
   }
@@ -132,6 +162,8 @@ class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
 	return changed_since_initialization;
   }
  private:
+
+  std::function<void( T)> state_change_callable;
   bool changed_since_initialization{ false};
 };
 
@@ -200,27 +232,27 @@ template<typename Resource>
 class PropertyManager
 {
  public:
-  template <typename Deleter>
-   PropertyManager( Resource resource, Deleter&& deleter)
-      : resource( std::forward<Resource>( resource)),
-        destructor( std::forward<Deleter&&>( deleter))
+  template <typename MayBe_Resource, typename Deleter>
+   PropertyManager( MayBe_Resource&& resource, Deleter&& deleter)
+      : resource( std::forward<MayBe_Resource>( resource)),
+        destructor( std::forward<Deleter>( deleter))
   {
   }
   template <typename Deleter>
-  explicit PropertyManager( Deleter&& deleter)
-  : destructor( std::forward<Deleter&&>( deleter))
+  explicit PropertyManager( Deleter& deleter)
+  : destructor( std::forward<Deleter>( deleter))
   {
   }
-
+  
   PropertyManager( const PropertyManager&) = delete;
-  PropertyManager( PropertyManager&&)      = delete;
-
+  PropertyManager( PropertyManager&&) = default;
+  
   auto& get()
   {
     return resource;
   }
 
-  auto *operator->()
+  auto operator->()
   {
     return resource;
   }
@@ -232,6 +264,7 @@ class PropertyManager
 
   ~PropertyManager()
   {
+    if( destructor)
       std::invoke( destructor, resource);
   }
 
@@ -261,6 +294,7 @@ struct Glyph
     FT_Int width{},
             height{},
             xstep{},
+            ystep{},
             index{};
     std::unique_ptr<unsigned char, void( *)( unsigned char *)> pixmap;
     FT_Vector origin{};
@@ -271,7 +305,6 @@ struct Glyph
     {
     }
 };
-
 
 Glyph extract( FT_GlyphSlot slot);
 
@@ -293,13 +326,29 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face);
  * Render the given glyph into the final computed container
  */
 
-void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t total);
+template <typename Size_Class = uint64_t,
+	      typename = std::enable_if_t<std::is_integral_v<Size_Class>
+	                 || std::is_pointer<Size_Class>::value
+	                 || std::is_array<Size_Class>::value>>
+struct FrameBuffer
+{
+  std::shared_ptr<Size_Class>buffer;
+  int32_t width, height, n_channel;
+  PropertyManager<void *> metadata;
+  FrameBuffer( std::shared_ptr<Size_Class> buffer = nullptr, int32_t width = {}, int32_t height = {}, int32_t bit_depth = {})
+  : buffer( buffer), width( width), height( height), n_channel( bit_depth)
+    , metadata( ( void *)nullptr, []( auto *p){ if( p) free( p);})
+  {
+  }
+};
+
+void draw(const Glyph &glyph, FT_Vector *pen, FrameBuffer<uint32_t> &frame, FT_Int mdescent, size_t total);
 
 /*
  * Display the monochrome canvas into stdout
  */
 
-void write(const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination, KDNode *root);
+void write(FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destination, KDNode *root);
 
 static size_t byteCount( uint8_t c );
 
@@ -340,7 +389,7 @@ void insert( std::shared_ptr<BKNode> &node, std::string_view word, BKNode::Group
 void findWordMatch( BKNode *node, std::string_view word, BKNode::Group word_group,
 				   int threshold, std::vector<std::string> &matches);
 
-std::vector<std::string> findWordMatch(BKNode *node, std::string_view word, BKNode::Group word_group, int threshold);
+std::vector<std::string> findWordMatch( BKNode *node, std::string_view word, BKNode::Group word_group, int threshold);
 
 /*
  * Main dispatcher: Does all the rendering and display
@@ -356,7 +405,7 @@ struct CompositionRule
 {
   enum class CompositionModel
   {
-	Copy,
+	Copy = 0,
 	DestinationAtop,
 	DestinationIn,
 	DestinationOver,
@@ -369,7 +418,7 @@ struct CompositionRule
 	SourceOut,
 	Xor
   }			   model{ CompositionModel::NotApplicable};
-  Vec2D<float> origin{};
+  Vec2D<float> position{};
   int 	   	   angle{};
 };
 
@@ -390,9 +439,15 @@ struct ApplicationHyperparameters
   CompositionRule		  composition;
 };
 
-void render( std::string_view word, FT_Face face, ApplicationHyperparameters &guide);
+void render( std::string_view word, FT_Library library, FT_Face face, ApplicationHyperparameters &guide);
 
-void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height);
+bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test);
+
+void composite(ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame);
+
+FrameBuffer<png_byte> readPNG( std::string_view filename);
+
+void writePNG(FILE *cfp, FrameBuffer<uint32_t> &frame);
 
 void requestFontList();
 

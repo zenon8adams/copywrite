@@ -32,7 +32,7 @@
 #include <unordered_map>
 #include <functional>
 #include <regex>
-#include <cfloat>
+#include <cassert>
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
 #include "geo_vector.hpp"
@@ -56,7 +56,7 @@
 
 #define FPRINTF( fmt, argument)        FPRINTFD( fmt, argument, true)
 
-#define EPSILON                        ( 1e-5)
+//#define EPSILON                        ( 1e-5)
 #define ZERO( fl)                      ( std::abs( fl) <= EPSILON)
 #define EQUAL( al, bl)                 ZERO( ( al) - ( bl))
 
@@ -73,8 +73,12 @@
 #define RGB_SCALE                      255
 #define HALF_RGB_SCALE                 128
 
-#define RAD_SCALE					   M_PI / 180.f
 #define DEG_SCALE					   180.f / M_PI
+
+#define ENUM_CAST( idx)					( static_cast<uint8_t>( idx))
+#define COMPOSITION_TABLE		       0x0064044AU
+#define COMPOSITON_SIZE( idx)          ( ( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U)) & 1U)
+#define COMPOSITION_SIDE( idx)		   ( ( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U + 1U)) & 1U)
 
 /*
  * Converts bitmap into binary format.
@@ -138,8 +142,10 @@ FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
 	return ( uint8_t)kern.x >> 6u;
 }
 
-void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, FT_Int width, FT_Int height, size_t total)
+void draw(const Glyph &glyph, FT_Vector *pen, FrameBuffer<uint32_t> &frame, FT_Int mdescent, size_t total)
 {
+    auto width = frame.width,
+         height = frame.height;
     FT_Int base = height - glyph.height - mdescent;
     auto& match = glyph.match;
     uint32_t color = match->scolor;
@@ -209,11 +215,11 @@ void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, F
 			  if( gradient->origin.changed()) // Explicit access is needed is `origin` object is not copy assigned
 			    center = Vec2D<float>( origin.x * ( cwidth - 1), origin.y * ( cheight - 1));
 			  auto diff = ( Vec2D<float>( x + pen->x, base + pen->y + y) - center);
-			  float angle;
-			  if( diff.x < 0)	// Calculate the angle as ranging from 0 to 360deg.
-				angle = 270.f - ( std::atan2( diff.y, -diff.x) * DEG_SCALE);
-			  else
-				angle = 90.f + ( std::atan2( diff.y, diff.x) * DEG_SCALE);
+			  float angle = diff.angle();
+//			  if( diff.x < 0)	// Calculate the angle as ranging from 0 to 360deg.
+//				angle = 270.f - ( std::atan2( diff.y, -diff.x) * DEG_SCALE);
+//			  else
+//				angle = 90.f + ( std::atan2( diff.y, diff.x) * DEG_SCALE);
 
 			  auto stops = gradient->color_variations;
 			  if( !stops.empty())
@@ -234,7 +240,7 @@ void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, F
 				else
 				{
 				  auto fraction = ( angle - prev_stop.second) / ( cur_stop.second - prev_stop.second);
-				  auto clone = fraction;
+//				  auto clone = fraction;
 				  if( match->color_easing_fn)
 				    fraction = match->color_easing_fn( fraction);
 				  color = colorLerp( RGBA( prev_stop.first.rgb[ 0], prev_stop.first.rgb[ 1],
@@ -247,8 +253,8 @@ void draw( const Glyph& glyph, FT_Vector *pen, uint64_t *out, FT_Int mdescent, F
 			else if( match->soak)
 			  color = row_colors.get()[ i];
 		  }
-          uint64_t pixel = glyph.pixmap.get()[ j * glyph.width + i];
-          out[ ( base + pen->y + y) * width + x + pen->x] |= pixel << 32u | ( pixel ? color : 0);
+          uint32_t pixel = glyph.pixmap.get()[ j * glyph.width + i];
+		  frame.buffer.get()[ ( base + pen->y + y) * width + x + pen->x] |= pixel ? color : 0;
         }
     }
     
@@ -282,7 +288,7 @@ size_t countCharacters( std::string_view word)
     return value;
 }
 
-void render(std::string_view word, FT_Face face, ApplicationHyperparameters &guide)
+void render( std::string_view word, FT_Library library, FT_Face face, ApplicationHyperparameters &guide)
 {
    auto& color_rule = guide.color_rule;
    
@@ -378,14 +384,14 @@ void render(std::string_view word, FT_Face face, ApplicationHyperparameters &gui
 
     FT_Int height = hexcess + mxheight + mdescent;
 
-    std::unique_ptr<uint64_t, void( *)( uint64_t *)> out( ( uint64_t *)calloc( width * height, sizeof( uint64_t)),
-        []( uint64_t *p) { free( p);});
+    std::shared_ptr<uint32_t> out( (uint32_t *)malloc( width * height * sizeof( uint32_t)), []( auto *p){ free( p);});
 
     FT_Vector pen;
     memset( &pen, 0, sizeof( pen));
+    auto frame = FrameBuffer<uint32_t>{ out, width, height};
     for( std::shared_ptr<Glyph> current = std::move( head), prev_link; current != nullptr;)
     {
-        draw( *current, &pen, out.get(), mdescent, width, height, nchars - 1);
+	  draw( *current, &pen, frame, mdescent, nchars - 1);
         prev_link = current;
         current = std::move( current->next);
     }
@@ -394,19 +400,23 @@ void render(std::string_view word, FT_Face face, ApplicationHyperparameters &gui
     {
       if( maybe_destructible != stdout)
         fclose( maybe_destructible);
+      maybe_destructible = nullptr;
     });
     
-    if( guide.dest_filename != nullptr)
+    if( guide.src_filename != nullptr)
 	{
-      auto *handle = fopen( guide.dest_filename, "wb");
+      auto *handle = fopen( guide.src_filename, "wb");
       if( handle)
-        destination.get() = handle;
+		destination.get() = handle;
 	}
     
-    if( guide.as_image && guide.dest_filename)
-        writePNG( destination.get(), out.get(), width, height);
+    auto buffer = FrameBuffer<uint32_t>{ std::move( out), width, height};
+    if( guide.as_image && guide.src_filename)
+	  writePNG( destination.get(), buffer);
     else
-        write( out.get(), width, height, guide.raster_glyph, destination.get(), guide.kdroot.get());
+	  write( buffer, guide.raster_glyph, destination.get(), guide.kdroot.get());
+    
+  	composite( guide, buffer);
 }
 
 uint32_t hsvaToRgba( uint32_t hsv)
@@ -556,12 +566,14 @@ void insert( std::shared_ptr<KDNode>& node, Color color, size_t index, uint8_t d
         insert( node->right, color, index, ndepth);
 }
 
-void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster_glyph, FILE *destination, KDNode *root)
+void write(FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destination, KDNode *root)
 {
     bool is_stdout = false;
     uint8_t raster_bytes = destination != stdout ? MAX( byteCount( *raster_glyph) - 1, 1) : is_stdout = true;
     std::string sp( raster_bytes, ' ');
-
+    auto width = frame.width,
+    	 height = frame.height;
+    
     uint8_t fmt[] = { '\x1B', '[', '3', '8', ';', '5', ';', '0', '0', '0', 'm', '\0'};
     constexpr uint8_t offset = 7;
 
@@ -570,8 +582,7 @@ void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster
         for ( FT_Int i = 0; i < width; ++i)
         {
             double initial = INFINITY;
-            uint64_t byte =  out[ j * width + i];
-            uint32_t color = byte & 0xFFFFFFFFu;
+            uint32_t color =  frame.buffer.get()[ j * width + i];
             bool is_transparent = ( color & 0xFFu) == 0u;
             auto nmatch = approximate( root, {( uint8_t)RED( color),
                                               ( uint8_t)GREEN( color),
@@ -582,7 +593,7 @@ void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster
 
             if( is_stdout)
                 fprintf( destination, "%s", ( const char *)fmt);
-            fprintf( destination,"%s", byte >> 32u && !is_transparent ? raster_glyph : sp.c_str());
+            fprintf( destination,"%s", color && !is_transparent ? raster_glyph : sp.c_str());
             if( is_stdout)
                 fprintf( destination, "\x1B[0m");
         }
@@ -590,7 +601,361 @@ void write( const uint64_t *out, FT_Int width, FT_Int height, const char *raster
     }
 }
 
-void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 height)
+bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test)
+{
+   bool is_in = false;
+   for( size_t i = 0, j = 3; i < 4u; j = i++)
+  {
+     // First check asserts that the point is located between the y coordinates and not above or below
+     if( ( corners[ i].y > test.y) != ( corners[ j].y > test.y) &&
+		 ( test.x < ( corners[ j].x - corners[ i].x) * ( test.y - corners[ i].y) // x = (x2 - x1)*(y-y1)/(y2-y1)+x1
+		 / ( corners[ j].y - corners[ i].y) + corners[ i].x)) // x is a point on the line (x1,y1),(x2,y2) check if the
+       is_in = !is_in; // given x coordinate is within the bounding box of the polygon
+  }
+   
+   return is_in;
+}
+
+void composite(ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame)
+{
+   auto c_rule = parseCompositionRule( guide.composition_rule);
+   if( c_rule.model == CompositionRule::CompositionModel::NotApplicable)
+     return;
+   
+   auto d_frame    = readPNG( guide.dest_filename);
+   if( d_frame.buffer == nullptr)
+     return;
+   
+   int32_t dwidth  = d_frame.width,
+   		   dheight = d_frame.height;
+   auto swidth     = s_frame.width,
+        sheight    = s_frame.height;
+
+   auto pos = Vec2D<float>( /*c_rule.position.x * ( dwidth - 1)  + ( 1 - c_rule.position.x) * - swidth  + 1*/0,
+   	                        /*c_rule.position.y * ( dheight - 1) + ( 1 - c_rule.position.y) * - sheight + 1*/0),
+		center = Vec2D<float>( pos.x + swidth / 2.f, pos.y + sheight / 2.f);
+
+   // Defines the rotated corners of the given image.
+	std::array<Vec2D<float>, 4> corners = {
+		( pos                                               - center).rotate( c_rule.angle) + center,
+		( pos + Vec2D<float>( swidth - 1.f, 0)              - center).rotate( c_rule.angle) + center,
+		( pos + Vec2D<float>( swidth - 1.f, sheight - 1.f)  - center).rotate( c_rule.angle) + center,
+		( pos + Vec2D<float>( 0, sheight - 1.f)             - center).rotate( c_rule.angle) + center
+	};
+
+	// Defines the corners of the destination image
+	std::array<Vec2D<float>, 4> big_corners = {
+		Vec2D<float>( 0, 0),
+		Vec2D<float>( dwidth - 1, 0),
+		Vec2D<float>( dwidth - 1, dheight - 1),
+		Vec2D<float>( 0, dheight - 1)
+	};
+
+	// Selects the boundaries of the image
+	auto cherryPick = []( auto corners, bool is_min = true)
+	{
+	  using iter_type = decltype( std::begin( corners));
+	  auto comp       = []( auto l, auto r){ return l.x < r.x;};
+	  auto model      = ( is_min ? std::min_element<iter_type, decltype( comp)>
+	                             : std::max_element<iter_type, decltype( comp)>);
+	  auto x_ptr      = model( std::begin( corners), std::end( corners), comp);
+
+	  Vec2D<float> *y_ptr{ nullptr};
+	  for( auto& corner : corners)
+	  {
+		if( &corner == x_ptr)
+		  continue;
+		if( y_ptr == nullptr)
+		  y_ptr = &corner;
+		else if( is_min ? corner.y < y_ptr->y : corner.y > y_ptr->y)
+		  y_ptr = &corner;
+	  }
+	  
+	  return std::pair{ *x_ptr, *y_ptr};
+	};
+ 
+   auto [ x_min, y_min] 	 = cherryPick( corners);
+   auto [ x_max, y_max] 	 = cherryPick( corners, false);
+   
+   auto angle                = ( y_min - x_min).angle();
+   auto smallbox_top_edge    = Vec2D<float>( ( ( y_min - x_min).rotate( -angle) + x_min).x, y_min.y);
+   auto origin      		 = smallbox_top_edge;
+   float width      		 = x_max.x - x_min.x + 1,
+   		 height     		 = y_max.y - y_min.y + 1,
+   		 final_width,
+   		 final_height;
+   
+   if( COMPOSITON_SIZE( c_rule.model))
+   { // The final canvas size is the maximum of the width and height of both canvas
+     auto bottom_edge = Vec2D<float>( std::max( origin.x + width  - 1.f,  dwidth  - 1.f),
+     	                              std::max( origin.y + height - 1.f, dheight  - 1.f));
+     origin.x         = std::min( origin.x, 0.f);
+     origin.y         = std::min( origin.y, 0.f);
+     final_width      = bottom_edge.x - origin.x + 1;
+     final_height     = bottom_edge.y - origin.y + 1;
+   }
+   else if( COMPOSITION_SIDE( c_rule.model))
+   { // The final canvas size is the size of the bounding box of the source canvas
+     final_width  = width;
+     final_height = height;
+   }
+   else
+   { // The final canvas size is the size of the destination canvas
+     origin       = big_corners[ 0];
+     final_width  = dwidth;
+     final_height = dheight;
+   }
+   
+   size_t image_byte_size = final_width * final_height * sizeof( uint32_t);
+   auto image = FrameBuffer<uint32_t>( std::shared_ptr<uint32_t>(( uint32_t *)malloc( image_byte_size), []( auto *p) { free( p);}),
+   	                                   final_width, final_height);
+  
+//  image_manager.get().metadata = std::move( d_frame.metadata);
+  
+  std::array<std::function<void()>, ENUM_CAST( CompositionRule::CompositionModel::Xor) + 1> models = {
+	  [&]() // Copy
+	  {
+		image.buffer = std::move( s_frame.buffer);
+	  },
+	  [&]() // DestinationAtop
+	  {
+	  },
+	  [&]() // DestinationIn
+	  {
+	  
+	  },
+	  [&]() // DestinationOver
+	  {
+	  
+	  },
+	  [&]() // DestinationOut
+	  {
+	  
+	  },
+	  [&]() // Lighter
+	  {
+	  
+	  },
+	  []() // Not Applicable
+	  {
+	  
+	  },
+	  [&]() // SourceAtop
+	  {
+	    /*for( size_t y = origin.y, j = 0; j < d_frame.height; ++y, ++j)
+		{
+	      for( size_t x = origin.x, i = 0; i < d_frame.width; ++x, ++i)
+		  {
+	          auto src_ptr = &( *d_frame.buffer)[ j * d_frame.width * bit_depth + i];
+	          auto pixel   = &image_manager.get().buffer[ j * d_frame.width + i];
+	          if( intersects( corners, Vec2D<float>( x, y)) && intersects( big_corners, Vec2D<float>( x, y)))
+			  {
+	            auto dest_ptr = &s_frame.buffer[ j * s_frame.width + i];
+	            memcpy( pixel, dest_ptr, sizeof( uint64_t));
+			  }
+	          else
+	          	memcpy( pixel, src_ptr, sizeof( uint64_t));
+		  }
+		}*/
+	  },
+	  [&]() // SourceIn
+	  {
+	  
+	  },
+	  [&]() // SourceOver
+	  {
+	  
+	  },
+	  [&]() // SourceOut
+	  {
+	  
+	  },
+	  [&]() // Xor
+	  {
+	  
+	  }
+   };
+
+  printf( "s_width: %d, s_height: %d\n", swidth, sheight);
+  for( int y = origin.y, j = 0; j < d_frame.height; ++y, ++j)
+  {
+	for( int x = origin.x, i = 0; i < d_frame.width; ++x, ++i)
+	{
+	  auto s_index = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel,
+	       d_index = j * d_frame.width + i;
+	  auto *src_ptr = d_frame.buffer.get();
+	  uint32_t &pixel = image.buffer.get()[ d_index];
+	  auto point = Vec2D<float>( x, y);
+	  printf("Coord: %d, %d\n", x, y);
+	  if( intersects( corners, point) && intersects( big_corners, point))
+	  {
+	    auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+		int index    = ( uint)std::ceil( s_coord.y * s_frame.width + s_coord.x);
+		printf( "x,y: (%d, %d), s_coord: (%f, %f)\n", x, y, s_coord.x, s_coord.y);
+//		printf( "s_coord: (%f, %f)\n", s_coord.x, s_coord.y);
+//		pixel        = s_frame.buffer.get()[ index];
+	  }
+	  else
+	  	pixel = RGBA( src_ptr[ s_index], src_ptr[ s_index + 1],
+	  	              src_ptr[ s_index + 2], src_ptr[ s_index + 3]);
+	}
+  }
+  FILE *final = fopen( "final.png", "wb");
+
+  writePNG( final, image);
+  
+//   models[ ENUM_CAST( c_rule.model)]();
+   
+   printf( "width: %f, height: %f\n", width, height);
+   FILE *handle = fopen( "sample.txt", "w");
+//   for( float y = smallbox_top_edge.y; y < smallbox_top_edge.y + height; ++y)
+//   {
+//     for( float x = smallbox_top_edge.x; x < smallbox_top_edge.x + width; ++x)
+//	 {
+//       if( intersects( corners, { x, y}) && intersects( big_corners, { x, y}))
+//         fprintf( handle, "c.beginPath();\nc.arc(%f, %f, 1, 0, 2 * Math.PI, true);\nc.fill();", x, y);
+//	 }
+//   }
+  fprintf( handle, "c.beginPath();\n"
+		  "c.rect(%f, %f, %f, %f);\n"
+		  "c.stroke();\n", smallbox_top_edge.x, smallbox_top_edge.y, width, height);
+  fprintf( handle, "c.strokeStyle = 'rgb(255, 0, 0)';\nc.beginPath();\n"
+				   "c.rect(%f, %f, %f, %f);\n"
+				   "c.stroke();\nc.strokeStyle = 'rgb(0,0,0)';\n", origin.x, origin.y, final_width, final_height);
+  fprintf( handle, "c.beginPath();\n"
+		   "c.arc(%f, %f, 5, 0, 2 * Math.PI, true);\n"
+	       "c.fill();\n", center.x, center.y);
+  	std::array<Vec3D, 2> colors {
+		Vec3D( 255, 0, 0),
+		Vec3D( 0, 255, 0)
+  	};
+  	std::array<Vec2D<float>, 2> minmax = { x_min, y_min};
+	for( size_t i = 0; i < minmax.size(); ++i)
+	{
+	  fprintf( handle, "c.beginPath();\nc.fillStyle = \"rgb(%.f, %.f, %.f)\"\n", colors[ i].x, colors[ i].y, colors[ i].z);
+	  fprintf( handle, "c.arc(%f, %f, 5, 0, 2 * Math.PI, true);\n", minmax[ i].x, minmax[ i].y);
+	  fprintf( handle, "c.fill()\n");
+	}
+  fprintf( handle, "c.beginPath();\n");
+   for( size_t i = 0; i < corners.size() + 1; ++i)
+   {
+     if( i == 0)
+	 {
+//       printf( "c.rect(%f, %f, %d, %d)\n", corners[ i].x, corners[ i].y, swidth, sheight);
+	   fprintf( handle,"c.moveTo(%f, %f);\n", corners[ i].x, corners[ i].y);
+	 }
+     else
+	   fprintf( handle,"c.lineTo(%f, %f);\n", corners[ i % corners.size()].x, corners[ i % corners.size()].y);
+   }
+   fflush( handle);
+   fclose( handle);
+}
+
+FrameBuffer<png_byte> readPNG( std::string_view filename)
+{
+   constexpr const auto BYTES_READ = 8;
+   char magic[ BYTES_READ];
+   PropertyManager<FILE *> handle( fopen( filename.data(), "rb"), []( auto *p) { if( p) fclose( p); p = nullptr;});
+   if( handle.get() == nullptr)
+     return {};
+   
+   if( fread( magic, 1, BYTES_READ, handle.get()) != BYTES_READ)
+     return {};
+   
+   if( png_sig_cmp( png_const_bytep ( magic), 0, BYTES_READ)) //TODO report invalid png
+     return {};
+   
+   png_structp png_ptr = png_create_read_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+   if( png_ptr == nullptr)
+     return {};
+   
+   png_infop info_ptr = png_create_info_struct( png_ptr);
+   if( info_ptr == nullptr)
+     png_destroy_read_struct( &png_ptr, nullptr, nullptr);
+   
+   if( setjmp( png_jmpbuf( png_ptr)))
+   {
+     png_destroy_read_struct( &png_ptr, &info_ptr, nullptr);
+     return {};
+   }
+
+   png_init_io( png_ptr, handle.get());
+   png_set_sig_bytes( png_ptr, BYTES_READ);
+   png_read_info( png_ptr, info_ptr);
+ 
+   FrameBuffer<png_byte> frame;
+   png_int_32 bit_depth, color_type;
+   png_get_IHDR( png_ptr, info_ptr,
+				 reinterpret_cast<png_uint_32 *>( &frame.width),
+				 reinterpret_cast<png_uint_32 *>( &frame.height),
+				 &bit_depth, &color_type, nullptr, nullptr, nullptr);
+   Color background_color;
+   bool has_background = false;
+   if( png_get_valid( png_ptr, info_ptr, PNG_INFO_bKGD))
+   {
+	 png_color_16p background;
+     png_get_bKGD( png_ptr, info_ptr, &background);
+     auto& [ red, green, blue] = background_color.rgb;
+     if( bit_depth == 16)
+	 {
+       red   = background->red   >> 8u;
+       green = background->green >> 8u;
+       blue  = background->blue  >> 8u;
+ 	 }
+     else if( color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
+	 {
+       if( bit_depth == 1)
+         red = green = blue = background->gray ? 255 : 0;
+       else if( bit_depth == 2)
+         red = green = blue = ( 255 / 3)  * background->gray;
+       else
+         red = green = blue = ( 255 / 15) * background->gray;
+	 }
+     else
+	 {
+       red   = background->red;
+       green = background->green;
+       blue  = background->blue;
+	 }
+     
+     has_background = true;
+   }
+   
+   if( color_type == PNG_COLOR_TYPE_PALETTE)
+     png_set_palette_to_rgb( png_ptr);
+   else if( color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
+     png_set_expand_gray_1_2_4_to_8( png_ptr);
+   else if( png_get_valid( png_ptr, info_ptr, PNG_INFO_tRNS))
+     png_set_tRNS_to_alpha( png_ptr);
+   
+   if( bit_depth == 16)
+   	png_set_strip_16( png_ptr);
+   if( color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
+     png_set_gray_to_rgb( png_ptr);
+   
+   png_read_update_info( png_ptr, info_ptr);
+   png_uint_32 row_bytes = png_get_rowbytes( png_ptr, info_ptr);
+   std::unique_ptr<png_byte, DeleterType> image_data( ( png_bytep)malloc( frame.height * row_bytes),
+   	                                                  []( auto *p){ free( p);});
+  if( image_data)
+   {
+	 png_bytep row_pointers[ frame.height];
+	 for( size_t i = 0; i < frame.height; ++i)
+	   row_pointers[ i] = image_data.get() + i * row_bytes;
+	 png_read_image( png_ptr, row_pointers);
+	 png_read_end( png_ptr, info_ptr);
+	 frame.buffer = std::move( image_data);
+	 frame.n_channel = png_get_channels( png_ptr, info_ptr);
+	 if( has_background)
+	   frame.metadata.get() = new Color( background_color);
+   }
+
+  png_destroy_read_struct( &png_ptr, &info_ptr, nullptr);
+
+   return std::move( frame);
+}
+
+void writePNG(FILE *cfp, FrameBuffer<uint32_t> &frame)
 {
     if(cfp == nullptr)
         return;
@@ -598,33 +963,38 @@ void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 h
     png_structp png_ptr;
     png_infop info_ptr;
     png_uint_32 bit_depth = 8, bytes_per_pixel = 4;
+    
+    auto width = frame.width, height = frame.height;
 
     png_ptr = png_create_write_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
     if( png_ptr == nullptr)
-    {
-        fclose(cfp);
         return;
-    }
 
     info_ptr = png_create_info_struct( png_ptr);
     if( info_ptr == nullptr)
     {
-        fclose(cfp);
         png_destroy_write_struct( &png_ptr, &info_ptr);
         return;
     }
 
     if( setjmp( png_jmpbuf( png_ptr)))
     {
-        fclose(cfp);
         png_destroy_write_struct( &png_ptr, &info_ptr);
         return;
     }
 
-    png_init_io(png_ptr, cfp);
-
+    png_init_io( png_ptr, cfp);
     png_set_IHDR( png_ptr, info_ptr, width, height, bit_depth, PNG_COLOR_TYPE_RGB_ALPHA,
                   PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
+    
+    if( frame.metadata.get())
+	{
+      auto background = *static_cast<Color *>( frame.metadata.get());
+      png_color_16 color{ .red   = background.rgb[ 0],
+						  .green = background.rgb[ 1],
+      					  .blue  = background.rgb[ 2]};
+      png_set_bKGD( png_ptr, info_ptr, &color);
+	}
 
     png_text text_ptr[3];
 
@@ -660,10 +1030,10 @@ void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 h
     png_write_info(png_ptr, info_ptr);
 
     if( height > PNG_SIZE_MAX / ( width * bytes_per_pixel))
-        png_error( png_ptr, "Image data buffer too large!");
+        png_error( png_ptr, "Image data frame too large!");
 
     auto *mem = ( png_structpp)png_calloc( png_ptr, height * width * bytes_per_pixel);
-    auto deleter = [ &mem]( png_structpp ptr) { png_free( *ptr, ( png_voidp)mem); free( mem); };
+    auto deleter = [ &png_ptr, mem]( png_structpp ptr) { png_free( png_ptr, ptr); free( mem); };
     std::unique_ptr<png_structp, decltype( deleter)> image( mem, deleter);
     png_bytep row_pointers[ height];
     uint8_t color_buffer[ bytes_per_pixel];
@@ -673,19 +1043,17 @@ void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 h
     {
         for( png_uint_32 i = 0; i < width; ++i)
         {
-            uint64_t pixel = *(buffer + j * width + i);
-            png_uint_32 color = pixel & 0xFFFFFFFF;
-            png_uint_32 mbyte = ( pixel >> 32u) ? color : 0;
-            png_uint_32 index = j * width * bytes_per_pixel + i * bytes_per_pixel;
-            auto local_image_ref = ( uint8_t *)image.get();
-            local_image_ref[     index] = mbyte >> 24u;
-            local_image_ref[ index + 1] = ( mbyte >> 16u) & 0xFFu;
-            local_image_ref[ index + 2] = ( mbyte >>  8u) & 0xFFu;
-            local_image_ref[ index + 3] = mbyte & 0xFFu;
+		    uint32_t pixel = frame.buffer.get()[ j * width + i];
+			auto local_image_ref = ( uint8_t *)image.get();
+		  	png_uint_32 index = j * width * bytes_per_pixel + i * bytes_per_pixel;
+			local_image_ref[     index] = pixel >> 24u;
+			local_image_ref[ index + 1] = ( pixel >> 16u) & 0xFFu;
+			local_image_ref[ index + 2] = ( pixel >>  8u) & 0xFFu;
+			local_image_ref[ index + 3] = pixel & 0xFFu;
         }
     }
 
-    if( height > PNG_UINT_32_MAX / ( sizeof(png_bytep)))
+    if( height > PNG_UINT_32_MAX / ( sizeof( png_bytep)))
         png_error( png_ptr, "Image too small to process!");
 
     for( png_uint_32 i = 0; i < height; ++i)
@@ -696,8 +1064,6 @@ void writePNG( FILE *cfp, const uint64_t *buffer, png_int_32 width, png_int_32 h
     png_write_end( png_ptr, info_ptr);
 
     png_destroy_write_struct( &png_ptr, &info_ptr);
-
-    fclose(cfp);
 }
 
 static size_t byteCount( uint8_t c )
@@ -974,7 +1340,6 @@ uint32_t extractColor( const char *&rule, BKNode *bkroot)
 
             return color_name;
         }
-
 
         return color_name | 0xFFu;
     }
@@ -1302,7 +1667,7 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
     std::vector<ColorRule> rules;
     while( *rule)
     {
-        ColorRule ccolor;
+        ColorRule ccolor{};
         if( !rules.empty())
         {
             if(*rule != ';')
@@ -1808,6 +2173,10 @@ void fillEasingMode( std::function<float(float)> &function, const char *&rule, B
 
 CompositionRule::CompositionModel selectCompositionModel( std::string_view given)
 {
+   size_t view_size = given.size();
+   if( !view_size)
+     return CompositionRule::CompositionModel::NotApplicable;
+   
    static const std::unordered_map<std::string_view, CompositionRule::CompositionModel> possibilities
    {
 	   { COPY			 , CompositionRule::CompositionModel::Copy},
@@ -1823,7 +2192,7 @@ CompositionRule::CompositionModel selectCompositionModel( std::string_view given
 	   { XOR 			 , CompositionRule::CompositionModel::Xor},
    };
    
-   std::string clone( given.size(), 0);
+   std::string clone( view_size, 0);
    std::transform( given.cbegin(), given.cend(), clone.begin(), tolower);
    auto index = possibilities.find( clone);
    if( index == possibilities.cend())
@@ -1839,14 +2208,19 @@ CompositionRule parseCompositionRule( std::string_view rule)
   //1. from 30deg, mode=source-over
   //2. from 30deg, at .5, 0.45, mode=source-over
   //3. mode=source-over or mode=lighter
-  std::regex  matcher( R"(^(?:from\s+([+-]?\d{1,3})deg(?:\s+at\s+(\d*.\d+|\d+\.\d*),\s*(\d*.\d+|\d+\.\d*))?,\s*)?)"
-                       R"(mode=([a-zA-Z]+(?:-[a-zA-Z]+)?)$)");
+  std::regex matcher( R"(^(?:from\s+([+-]?\d{1,3})deg(?:\s+at\s+)"
+					  R"(([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?),\s*([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))?,\s*)?)"
+                      R"(mode=([a-zA-Z]+(?:-[a-zA-Z]+)?)$)");
   if( std::regex_match( rule.cbegin(), rule.cend(), match_results, matcher))
   {
+    auto x_origin = match_results[ 2].str(),
+         y_origin = match_results[ 3].str(),
+         angle    = match_results[ 1].str();
 	return {
-		.origin = Vec2D( std::stof( match_results[ 2].str(), nullptr), std::stof( match_results[ 3].str(), nullptr)),
-		.angle = std::stoi( match_results[ 1].str(), nullptr, 10),
-		.model = selectCompositionModel( match_results[ 4].str())
+		.model = selectCompositionModel( match_results[ 4].str()),
+		.position = Vec2D(x_origin.size() ? std::stof(x_origin, nullptr) : 0.f,
+						 y_origin.size() ? std::stof( y_origin, nullptr) : 0.f),
+		.angle = angle.size() ? std::stoi( angle, nullptr, 10) : 0
 	};
   }
   return {};
@@ -2369,7 +2743,7 @@ int main( int ac, char *av[])
         else if( strcmp( directive, "output") == 0 && ac > 0)
         {
             ac -= 1;
-            business_rules.dest_filename = *++av;
+            business_rules.src_filename = *++av;
         }
         else if( strstr( directive, "font-file") != nullptr)
             selection = &fontfile;
@@ -2382,7 +2756,7 @@ int main( int ac, char *av[])
         else if( strstr( directive, "drawing-character") != nullptr)
             selection = &business_rules.raster_glyph;
         else if( strstr( directive, "composition-image") != nullptr)
-          	selection = &business_rules.src_filename;
+          	selection = &business_rules.dest_filename;
 
         if( selection != nullptr && ( index = strchr( directive, '=')) != nullptr)
             *selection = index + 1;
@@ -2458,8 +2832,8 @@ int main( int ac, char *av[])
         fprintf( stderr, "Font file is invalid!");
         exit( EXIT_FAILURE);
     }
+    
+  	render( word, library.get(), face.get(), business_rules);
   
-  	render( word, face.get(), business_rules);
-
-    return 0;
+  return 0;
 }

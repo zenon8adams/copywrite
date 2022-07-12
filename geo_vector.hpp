@@ -3,6 +3,11 @@
 
 
 #include <cmath>
+
+#define DEG_SCALE 180.f / M_PI
+#define RAD_SCALE M_PI / 180.f
+#define EPSILON	  1.e-7f
+
 template <typename T = float, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 struct Vec2D
 {
@@ -12,6 +17,30 @@ struct Vec2D
   {
   }
 
+  bool operator!=( const Vec2D& right) const
+  {
+    if constexpr ( std::is_floating_point_v<T>)
+      return std::abs( x - right.x) >= EPSILON || std::abs( y - right.y) >= EPSILON;
+ 
+	return x != right.x && y != right.y;
+  }
+  
+  Vec2D& operator-()
+  {
+    x = -x;
+    y = -y;
+    return *this;
+  }
+  Vec2D operator+( Vec2D right) const
+  {
+    return { x + right.x, y + right.y};
+  }
+  
+  Vec2D& operator+=( Vec2D right)
+  {
+    return *this = *this + right;
+  }
+  
   Vec2D operator-( Vec2D right) const
   {
     return { x - right.x, y - right.y};
@@ -31,10 +60,42 @@ struct Vec2D
   {
     return  x * right.x + y * right.y;
   }
+  
+  Vec2D& operator*=( Vec2D right)
+  {
+    return *this = *this * right;
+  }
 
   [[nodiscard]] float length() const
   {
     return std::sqrt( x * x + y * y);
+  }
+  
+  Vec2D unit() const
+  {
+    return { x / length(), y / length()};
+  }
+  
+  Vec2D scaleBy( float scale) const
+  {
+    return { x * scale, y * scale};
+  }
+  
+  [[nodiscard]] float angle() const
+  {
+    if( x < 0)
+      return 270.f - ( std::atan2( y, -x) * DEG_SCALE);
+    
+    return 90 + ( std::atan2( y, x) * DEG_SCALE);
+  }
+  
+  [[nodiscard]] auto rotate( int angle) const
+  {
+    auto rad = static_cast<float>( -angle * RAD_SCALE);
+    return Vec2D<float>{
+       std::cos( rad) * x + std::sin( rad) * y,
+      -std::sin( rad) * x + std::cos( rad) * y
+    };
   }
 };
 
