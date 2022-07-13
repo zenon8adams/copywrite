@@ -33,6 +33,7 @@
 #include <functional>
 #include <regex>
 #include <cassert>
+#include <variant>
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
 #include "geo_vector.hpp"
@@ -53,30 +54,26 @@
 #define ALLOWANCE                      6
 #define MAX(x, y)                      ((x) ^ (((x) ^ (y)) & -((x) < (y))))
 #define MIN(x, y)                      ((x) ^ (((x) ^ (y)) & -((x) > (y))))
-
 #define FPRINTF( fmt, argument)        FPRINTFD( fmt, argument, true)
-
-//#define EPSILON                        ( 1e-5)
 #define ZERO( fl)                      ( std::abs( fl) <= EPSILON)
 #define EQUAL( al, bl)                 ZERO( ( al) - ( bl))
-
 #define RED( color)                    ( ( color) >> 24u)
 #define GREEN( color)                  ( ( ( color) >> 16u) & 0xFFu)
 #define BLUE( color)                   ( ( ( color) >> 8u) & 0xFFu)
 #define ALPHA( color)                  ( ( color) & 0xFFu)
 #define RGBA( red, green, blue, alpha) ( ( ( uint32_t)( red)) << 24u |\
-                                          ( ( uint32_t)( green)) << 16u | ( ( uint32_t)( blue)) << 8u | alpha)
+                                          ( ( uint32_t)( green)) << 16u |\
+                                          ( ( uint32_t)( blue)) << 8u | alpha)
 #define RGB( red, green, blue)         RGBA( red, green, blue, 0u)
 #define SCALE_RGB( color, scale)       RGB( RED( color) * ( scale), GREEN( color) * ( scale), BLUE( color) * ( scale))
-
 #define XYZ_SCALE                      775
 #define RGB_SCALE                      255
 #define HALF_RGB_SCALE                 128
-
 #define DEG_SCALE					   180.f / M_PI
-
 #define ENUM_CAST( idx)					( static_cast<uint8_t>( idx))
-#define COMPOSITION_TABLE		       0x0064044AU
+#define MODEL_ENUM(mode)			   CompositionRule::CompositionModel::mode
+#define POLY_CAST( from, to)		   dynamic_cast<from>( to)
+#define COMPOSITION_TABLE		       0x0064046AU
 #define COMPOSITON_SIZE( idx)          ( ( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U)) & 1U)
 #define COMPOSITION_SIDE( idx)		   ( ( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U + 1U)) & 1U)
 
@@ -409,11 +406,11 @@ void render( std::string_view word, FT_Library library, FT_Face face, Applicatio
 	}
     
     auto buffer = FrameBuffer<uint32_t>{ std::move( out), width, height};
-    if( guide.as_image && guide.src_filename)
+    if( guide.as_image && guide.src_filename && !guide.composition_rule)
 	  writePNG( destination.get(), buffer);
     else
 	  write( buffer, guide.raster_glyph, destination.get(), guide.kdroot.get());
-    
+  
     if( guide.composition_rule)
   		composite( guide, buffer);
 }
@@ -618,7 +615,7 @@ bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test)
 void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame)
 {
    auto c_rule = parseCompositionRule( guide.composition_rule);
-   if( c_rule.model == CompositionRule::CompositionModel::NotApplicable)
+   if( c_rule.model == MODEL_ENUM( NotApplicable))
      return;
    
    auto d_frame    = readPNG( guide.dest_filename);
@@ -672,16 +669,17 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 	  
 	  return std::pair{ *x_ptr, *y_ptr};
 	};
- 
-   auto [ x_min, y_min] 	 = cherryPick( corners);
-   auto [ x_max, y_max] 	 = cherryPick( corners, false);
+   Vec2D<float> x_min, y_min, x_max, y_max;
+  
+  std::tie( x_min, y_min) 	 = cherryPick( corners);
+  std::tie( x_max, y_max)	 = cherryPick( corners, false);
    
    auto angle                = ( y_min - x_min).angle();
    auto smallbox_top_edge    = Vec2D<float>( ( ( y_min - x_min).rotate( -angle) + x_min).x, y_min.y);
    auto origin      		 = smallbox_top_edge;
    float width      		 = x_max.x - x_min.x + 1,
-   		 height     		 = y_max.y - y_min.y + 1,
-   		 final_width,
+   		 height     		 = y_max.y - y_min.y + 1;
+   int   final_width,
    		 final_height;
    
    if( COMPOSITON_SIZE( c_rule.model))
@@ -705,163 +703,253 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
      final_height = dheight;
    }
    
-   size_t image_byte_size = final_width * final_height * sizeof( uint32_t);
-   auto image = FrameBuffer<uint32_t>( std::shared_ptr<uint32_t>(( uint32_t *)malloc( image_byte_size), []( auto *p) { free( p);}),
-   	                                   final_width, final_height);
+   auto image = FrameBuffer<uint32_t>( std::shared_ptr<uint32_t>(
+   	                                   ( uint32_t *)calloc( final_width * final_height, sizeof( uint32_t)),
+   	                                   []( auto *p) { free( p);}), final_width, final_height);
+  struct Default{};
+  struct Top{};
+  struct Bottom{};
   
-//  image_manager.get().metadata = std::move( d_frame.metadata);
-  
-  std::array<std::function<void()>, ENUM_CAST( CompositionRule::CompositionModel::Xor) + 1> models = {
-	  [&]() // Copy
+  auto s_frame_dimension = s_frame.width * s_frame.height;
+  bool source_over = false;
+  std::array<std::function<void( std::variant<Default, Top, Bottom>)>,
+             ENUM_CAST( MODEL_ENUM( Xor)) + 1> models = {
+	  [&]( auto part) // Copy
 	  {
-		image.buffer = std::move( s_frame.buffer);
-	  },
-	  [&]() // DestinationAtop
-	  {
-	  },
-	  [&]() // DestinationIn
-	  {
-	  
-	  },
-	  [&]() // DestinationOver
-	  {
-	  
-	  },
-	  [&]() // DestinationOut
-	  {
-	  
-	  },
-	  [&]() // Lighter
-	  {
-	  
-	  },
-	  []() // Not Applicable
-	  {
-	  
-	  },
-	  [&]() // SourceAtop
-	  {
-	    /*for( size_t y = origin.y, j = 0; j < d_frame.height; ++y, ++j)
+		for( int y = smallbox_top_edge.y, j = 0; j < final_height; ++y, ++j)
 		{
-	      for( size_t x = origin.x, i = 0; i < d_frame.width; ++x, ++i)
+		  for ( int x = smallbox_top_edge.x, i = 0; i < final_width; ++x, ++i)
 		  {
-	          auto src_ptr = &( *d_frame.buffer)[ j * d_frame.width * bit_depth + i];
-	          auto pixel   = &image_manager.get().buffer[ j * d_frame.width + i];
-	          if( intersects( corners, Vec2D<float>( x, y)) && intersects( big_corners, Vec2D<float>( x, y)))
-			  {
-	            auto dest_ptr = &s_frame.buffer[ j * s_frame.width + i];
-	            memcpy( pixel, dest_ptr, sizeof( uint64_t));
-			  }
-	          else
-	          	memcpy( pixel, src_ptr, sizeof( uint64_t));
+			auto point = Vec2D<float>( x, y);
+			if( intersects( corners, point))
+			{
+			  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+			  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+			  if( index > 0 && index < s_frame_dimension)
+				image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
+			}
 		  }
-		}*/
+		}
 	  },
-	  [&]() // SourceIn
+	  [&]( auto part) // DestinationAtop
 	  {
-	  
+		std::visit( [ &]( auto&& current)
+		{
+		  using T = std::remove_cv_t<std::remove_reference_t<decltype(current)>>;
+		  for( int y = smallbox_top_edge.y, j = 0; j < final_height; ++y, ++j)
+		  {
+			for ( int x = smallbox_top_edge.x, i = 0; i < final_width; ++x, ++i)
+			{
+			  auto point = Vec2D<float>( x, y);
+			  if constexpr ( std::is_same_v<T, Default>) // DestinationAtop
+			  {
+				if( intersects( corners, point) && intersects( big_corners, point))
+				{
+				  auto d_index = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel;
+				  auto *buffer = d_frame.buffer.get();
+				  image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
+																   buffer[ d_index + 2], buffer[ d_index + 3]);
+				}
+				else
+				{
+				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+				  if( index > 0 && index < s_frame_dimension)
+					image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
+				}
+			  }
+			  else if constexpr ( std::is_same_v<T, Top>) // DestinationIn
+			  {
+				if( intersects( big_corners, point))
+				{
+				  auto d_index = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel;
+				  auto *buffer = d_frame.buffer.get();
+				  image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
+																   buffer[ d_index + 2], buffer[ d_index + 3]);
+				}
+			  }
+			  else if constexpr( std::is_same_v<T, Bottom>) // Source-Out
+			  {
+				if( !intersects( corners, point) || !intersects( big_corners, point))
+				{
+				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+				  if( index > 0 && index < s_frame_dimension)
+					image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
+				}
+			  }
+			}
+		  }
+		}, part);
 	  },
-	  [&]() // SourceOver
+	  [&]( auto part) // DestinationIn
 	  {
-	  
+		models[ ENUM_CAST( MODEL_ENUM( DestinationAtop))]( Top());
 	  },
-	  [&]() // SourceOut
+	  [&]( auto part) // DestinationOver
 	  {
-	  
+	    std::visit( [&]( auto&& current)
+	    {
+	      using T = std::remove_cv_t<std::remove_reference_t<decltype( current)>>;
+		  for( int y = origin.y, j = 0; j < final_height; ++y, ++j)
+		  {
+			for ( int x = origin.x, i = 0; i < final_width; ++x, ++i)
+			{
+			  auto point = Vec2D<float>( x, y);
+			  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+			  if constexpr ( !std::is_same_v<T, Default>)
+			  {
+			    if( auto b_intersects = intersects( big_corners, point), c_intersects = intersects( corners, point);
+			        b_intersects && c_intersects)
+				{
+			      if constexpr( std::is_same_v<T, Bottom>) // Selection for Lighter
+				  {
+					auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+					int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+					auto *buffer = d_frame.buffer.get();
+					auto b_color = RGBA( buffer[ d_index], buffer[ d_index + 1],
+										 buffer[ d_index + 2], buffer[ d_index + 3]);
+					uint32_t c_color = b_color;
+					if( index > 0 && index < s_frame_dimension)
+					 	c_color = s_frame.buffer.get()[ index];
+					auto final_color = mixRgb( b_color, c_color);
+					auto alpha = ( uint16_t)( c_color & 0xFFu) + ( b_color & 0xFFu);
+					final_color = final_color | std::min( 0xFFu, alpha);
+					image.buffer.get()[ j * final_width + i] = final_color;
+				  }
+				}
+			    else if( b_intersects) // Bypass the intersection of source and destination
+				{
+				  auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+				  auto *buffer = d_frame.buffer.get();
+				  image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
+																   buffer[ d_index + 2], buffer[ d_index + 3]);
+				}
+			    else if( c_intersects)
+				{
+				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+				  if( index > 0 && index < s_frame_dimension)
+					image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
+				}
+			  }
+			  else if( intersects( big_corners, point)) // Selection for DestinationOver
+			  {
+				auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+				auto *buffer = d_frame.buffer.get();
+				image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
+																 buffer[ d_index + 2], buffer[ d_index + 3]);
+			  }
+			  else if( intersects( corners, point)) // Selection for DestinationOver
+			  {
+				int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+				if( index > 0 && index < s_frame_dimension)
+				  image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
+			  }
+			}
+		  }
+		}, part);
 	  },
-	  [&]() // Xor
+	  [&]( auto part) // DestinationOut
 	  {
-	  
+		models[ ENUM_CAST( MODEL_ENUM( SourceAtop))]( Top());
+	  },
+	  [&]( auto part) // Lighter
+	  {
+		models[ ENUM_CAST( MODEL_ENUM( DestinationOver))]( Bottom());
+	  },
+	  []( auto part) // Not Applicable
+	  {
+	  },
+	  [&]( auto part) // SourceAtop
+	  {
+	    std::visit( [ &]( auto&& current)
+	    {
+	      using T = std::remove_cv_t<std::remove_reference_t<decltype( current)>>;
+		  for( int y = origin.y, j = 0; j < d_frame.height; ++y, ++j)
+		  {
+			for( int x = origin.x, i = 0; i < d_frame.width; ++x, ++i)
+			{
+			  auto s_index    = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel,
+				  d_index     = j * d_frame.width + i;
+			  auto *d_ptr   = d_frame.buffer.get();
+			  uint32_t &pixel = image.buffer.get()[ d_index];
+			  auto point      = Vec2D<float>( x, y);
+		 
+			  if constexpr ( std::is_same_v<T, Default>) // SourceAtop
+			  {
+				if( intersects( corners, point) && intersects( big_corners, point))
+				{
+				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+				  pixel        = s_frame.buffer.get()[ index];
+				}
+				else
+				{
+				  pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+								d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+				}
+			  }
+			  else if constexpr ( std::is_same_v<T, Top>) // DestinationOut
+			  {
+				if( !intersects( corners, point) || !intersects( big_corners, point))
+				  pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+								d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+			  }
+			  else if constexpr ( std::is_same_v<T, Bottom>) // SourceIn
+			  {
+				if( intersects( corners, point) && intersects( big_corners, point))
+				{
+				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+				  pixel        = s_frame.buffer.get()[ index];
+				}
+			  }
+			}
+		  }
+	    }, part);
+	  },
+	  [&]( auto part) // SourceIn
+	  {
+		models[ ENUM_CAST( MODEL_ENUM( SourceAtop))]( Bottom());
+	  },
+	  [&]( auto part) // SourceOver
+	  {
+		for( int y = origin.y, j = 0; j < final_height; ++y, ++j)
+		{
+		  for (int x = origin.x, i = 0; i < final_width; ++x, ++i)
+		  {
+			auto point = Vec2D<float>( x, y);
+			auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+			if( intersects( corners, point))
+			{
+			  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+			  if( index > 0 && index < s_frame_dimension)
+				image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
+			}
+			else if( intersects( big_corners, point))
+			{
+			  auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+			  auto *buffer = d_frame.buffer.get();
+			  image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
+															   buffer[ d_index + 2], buffer[ d_index + 3]);
+			}
+		  }
+		}
+	  },
+	  [&]( auto part) // SourceOut
+	  {
+		models[ ENUM_CAST( MODEL_ENUM( DestinationAtop))]( Bottom());
+	  },
+	  [&]( auto part) // Xor
+	  {
+		models[ ENUM_CAST( MODEL_ENUM( DestinationOver))]( Top());
 	  }
    };
-
-  printf( "s_width: %d, s_height: %d\n", swidth, sheight);
-  for( int y = origin.y, j = 0; j < d_frame.height; ++y, ++j)
-  {
-	for( int x = origin.x, i = 0; i < d_frame.width; ++x, ++i)
-	{
-	  auto s_index = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel,
-	       d_index = j * d_frame.width + i;
-	  auto *src_ptr = d_frame.buffer.get();
-	  uint32_t &pixel = image.buffer.get()[ d_index];
-	  auto point = Vec2D<float>( x, y);
-	  if( intersects( corners, point) && intersects( big_corners, point))
-	  {
-	    auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
-		int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-//		printf( "x,y: (%d, %d), s_coord: (%f, %f), index: %d\n", x, y, s_coord.x, s_coord.y, index);
-		pixel        = s_frame.buffer.get()[ index];
-	  }
-	  else
-	  	pixel = RGBA( src_ptr[ s_index], src_ptr[ s_index + 1],
-	  	              src_ptr[ s_index + 2], src_ptr[ s_index + 3]);
-	}
-  }
-
-  /*for( float y = 0; y < s_frame.height; y += .5)
-  {
-    for( float x = 0; x < s_frame.width; x += .5)
-	{
-      auto point = ( Vec2D<float>( x, y) - center).rotate( c_rule.angle) + center - pos;
-      if( intersects( corners, point) && intersects( big_corners, point))
-	  {
-        int d_index = std::ceil( point.y) * d_frame.width + std::round( point.x);
-		uint32_t &pixel = image.buffer.get()[ d_index];
-		int s_index = (int)	y * s_frame.width + (int)x;
-		pixel = s_frame.buffer.get()[ s_index];
-	  }
-	}
-  }*/
-
-  FILE *final = fopen( "final.png", "wb");
   
-  writePNG(final, image);
-
-//   models[ ENUM_CAST( c_rule.model)]();
- 
-   printf( "width: %f, height: %f\n", width, height);
-   FILE *handle = fopen( "sample.txt", "w");
-//   for( float y = smallbox_top_edge.y; y < smallbox_top_edge.y + height; ++y)
-//   {
-//     for( float x = smallbox_top_edge.x; x < smallbox_top_edge.x + width; ++x)
-//	 {
-//       if( intersects( corners, { x, y}) && intersects( big_corners, { x, y}))
-//         fprintf( handle, "c.beginPath();\nc.arc(%f, %f, 1, 0, 2 * Math.PI, true);\nc.fill();", x, y);
-//	 }
-//   }
-  fprintf( handle, "c.beginPath();\n"
-		  "c.rect(%f, %f, %f, %f);\n"
-		  "c.stroke();\n", smallbox_top_edge.x, smallbox_top_edge.y, width, height);
-  fprintf( handle, "c.strokeStyle = 'rgb(255, 0, 0)';\nc.beginPath();\n"
-				   "c.rect(%f, %f, %f, %f);\n"
-				   "c.stroke();\nc.strokeStyle = 'rgb(0,0,0)';\n", origin.x, origin.y, final_width, final_height);
-  fprintf( handle, "c.beginPath();\n"
-		   "c.arc(%f, %f, 5, 0, 2 * Math.PI, true);\n"
-	       "c.fill();\n", center.x, center.y);
-  	std::array<Vec3D, 2> colors {
-		Vec3D( 255, 0, 0),
-		Vec3D( 0, 255, 0)
-  	};
-  	std::array<Vec2D<float>, 2> minmax = { x_min, y_min};
-	for( size_t i = 0; i < minmax.size(); ++i)
-	{
-	  fprintf( handle, "c.beginPath();\nc.fillStyle = \"rgb(%.f, %.f, %.f)\"\n", colors[ i].x, colors[ i].y, colors[ i].z);
-	  fprintf( handle, "c.arc(%f, %f, 5, 0, 2 * Math.PI, true);\n", minmax[ i].x, minmax[ i].y);
-	  fprintf( handle, "c.fill()\n");
-	}
-  fprintf( handle, "c.beginPath();\n");
-   for( size_t i = 0; i < corners.size() + 1; ++i)
-   {
-     if( i == 0)
-	 {
-//       printf( "c.rect(%f, %f, %d, %d)\n", corners[ i].x, corners[ i].y, swidth, sheight);
-	   fprintf( handle,"c.moveTo(%f, %f);\n", corners[ i].x, corners[ i].y);
-	 }
-     else
-	   fprintf( handle,"c.lineTo(%f, %f);\n", corners[ i % corners.size()].x, corners[ i % corners.size()].y);
-   }
-   fflush( handle);
-   fclose( handle);
+  models[ ENUM_CAST( c_rule.model)]( Default());
+  
+  PropertyManager<FILE *> final( fopen( guide.src_filename, "wb"), []( auto *p) { if( p) fclose( p);});
+  writePNG( final.get(), image);
 }
 
 FrameBuffer<png_byte> readPNG( std::string_view filename)
@@ -970,7 +1058,7 @@ FrameBuffer<png_byte> readPNG( std::string_view filename)
 
 void writePNG( FILE *cfp, FrameBuffer<uint32_t> &frame)
 {
-    if(cfp == nullptr)
+    if( cfp == nullptr)
         return;
 
     png_structp png_ptr;
@@ -1420,8 +1508,8 @@ uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor)
      *  + http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
      *
      */
-    auto lxyz = xyzFromRgb(lcolor),
-            rxyz = xyzFromRgb(rcolor);
+    auto lxyz = xyzFromRgb( lcolor),
+         rxyz = xyzFromRgb( rcolor);
 
     double lsum = lxyz.x + lxyz.y + lxyz.z,
             rsum = rxyz.x + rxyz.y + rxyz.z,

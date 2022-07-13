@@ -34,6 +34,7 @@
 #include <functional>
 #include <memory>
 #include <cmath>
+#include <variant>
 
 #ifndef PNG_STDIO_SUPPORTED
 typedef FILE                * png_FILE_p;
