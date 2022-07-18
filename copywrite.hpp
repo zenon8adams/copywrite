@@ -357,6 +357,13 @@ static size_t byteCount( uint8_t c );
 
 static uint32_t collate( uint8_t *str, size_t idx, uint8_t count );
 
+template <size_t count>
+std::array<float, count> parseFloats( const char *&rule);
+
+std::vector<std::string> partition( std::string_view sgradient);
+
+ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_rule, BKNode *bkroot);
+
 std::vector<ColorRule> parseColorRule(const char *rule, BKNode *bkroot);
 
 uint32_t extractColor( const char *&rule, BKNode *bkroot);
@@ -445,7 +452,19 @@ struct ApplicationHyperparameters
 
 void render( std::string_view word, FT_Library library, FT_Face face, ApplicationHyperparameters &guide);
 
+enum FilterMode
+{
+  SHARPEN,
+  BOX_BLUR,
+  GAUSSIAN_BLUR,
+  B_FILTER_SENTINEL,
+  GAUSSIAN_BLUR_x5,
+  E_FILTER_SENTINEL
+};
+
 bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test);
+
+void applyFilter( FrameBuffer<uint32_t> &frame, uint8_t filter);
 
 void composite(ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame);
 

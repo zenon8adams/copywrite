@@ -6,7 +6,7 @@ set(CMAKE_CXX_FLAGS -fcoroutines)
 set(CMAKE_CXX_COMPILER clang++-13)
 set(SYSTEM_INCLUDE_PATH "${CMAKE_SYSTEM_INCLUDE_PATH}/../")
 set(SYSTEM_LOCAL_INCLUDE_PATH "${SYSTEM_INCLUDE_PATH}../local/include")
-set(CMAKE_CXX_FLAGS "-ggdb -fsanitize=address -fno-trapping-math")
+set(CMAKE_CXX_FLAGS "-ggdb -fsanitize=address -fno-trapping-math -Wno-c99-designator")
 
 set(SSE ON)
 add_executable( copywrite copywrite.cpp copywrite.hpp colors_defs.hpp easing_defs.hpp geo_vector.cpp geo_vector.hpp composition_defs.hpp)

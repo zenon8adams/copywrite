@@ -430,7 +430,8 @@ void render( std::string_view word, FT_Library library, FT_Face face, Applicatio
 	  writePNG( destination.get(), buffer);
     else
 	  write( buffer, guide.raster_glyph, destination.get(), guide.kdroot.get());
-  
+    
+    applyFilter( buffer, FilterMode::BOX_BLUR);
     if( guide.composition_rule)
   		composite( guide, buffer);
 }
@@ -630,6 +631,70 @@ bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test)
   }
    
    return is_in;
+}
+
+void applyFilter( FrameBuffer<uint32_t> &frame, uint8_t filter)
+{
+   const size_t bk_size =  9,
+	  			ek_size = 25;
+   float basic_kernels[ FilterMode::B_FILTER_SENTINEL][ bk_size] =
+   {
+   		[ FilterMode::SHARPEN]       = {  0, -1,  0,
+									     -1,  5, -1,
+									      0, -1,  0},
+		[ FilterMode::BOX_BLUR]		 = { 1/9., 1/9., 1/9.,
+								         1/9., 1/9., 1/9.,
+										 1/9., 1/9., 1/9.},
+   		[ FilterMode::GAUSSIAN_BLUR] = { 1/16., 2/16., 1/16.,
+									     2/16., 4/16., 2/16.,
+									     1/16., 2/16., 1/16.}
+   };
+ 
+   float extended_kernels[ FilterMode::E_FILTER_SENTINEL][ ek_size] =
+   {
+   		[ FilterMode::GAUSSIAN_BLUR_x5 - B_FILTER_SENTINEL - 1] = { 1/256., 4/256., 6/256., 4/256., 1/256.,
+																    4/256., 16/256., 24/256., 16/256., 4/256.,
+																    6/256., 24/256., 36/256., 24/256., 6/256.,
+																    4/256., 16/256., 24/256., 16/256., 4/256.,
+																    1/256., 4/256., 6/256., 4/256., 1/256.}
+   };
+ 
+  if( filter >= FilterMode::B_FILTER_SENTINEL && filter >= FilterMode::E_FILTER_SENTINEL)
+	return;
+  
+  const auto k_width = filter < FilterMode::B_FILTER_SENTINEL ? 3 : 5;
+  const auto k_size = k_width > 3 ? ek_size : bk_size;
+  auto kernel = filter < FilterMode::B_FILTER_SENTINEL ? basic_kernels[ filter]
+													   : extended_kernels[ filter - FilterMode::B_FILTER_SENTINEL - 1];
+  auto width   = frame.width,
+	  height  = frame.height;
+  
+  std::shared_ptr<uint32_t> dest( ( uint32_t *)malloc( width * height * sizeof( uint32_t)), []( auto *p){ free( p);});
+  auto buffer   = frame.buffer.get(),
+       d_buffer = dest.get();
+  for( size_t j = 0; j < height; ++j)
+  {
+	for( size_t i = 0; i < width; ++i)
+	{
+	  int red{}, green{}, blue{}, alpha{};
+	  for(size_t k = 0; k < k_size; ++k)
+	  {
+		size_t row = k % k_width,
+			   col = k / k_width;
+		if( row + j < height && col + i < width)
+		{
+		  size_t index = ( row + j) * width + i + col;
+		  auto pixel = buffer[ index];
+		  red   += kernel[ k] * RED( pixel);
+		  green += kernel[ k] * GREEN( pixel);
+		  blue  += kernel[ k] * BLUE( pixel);
+		  alpha += kernel[ k] * ALPHA( pixel);
+		}
+	  }
+	  d_buffer[ j * width + i] = RGBA( red, green, blue, alpha);
+	}
+  }
+  frame.buffer = dest;
 }
 
 void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame)
