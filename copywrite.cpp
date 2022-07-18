@@ -26,13 +26,11 @@
 
 #include "copywrite.hpp"
 #include <fontconfig/fontconfig.h>
-#include <png.h>
 #include <cmath>
 #include <iostream>
 #include <unordered_map>
 #include <functional>
 #include <regex>
-#include <cassert>
 #include <variant>
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
@@ -62,8 +60,8 @@
 #define BLUE( color)                   ( ( ( color) >> 8u) & 0xFFu)
 #define ALPHA( color)                  ( ( color) & 0xFFu)
 #define RGBA( red, green, blue, alpha) ( ( ( uint32_t)( red)) << 24u |\
-                                          ( ( uint32_t)( green)) << 16u |\
-                                          ( ( uint32_t)( blue)) << 8u | alpha)
+                                         ( ( uint32_t)( green)) << 16u |\
+                                         ( ( uint32_t)( blue)) << 8u | alpha)
 #define RGB( red, green, blue)         RGBA( red, green, blue, 0u)
 #define SCALE_RGB( color, scale)       RGB( RED( color) * ( scale), GREEN( color) * ( scale), BLUE( color) * ( scale))
 #define XYZ_SCALE                      775
@@ -71,8 +69,30 @@
 #define HALF_RGB_SCALE                 128
 #define DEG_SCALE					   180.f / M_PI
 #define ENUM_CAST( idx)					( static_cast<uint8_t>( idx))
-#define MODEL_ENUM(mode)			   CompositionRule::CompositionModel::mode
-#define POLY_CAST( from, to)		   dynamic_cast<from>( to)
+#define MODEL_ENUM( mode)			  CompositionRule::CompositionModel::mode
+/*
+ * The composition table is made up of 2 bit field
+ * per flag for CompositionModel.
+ * E.g Copy has an index of 0, and a value of 00.
+ * The lower zero from the right means that the size of the canvas should be maximum or minimum( 1 or 0).
+ * The rightmost zero indicates that if the first bit is maximum, then the size should be that
+ * of the source or destination( 1 or 0).
+ * The fields are:
+ * Copy 		   = 00,
+ * DestinationAtop = 01,
+ * DestinationIn   = 02,
+ * DestinationOver = 03,
+ * DestinationOut  = 04,
+ * Lighter         = 05,
+ * NotApplicable   = 06,
+ * SourceAtop      = 07,
+ * SourceIn        = 08,
+ * SourceOver      = 09,
+ * SourceOut       = 10,
+ * Xor             = 11
+ * 01 10 01 00 00 00 01 00 01 10 10 10
+ * 11 10 09 08 07 06 05 04 03 02 01 00
+ */
 #define COMPOSITION_TABLE		       0x0064046AU
 #define COMPOSITON_SIZE( idx)          ( ( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U)) & 1U)
 #define COMPOSITION_SIDE( idx)		   ( ( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U + 1U)) & 1U)
@@ -760,7 +780,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 			  }
 			  else if constexpr ( std::is_same_v<T, Top>) // DestinationIn
 			  {
-				if( intersects( big_corners, point))
+				if( intersects( corners, point) && intersects( big_corners, point))
 				{
 				  auto d_index = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel;
 				  auto *buffer = d_frame.buffer.get();
@@ -1062,15 +1082,15 @@ void writePNG( FILE *cfp, FrameBuffer<uint32_t> &frame)
         return;
 
     png_structp png_ptr;
-    png_infop info_ptr;
     png_uint_32 bit_depth = 8, bytes_per_pixel = 4;
-    auto width = frame.width, height = frame.height;
+    auto width = frame.width;
+    auto height = frame.height;
 
     png_ptr = png_create_write_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
     if( png_ptr == nullptr)
         return;
 
-    info_ptr = png_create_info_struct( png_ptr);
+    png_infop info_ptr = png_create_info_struct( png_ptr);
     if( info_ptr == nullptr)
     {
         png_destroy_write_struct( &png_ptr, &info_ptr);
@@ -1082,8 +1102,9 @@ void writePNG( FILE *cfp, FrameBuffer<uint32_t> &frame)
         png_destroy_write_struct( &png_ptr, &info_ptr);
         return;
     }
-
+    
     png_init_io( png_ptr, cfp);
+    
     png_set_IHDR( png_ptr, info_ptr, width, height, bit_depth, PNG_COLOR_TYPE_RGB_ALPHA,
                   PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
     
@@ -1118,43 +1139,38 @@ void writePNG( FILE *cfp, FrameBuffer<uint32_t> &frame)
 
     png_set_text( png_ptr, info_ptr, text_ptr, 3);
 
-    png_write_info(png_ptr, info_ptr);
+    png_write_info( png_ptr, info_ptr);
 
     if( height > PNG_SIZE_MAX / ( width * bytes_per_pixel))
         png_error( png_ptr, "Image data frame too large!");
 
-    auto *mem = ( png_structpp)png_calloc( png_ptr, height * width * bytes_per_pixel);
+    auto *mem = ( png_structpp)png_calloc( png_ptr, width * bytes_per_pixel);
     auto deleter = [ &png_ptr, mem]( png_structpp ptr) { png_free( png_ptr, ptr); free( mem); };
     std::unique_ptr<png_structp, decltype( deleter)> image( mem, deleter);
-    png_bytep row_pointers[ height];
-    uint8_t color_buffer[ bytes_per_pixel];
-    memset( color_buffer, 0, bytes_per_pixel);
-
+    png_write_flush( png_ptr);
+    
     for( png_uint_32 j = 0; j < height; ++j)
     {
         for( png_uint_32 i = 0; i < width; ++i)
         {
 		    uint32_t pixel = frame.buffer.get()[ j * width + i];
 			auto local_image_ref = ( uint8_t *)image.get();
-		  	png_uint_32 index = j * width * bytes_per_pixel + i * bytes_per_pixel;
+		  	png_uint_32 index = i * bytes_per_pixel;
 			local_image_ref[     index] = pixel >> 24u;
 			local_image_ref[ index + 1] = ( pixel >> 16u) & 0xFFu;
 			local_image_ref[ index + 2] = ( pixel >>  8u) & 0xFFu;
 			local_image_ref[ index + 3] = pixel & 0xFFu;
         }
+        png_write_row( png_ptr, reinterpret_cast<png_const_bytep>( image.get()));
     }
 
     if( height > PNG_UINT_32_MAX / ( sizeof( png_bytep)))
         png_error( png_ptr, "Image too small to process!");
 
-    for( png_uint_32 i = 0; i < height; ++i)
-        row_pointers[ i] = ( ( uint8_t *)image.get()) + i * width * bytes_per_pixel;
+  	png_write_end( png_ptr, info_ptr);
+  	png_write_flush( png_ptr);
 
-    png_write_image( png_ptr, row_pointers);
-
-    png_write_end( png_ptr, info_ptr);
-
-    png_destroy_write_struct( &png_ptr, &info_ptr);
+  	png_destroy_write_struct( &png_ptr, &info_ptr);
 }
 
 static size_t byteCount( uint8_t c )

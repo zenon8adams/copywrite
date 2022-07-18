@@ -29,12 +29,13 @@
 
 #include <ft2build.h>
 #include <string>
-#include <pngconf.h>
 #include <vector>
 #include <functional>
 #include <memory>
 #include <cmath>
 #include <variant>
+#include <png.h>
+#include <pngconf.h>
 
 #ifndef PNG_STDIO_SUPPORTED
 typedef FILE                * png_FILE_p;
@@ -224,7 +225,6 @@ struct BKNode
   }
 };
 
-
 float clamp(float x, float lowerlimit, float upperlimit);
 
 float smoothstep( float left, float right, float x);
@@ -240,7 +240,7 @@ class PropertyManager
   {
   }
   template <typename Deleter>
-  explicit PropertyManager( Deleter& deleter)
+  explicit PropertyManager( Deleter&& deleter)
   : destructor( std::forward<Deleter>( deleter))
   {
   }
