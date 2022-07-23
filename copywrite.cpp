@@ -426,14 +426,16 @@ void render( std::string_view word, FT_Library library, FT_Face face, Applicatio
 	}
     
     auto buffer = FrameBuffer<uint32_t>{ std::move( out), width, height};
-    if( guide.as_image && guide.src_filename && !guide.composition_rule)
-	  writePNG( destination.get(), buffer);
-    else
-	  write( buffer, guide.raster_glyph, destination.get(), guide.kdroot.get());
-    
-    applyFilter( buffer, FilterMode::BOX_BLUR);
     if( guide.composition_rule)
-  		composite( guide, buffer);
+        composite( guide, buffer);
+    else
+    {
+        if( guide.as_image && guide.src_filename)
+            ( guide.out_format == OutputFormat::JPEG ? writeJPG : writePNG)( guide.src_filename, buffer);
+        else
+            write( buffer, guide.raster_glyph, destination.get(), guide.kdroot.get());
+    }
+//    applyFilter( buffer, FilterMode::BOX_BLUR);
 }
 
 uint32_t hsvaToRgba( uint32_t hsv)
@@ -498,6 +500,21 @@ uint32_t rgbaToHsva( uint32_t rgb)
         hsv |= ( uint32_t)( ( uint8_t)( 171 + 43 * ( int32_t)( r - g) / ( int32_t)( rgbMax - rgbMin))) << 24u;
 
     return hsv | a;
+}
+
+uint32_t yCbCrToRgb( uint32_t color)
+{
+     uint8_t y  = RED( color),
+             cb = GREEN( color),
+             cr = BLUE( color);
+     int red   = ( y + 1.40200f * ( cr - 0x80)),
+         green = ( y - 0.34414f * ( cb - 0x80) - 0.71414 * ( cr - 0x80)),
+         blue  = ( y + 1.77299f * ( cb - 0x80));
+     red   = std::max( 0, std::min( 255, red));
+     green = std::max( 0, std::min( 255, green));
+     blue  = std::max( 0, std::min( 255, blue));
+
+     return RGB( red, green, blue);
 }
 
 uint32_t colorLerp( uint32_t lcolor, uint32_t rcolor, double progress)
@@ -647,7 +664,7 @@ void applyFilter( FrameBuffer<uint32_t> &frame, uint8_t filter)
 										 1/9., 1/9., 1/9.},
    		[ FilterMode::GAUSSIAN_BLUR] = { 1/16., 2/16., 1/16.,
 									     2/16., 4/16., 2/16.,
-									     1/16., 2/16., 1/16.}
+									     1/16., 2/16., 1/16.},
    };
  
    float extended_kernels[ FilterMode::E_FILTER_SENTINEL][ ek_size] =
@@ -703,7 +720,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
    if( c_rule.model == MODEL_ENUM( NotApplicable))
      return;
    
-   auto d_frame    = readPNG( guide.dest_filename);
+   auto d_frame = ( isJPEG( guide.dest_filename) ? readJPEG : readPNG)( guide.dest_filename);
    if( d_frame.buffer == nullptr)
      return;
    
@@ -821,6 +838,8 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 		std::visit( [ &]( auto&& current)
 		{
 		  using T = std::remove_cv_t<std::remove_reference_t<decltype(current)>>;
+		  const size_t d_max_index = d_frame.width * d_frame.height * d_frame.n_channel;
+		  auto *d_buffer = d_frame.buffer.get();
 		  for( int y = smallbox_top_edge.y, j = 0; j < final_height; ++y, ++j)
 		  {
 			for ( int x = smallbox_top_edge.x, i = 0; i < final_width; ++x, ++i)
@@ -828,34 +847,32 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 			  auto point = Vec2D<float>( x, y);
 			  if constexpr ( std::is_same_v<T, Default>) // DestinationAtop
 			  {
-				if( intersects( corners, point) && intersects( big_corners, point))
+				auto d_index = j * d_frame.width * d_frame.n_channel +  i * d_frame.n_channel;
+				if( d_index < d_max_index && intersects( corners, point) && intersects( big_corners, point))
 				{
-				  auto d_index = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel;
-				  auto *buffer = d_frame.buffer.get();
-				  image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
-																   buffer[ d_index + 2], buffer[ d_index + 3]);
+					image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+						                                             d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
 				}
-				else
+				else if( intersects( corners, point))
 				{
 				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
 				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-				  if( index > 0 && index < s_frame_dimension)
+				  if( index >= 0 && index < s_frame_dimension)
 					image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
 				}
 			  }
 			  else if constexpr ( std::is_same_v<T, Top>) // DestinationIn
 			  {
-				if( intersects( corners, point) && intersects( big_corners, point))
+				auto d_index = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel;
+				if( d_index < d_max_index && intersects( corners, point) && intersects( big_corners, point))
 				{
-				  auto d_index = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel;
-				  auto *buffer = d_frame.buffer.get();
-				  image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
-																   buffer[ d_index + 2], buffer[ d_index + 3]);
+				  image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+																   d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
 				}
 			  }
 			  else if constexpr( std::is_same_v<T, Bottom>) // Source-Out
 			  {
-				if( !intersects( corners, point) || !intersects( big_corners, point))
+				if( intersects( corners, point) && !intersects( big_corners, point))
 				{
 				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
 				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
@@ -966,7 +983,12 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 				{
 				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
 				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-				  pixel        = s_frame.buffer.get()[ index];
+				  auto rgba    = s_frame.buffer.get()[ index];
+				  if( ALPHA( rgba) < 180)
+				    pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+								  d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+				  else
+				  	pixel = s_frame.buffer.get()[ index];
 				}
 				else
 				{
@@ -999,6 +1021,8 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 	  },
 	  [&]( auto part) // SourceOver
 	  {
+	    auto *s_buffer = s_frame.buffer.get();
+	    auto *d_buffer = d_frame.buffer.get();
 		for( int y = origin.y, j = 0; j < final_height; ++y, ++j)
 		{
 		  for (int x = origin.x, i = 0; i < final_width; ++x, ++i)
@@ -1009,14 +1033,22 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 			{
 			  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
 			  if( index > 0 && index < s_frame_dimension)
-				image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
+              {
+			      if( ALPHA( s_buffer[ index]) < 180 && intersects( big_corners, point))
+                  {
+                      auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                      image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+                                                                       d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
+                  }
+                  else
+                      image.buffer.get()[ j * final_width + i] = s_buffer[ index];
+              }
 			}
 			else if( intersects( big_corners, point))
 			{
 			  auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-			  auto *buffer = d_frame.buffer.get();
-			  image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
-															   buffer[ d_index + 2], buffer[ d_index + 3]);
+			  image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+															   d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
 			}
 		  }
 		}
@@ -1033,8 +1065,19 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
   
   models[ ENUM_CAST( c_rule.model)]( Default());
   
-  PropertyManager<FILE *> final( fopen( guide.src_filename, "wb"), []( auto *p) { if( p) fclose( p);});
-  writePNG( final.get(), image);
+  ( guide.out_format == OutputFormat::JPEG ? writeJPG : writePNG)( guide.src_filename, image);
+}
+
+bool isJPEG( std::string_view filename)
+{
+    auto *extension = strrchr( filename.data(), '.');
+    if( extension && ++extension)
+    {
+        std::regex rule( R"(^[jJ][pP][eE]?[gG]$)");
+        return std::regex_match( extension, extension + strlen( extension), rule);
+    }
+
+    return false;
 }
 
 FrameBuffer<png_byte> readPNG( std::string_view filename)
@@ -1132,8 +1175,8 @@ FrameBuffer<png_byte> readPNG( std::string_view filename)
 	 png_read_end( png_ptr, info_ptr);
 	 frame.buffer = std::move( image_data);
 	 frame.n_channel = png_get_channels( png_ptr, info_ptr);
-	 if( has_background)
-	   frame.metadata.get() = new Color( background_color);
+//	 if( has_background)
+//	   frame.metadata.get() = new Color( background_color);
    }
 
   png_destroy_read_struct( &png_ptr, &info_ptr, nullptr);
@@ -1141,101 +1184,121 @@ FrameBuffer<png_byte> readPNG( std::string_view filename)
    return std::move( frame);
 }
 
-void writePNG( FILE *cfp, FrameBuffer<uint32_t> &frame)
+void writePNG( std::string_view filename, FrameBuffer<uint32_t> &frame)
 {
-    if( cfp == nullptr)
-        return;
-
-    png_structp png_ptr;
-    png_uint_32 bit_depth = 8, bytes_per_pixel = 4;
-    auto width = frame.width;
-    auto height = frame.height;
-
-    png_ptr = png_create_write_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-    if( png_ptr == nullptr)
-        return;
-
-    png_infop info_ptr = png_create_info_struct( png_ptr);
-    if( info_ptr == nullptr)
+    png::image<png::rgba_pixel> image( frame.width, frame.height);
+    auto buffer = frame.buffer.get();
+    for( png_uint_32 j = 0; j < frame.height; ++j)
     {
-        png_destroy_write_struct( &png_ptr, &info_ptr);
-        return;
-    }
-
-    if( setjmp( png_jmpbuf( png_ptr)))
-    {
-        png_destroy_write_struct( &png_ptr, &info_ptr);
-        return;
-    }
-    
-    png_init_io( png_ptr, cfp);
-    
-    png_set_IHDR( png_ptr, info_ptr, width, height, bit_depth, PNG_COLOR_TYPE_RGB_ALPHA,
-                  PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
-    
-    png_text text_ptr[3];
-
-    char key0[] = "Title";
-    char text0[] = "Copywrite";
-    text_ptr[0].key = key0;
-    text_ptr[0].text = text0;
-    text_ptr[0].compression = PNG_TEXT_COMPRESSION_NONE;
-    text_ptr[0].itxt_length = 0;
-    text_ptr[0].lang = nullptr;
-    text_ptr[0].lang_key = nullptr;
-
-    char key1[] = "Author";
-    char text1[] = "Adesina Meekness";
-    text_ptr[1].key = key1;
-    text_ptr[1].text = text1;
-    text_ptr[1].compression = PNG_TEXT_COMPRESSION_NONE;
-    text_ptr[1].itxt_length = 0;
-    text_ptr[1].lang = nullptr;
-    text_ptr[1].lang_key = nullptr;
-
-    char key2[] = "Description";
-    char text2[] = "An image generated by copywrite program";
-    text_ptr[2].key = key2;
-    text_ptr[2].text = text2;
-    text_ptr[2].compression = PNG_TEXT_COMPRESSION_zTXt;
-    text_ptr[2].itxt_length = 0;
-    text_ptr[2].lang = nullptr;
-    text_ptr[2].lang_key = nullptr;
-
-    png_set_text( png_ptr, info_ptr, text_ptr, 3);
-
-    png_write_info( png_ptr, info_ptr);
-
-    if( height > PNG_SIZE_MAX / ( width * bytes_per_pixel))
-        png_error( png_ptr, "Image data frame too large!");
-
-    auto *mem = ( png_structpp)png_calloc( png_ptr, width * bytes_per_pixel);
-    auto deleter = [ &png_ptr, mem]( png_structpp ptr) { png_free( png_ptr, ptr); free( mem); };
-    std::unique_ptr<png_structp, decltype( deleter)> image( mem, deleter);
-    png_write_flush( png_ptr);
-    
-    for( png_uint_32 j = 0; j < height; ++j)
-    {
-        for( png_uint_32 i = 0; i < width; ++i)
+        for ( png_uint_32 i = 0; i < frame.width; ++i)
         {
-		    uint32_t pixel = frame.buffer.get()[ j * width + i];
-			auto local_image_ref = ( uint8_t *)image.get();
-		  	png_uint_32 index = i * bytes_per_pixel;
-			local_image_ref[     index] = pixel >> 24u;
-			local_image_ref[ index + 1] = ( pixel >> 16u) & 0xFFu;
-			local_image_ref[ index + 2] = ( pixel >>  8u) & 0xFFu;
-			local_image_ref[ index + 3] = pixel & 0xFFu;
+            auto pixel = PNG_ENDIAN( buffer[ j * frame.width + i]);
+            image.set_pixel( i, j, *(( png::rgba_pixel *)&pixel));
         }
-        png_write_row( png_ptr, reinterpret_cast<png_const_bytep>( image.get()));
     }
+    image.write( filename.data());
+}
 
-    if( height > PNG_UINT_32_MAX / ( sizeof( png_bytep)))
-        png_error( png_ptr, "Image too small to process!");
+FrameBuffer<uint8_t> readJPEG( std::string_view filename)
+{
+    auto *handle = fopen( filename.data(), "rb");
+    if( handle == nullptr)
+        return {};
+    PropertyManager<FILE *> file_manager( handle, []( auto *p){ fclose( p);});
 
-  	png_write_end( png_ptr, info_ptr);
-  	png_write_flush( png_ptr);
+    jpeg_decompress_struct decompressor;
+    memset( &decompressor, 0, sizeof(decompressor));
+    PropertyManager<jpeg_decompress_struct *> manager( &decompressor, jpeg_destroy_decompress);
 
-  	png_destroy_write_struct( &png_ptr, &info_ptr);
+    jpeg_error_mgr error_mgr;
+    decompressor.err = jpeg_std_error( &error_mgr);
+
+    jpeg_create_decompress( &decompressor);
+    jpeg_stdio_src( &decompressor, handle);
+
+    if( jpeg_read_header( &decompressor, TRUE) != JPEG_HEADER_OK)
+        return {};
+
+    assert( decompressor.out_color_space == J_COLOR_SPACE::JCS_RGB ||
+            decompressor.out_color_space == J_COLOR_SPACE::JCS_GRAYSCALE);
+
+    std::shared_ptr<uint8_t> mem( ( uint8_t *)malloc( decompressor.image_width * decompressor.image_height * 4),
+                                  []( auto *p){ free( p);});
+    FrameBuffer<uint8_t> frame( mem, decompressor.image_width, decompressor.image_height, 4);
+    PropertyManager<JSAMPROW> row_manager( new JSAMPLE[ frame.width * decompressor.num_components],
+                                           []( auto *p) { delete[] p;});
+
+    auto *s_row_pointer = row_manager.get();
+    auto *d_row_pointer = frame.buffer.get();
+    auto is_rgb = decompressor.out_color_space == JCS_RGB;
+
+    jpeg_start_decompress( &decompressor);
+    while( decompressor.output_scanline < frame.height)
+    {
+        jpeg_read_scanlines( &decompressor, &s_row_pointer, 1);
+        for( size_t i = 0; i < frame.width; ++i)
+        {
+            auto index = ( decompressor.output_scanline - 1) * frame.width * frame.n_channel + i * frame.n_channel;
+            d_row_pointer[ index + 0] = s_row_pointer[ i * decompressor.num_components + 0];
+            d_row_pointer[ index + 1] = s_row_pointer[ i * decompressor.num_components + is_rgb];
+            d_row_pointer[ index + 2] = s_row_pointer[ i * decompressor.num_components + is_rgb + is_rgb];
+            d_row_pointer[ index + 3] = 0xFFu;
+        }
+    }
+    jpeg_finish_decompress( &decompressor);
+
+    return frame;
+}
+
+void writeJPG( std::string_view filename, FrameBuffer<uint32_t> &frame)
+{
+   auto *handle = fopen( filename.data(), "wb");
+   if( handle == nullptr)
+       return;
+   PropertyManager<FILE *> f_manager( handle, []( auto *p){ fclose( p);});
+   jpeg_compress_struct compressor;
+   PropertyManager<jpeg_compress_struct *> manager( &compressor, jpeg_destroy_compress);
+   
+   jpeg_error_mgr error_mgr;
+   compressor.err = jpeg_std_error( &error_mgr);
+   
+   jpeg_create_compress( &compressor);
+   jpeg_stdio_dest(&compressor, handle);
+   
+   compressor.image_width = frame.width;
+   compressor.image_height = frame.height;
+   compressor.input_components = 3;
+   compressor.in_color_space = JCS_RGB;
+   compressor.write_JFIF_header = TRUE;
+   compressor.JFIF_major_version = JPEG_LIB_VERSION_MAJOR;
+   compressor.JFIF_minor_version = JPEG_LIB_VERSION_MINOR;
+   
+   jpeg_set_defaults( &compressor);
+   compressor.dct_method  = JDCT_FLOAT;
+   jpeg_set_quality( &compressor, 100, TRUE);
+   compressor.raw_data_in = FALSE;
+   compressor.smoothing_factor = 100;
+//   compressor.optimize_coding = TRUE;
+
+	const auto row_stride = compressor.image_width * 3;
+	jpeg_start_compress( &compressor, TRUE);
+	auto buffer = frame.buffer.get();
+	PropertyManager<uint8_t *> row_manager( new uint8_t[ row_stride], []( auto *p) { delete[] p;});
+	auto row_buffer = row_manager.get();
+	for( int j = 0; j < compressor.image_height; ++j)
+	{
+	  for( int i = 0; i < compressor.image_width; ++i)
+	  {
+		auto index = j * compressor.image_width + i;
+		auto pixel = buffer[ index];
+		row_buffer[ i * 3 + 0] = RED( pixel);
+		row_buffer[ i * 3 + 1] = GREEN( pixel);
+		row_buffer[ i * 3 + 2] = BLUE( pixel);
+	  }
+	  jpeg_write_scanlines( &compressor, &row_buffer, 1);
+	}
+
+	jpeg_finish_compress( &compressor);
 }
 
 static size_t byteCount( uint8_t c )
@@ -2917,6 +2980,8 @@ int main( int ac, char *av[])
         {
             ac -= 1;
             business_rules.src_filename = *++av;
+            business_rules.out_format = isJPEG( business_rules.src_filename) ?
+                                        OutputFormat::JPEG : business_rules.out_format;
         }
         else if( strstr( directive, "font-file") != nullptr)
             selection = &fontfile;

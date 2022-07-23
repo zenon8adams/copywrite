@@ -34,8 +34,8 @@
 #include <memory>
 #include <cmath>
 #include <variant>
-#include <png.h>
-#include <pngconf.h>
+#include <image.hpp>
+#include <jpeglib.h>
 
 #ifndef PNG_STDIO_SUPPORTED
 typedef FILE                * png_FILE_p;
@@ -43,6 +43,18 @@ typedef FILE                * png_FILE_p;
 
 #include FT_FREETYPE_H
 #include "geo_vector.hpp"
+
+#if defined(__GNUC__) || defined(__clang__)
+    #define swap32( x) __builtin_bswap32( x)
+#else
+    #define swap32( x)  (( x >> 24) | (( x >> 8) & 0x0000FF00) | (( x << 8) & 0x00FF0000) | ( x << 24));
+#endif
+
+#if __LITTLE_ENDIAN
+#define PNG_ENDIAN( dword) swap32( dword)
+#else
+#define PNG_ENDIAN( dword) dword
+#endif
 
 #define MAX_DIFF_TOLERANCE 20
 
@@ -382,6 +394,8 @@ uint32_t rgbaToHsva( uint32_t rgb);
 
 uint32_t hsvaToRgba( uint32_t hsv);
 
+uint32_t yCbCrToRgb( uint32_t color);
+
 uint32_t colorLerp( uint32_t lcolor, uint32_t rcolor, double progress);
 
 XyZColor xyzFromRgb( uint32_t color);
@@ -435,6 +449,12 @@ struct CompositionRule
 CompositionRule::CompositionModel selectCompositionModel( std::string_view given);
 CompositionRule parseCompositionRule( std::string_view rule);
 
+enum class OutputFormat
+{
+    PNG,
+    JPEG
+};
+
 struct ApplicationHyperparameters
 {
   const char 			 *raster_glyph{ "\u2589"},
@@ -447,6 +467,7 @@ struct ApplicationHyperparameters
   size_t 				  font_size{10};
   PropertyProxy<uint32_t> background_color{};
   bool 					  as_image{ false};
+  OutputFormat            out_format{ OutputFormat::PNG};
   CompositionRule		  composition;
 };
 
@@ -468,9 +489,15 @@ void applyFilter( FrameBuffer<uint32_t> &frame, uint8_t filter);
 
 void composite(ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame);
 
+bool isJPEG( std::string_view filename);
+
 FrameBuffer<png_byte> readPNG( std::string_view filename);
 
-void writePNG( FILE *cfp, FrameBuffer<uint32_t> &frame);
+FrameBuffer<uint8_t> readJPEG( std::string_view filename);
+
+void writeJPG(std::string_view filename, FrameBuffer<uint32_t> &frame);
+
+void writePNG(std::string_view filename, FrameBuffer<uint32_t> &frame);
 
 void requestFontList();
 
