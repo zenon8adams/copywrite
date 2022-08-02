@@ -97,181 +97,494 @@
 #define COMPOSITON_SIZE( idx)          ( ( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U)) & 1U)
 #define COMPOSITION_SIDE( idx)		   ( ( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U + 1U)) & 1U)
 
-/*
- * Converts bitmap into binary format.
- * NB!
- * 	- Pitch is the number of bytes used in representing
- * 	  a row.
- * 	- Pixmap is the final monochrome output
- */
-
- std::unique_ptr<unsigned char, void( *)( unsigned char *)> toMonochrome( FT_Bitmap bitmap)
+void spansCallback( int y, int count, const FT_Span *spans, void *user)
 {
-	FT_Int rows = bitmap.rows,
-	       cols = bitmap.width;
-	auto pixmap = std::unique_ptr<unsigned char, void( *)( unsigned char *)>(
-	    ( unsigned char *)calloc( rows * cols, 1), []( auto p){ free( p); });
-	for( FT_Int y = 0; y < rows; ++y)
-	{
-		for( FT_Int ibyte = 0; ibyte < bitmap.pitch; ++ibyte)
-		{
-			FT_Int ibit = ibyte * 8,
-			       base = y * cols + ibit,
-			       cbit = bitmap.buffer[ y * bitmap.pitch + ibyte],
-			       rbits = (int)(cols - ibit) < 8 ? cols - ibit : 8;
-			for( FT_Int i = 0; i < rbits; ++i)
-			   pixmap.get()[ base + i] = ( uint8_t)cbit & (1u << ( 7u - i));
-		}
-	}
-
-	return pixmap;
+    auto *sptr = (Spans *)user;
+    for (int i = 0; i < count; ++i)
+        sptr->emplace_back( spans[i].x, y, spans[i].len, spans[i].coverage);
 }
 
-Glyph extract( FT_GlyphSlot slot)
+void renderSpans( FT_Library library, FT_Outline *outline, Spans *spans)
 {
-	Glyph glyph( toMonochrome(( slot->bitmap)));
-	glyph.width = slot->bitmap.width;
-	glyph.height = slot->bitmap.rows;
-	glyph.xstep = slot->advance.x / 64;
-	glyph.origin.x = slot->bitmap_left;
-	glyph.origin.y = glyph.height - slot->bitmap_top;
+    FT_Raster_Params params;
+    memset( &params, 0, sizeof( params));
+    params.flags = FT_RASTER_FLAG_AA | FT_RASTER_FLAG_DIRECT;
+    params.gray_spans = spansCallback;
+    params.user = spans;
 
-	return glyph;
+    FT_Outline_Render( library, outline, &params);
 }
 
-void insert( std::unique_ptr<Glyph>& index, Glyph glyph)
+void render( FT_Library library, FT_Face face, std::wstring_view text, ApplicationHyperparameters& guide)
 {
-	if( index == nullptr)
-	{
-		index.reset( new Glyph( std::move( glyph)));
-		return;
-	}
-
-	insert( index->next, std::move( glyph));
-}
-
-FT_Int kerning( FT_UInt c, FT_UInt prev, FT_Face face)
-{
-	FT_Vector kern;
-
-	FT_Get_Kerning( face, c, prev, FT_KERNING_DEFAULT, &kern);
-
-	return ( uint8_t)kern.x >> 6u;
-}
-
-void draw( const Glyph &glyph, FT_Vector *pen, FrameBuffer<uint32_t> &frame, FT_Int mdescent, size_t total)
-{
-    auto width = frame.width,
-         height = frame.height;
-    FT_Int base = height - glyph.height - mdescent;
-    auto& match = glyph.match;
-    uint32_t color = match->scolor;
-    std::unique_ptr<uint32_t[]> row_colors;
-  	size_t start = glyph.index - match->start,
-	  	   end = match->end == -1 ? MAX( total, 1) : match->end - match->start;
-  	auto is_conic_gradient = match->gradient->gradient_type == GradientType::Conic;
-	if( match->color_easing_fn && !is_conic_gradient)
-	{
-	  if( !match->soak)
-	  {
-		auto fraction = match->color_easing_fn(( float)start / end);
-		color = interpolateColor( match->scolor, match->ecolor, fraction);
-	  }
-	  else
-	  {
-		row_colors.reset( new uint32_t[ glyph.width]);
-		for( FT_Int i = 0; i < glyph.width; ++i)
-		{
-		  auto fraction = match->color_easing_fn( ( float)match->gradient->startx++ / match->gradient->width);
-		  color = interpolateColor( match->scolor, match->ecolor, fraction);
-		  row_colors.get()[ i] = color;
-		}
-	  }
-	}
-	
-    auto cwidth = match->soak ? match->gradient->width : ( int32_t)end, cheight = match->gradient->height;
-    for( FT_Int y = glyph.origin.y, j = 0; j < glyph.height; ++y, ++j)
+    auto& color_rule = guide.color_rule;
+    auto map = []( auto color_rule, auto bkroot)
     {
-        for( FT_Int x = glyph.origin.x, i = 0; i < glyph.width; ++x, ++i)
+        auto rules = parseColorRule( color_rule, bkroot);
+        std::vector<std::shared_ptr<ColorRule>> new_rules( rules.size());
+        std::transform( rules.cbegin(), rules.cend(), new_rules.begin(),
+                        []( auto rule) { return std::make_shared<ColorRule>( rule);});
+        return new_rules;
+    };
+    auto rules = color_rule == nullptr ? std::vector<std::shared_ptr<ColorRule>>{}
+                                       : map( color_rule, guide.bkroot.get());
+    auto dummy = ColorRule{};
+
+    auto [ text_rows, max_length]= expand( text, guide.j_mode);
+    MonoGlyphs rasters( text_rows.size() * max_length);
+    RowDetails row_details( text_rows.size());
+    FT_Glyph o_glyph;
+    FT_Stroker stroker;
+    FT_Stroker_New( library, &stroker);
+    PropertyManager<FT_Stroker> stroker_deleter( stroker, FT_Stroker_Done);
+    FT_Stroker_Set( stroker, guide.thickness << 6,
+                    FT_STROKER_LINECAP_BUTT, FT_STROKER_LINEJOIN_MITER, 0);
+    FT_Vector box_size{ 0, 0};
+    for( size_t j = 0, t_row = text_rows.size(); j < t_row; ++j)
+    {
+        FT_Int max_ascent{};
+        FT_Vector max_row_box{0, 0}, adjustment;
+        auto &baseline = row_details[ j].baseline,
+             &max_descent = row_details[ j].max_descent;
+        std::shared_ptr<ColorRule> best( &dummy, []( auto dummy){});
+        auto line_height = 0;
+        for( size_t i = 0, t_len = text_rows[ i].length(); i < t_len; ++i)
         {
-          if( match->color_easing_fn)
-		  {
-			if( match->gradient->gradient_type == GradientType::Radial)
-			{
-			  auto& props = static_cast<RadialGradient *>( match->gradient.get())->props;
-			  /*
-			   * Computes the radial-gradient of color starting at `match->gradient->startx`
-			   */
-			  auto xy = Vec2D<float>( !match->soak ?
-							   start : match->gradient->startx - glyph.width + i, y + base)
-							   	/ Vec2D<float>( cwidth, cheight);
-			  xy -= Vec2D<float>( props.x, props.y); // Adjust all pixels so as to push the users origin at (0,0)
-			  auto scale = cwidth / cheight;
-			  if( cwidth > cheight)         // Converts the resulting elliptical shape into a circle.
-				xy.x *= scale;
-			  else
-				xy.y *= scale;
-			  auto d = xy.length();
-			  auto r = props.z;               // Defines the spread distance.
-			  auto c = smoothstep( r + d + 1., 3. * r - 1., d); // Spread the circle around to form a smooth gradient.
-			  auto startcolor = Vec3D( ( float)RED( match->scolor) / RGB_SCALE,
-									   ( float)GREEN( match->scolor) / RGB_SCALE,
-									   ( float)BLUE( match->scolor) / RGB_SCALE),
-				  endcolor    = Vec3D( ( float)RED( match->ecolor) / RGB_SCALE,
-									  ( float)GREEN( match->ecolor) / RGB_SCALE,
-									  ( float)BLUE( match->ecolor) / RGB_SCALE),
-				  finalcolor  = startcolor.lerp( endcolor, match->color_easing_fn( c));
-			  color = RGBA( finalcolor.x * RGB_SCALE, finalcolor.y * RGB_SCALE,
-							finalcolor.z * RGB_SCALE, ALPHA( color)); //TODO: Correct alpha value
-			}
-			else if( is_conic_gradient)
-			{
-			  auto gradient = static_cast<ConicGradient *>( match->gradient.get());
-			  auto origin = gradient->origin; // Object construction does not call assignment operator
-			  Vec2D<float> center( cwidth / 2.f, cheight / 2.f);
-			  if( gradient->origin.changed()) // Explicit access is needed is `origin` object is not copy assigned
-			    center = Vec2D<float>( origin.x * ( cwidth - 1), origin.y * ( cheight - 1));
-			  auto diff = ( Vec2D<float>( x + pen->x, base + pen->y + y) - center);
-			  float angle = diff.angle();
-			  auto stops = gradient->color_variations;
-			  if( !stops.empty())
-			  {
-				auto prev_stop = *stops.begin();
-				auto stop_match = std::find_if( stops.begin(), stops.end(), [ angle, &prev_stop]( auto& stop)
-				{
-				  auto condition = angle >= prev_stop.second
-					  && angle <= stop.second && prev_stop.second != stop.second;
-				  if( !condition)
-					prev_stop = stop;
-				  return condition;
-				});
-				auto cur_stop = stop_match == stops.cend() ? *stops.cbegin() : *stop_match;
-				if( memcmp( prev_stop.first.rgb, cur_stop.first.rgb, 3) == 0)
-				  color = RGBA( cur_stop.first.rgb[ 0], cur_stop.first.rgb[ 1],
-				  	           cur_stop.first.rgb[ 2], 255);
-				else
-				{
-				  auto fraction = ( angle - prev_stop.second) / ( cur_stop.second - prev_stop.second);
-//				  auto clone = fraction;
-				  if( match->color_easing_fn)
-				    fraction = match->color_easing_fn( fraction);
-				  color = colorLerp( RGBA( prev_stop.first.rgb[ 0], prev_stop.first.rgb[ 1],
-										   prev_stop.first.rgb[ 2], 255),
-									 RGBA( cur_stop.first.rgb[ 0], cur_stop.first.rgb[ 1],
-										   cur_stop.first.rgb[ 2], 255), fraction);
-				}
-			  }
-			}
-			else if( match->soak)
-			  color = row_colors.get()[ i];
-		  }
-          uint32_t pixel = glyph.pixmap.get()[ j * glyph.width + i];
-          auto& dest = frame.buffer.get()[ ( base + pen->y + y) * width + x + pen->x];
-		  dest = pixel ? color : dest;
+            auto c_char = text_rows[ j][ i];
+            /*
+             * Select color to apply on glyph
+             */
+            size_t index = j * max_length + i + 1;
+            for( auto& each: rules)
+            {
+                if( ( each->end == INT32_MIN && index == each->start) ||
+                    ( index >= each->start && ( ( index <= each->end &&
+                    each->end != INT32_MIN) || each->end == -1)))
+                    best = each;
+            }
+
+            /*
+             * Calculate font size for each glyph
+             */
+            FT_Int font_size = best->font_size_b == UINT32_MAX ? best->font_size_b = guide.font_size
+                                                               : best->font_size_b;
+            line_height = font_size * guide.line_height;
+            if( best->font_easing_fn)
+            {
+                size_t start = index - best->start,
+                        end = best->end == -1 ? MAX( t_row * max_length - 1, 1) : best->end - best->start;
+                auto fraction = best->font_easing_fn(( float)start / (float)end);
+                if( best->font_size_m == UINT32_MAX && best->font_size_e != UINT32_MAX)
+                    font_size = round( best->font_size_b * ( 1.0 - fraction) + fraction * best->font_size_e);
+                else if( best->font_size_m != UINT32_MAX && best->font_size_e != UINT32_MAX)
+                    font_size = round( +2.0 * best->font_size_b * ( fraction - .5) * ( fraction - 1.)
+                                       -4.0 * best->font_size_m * fraction * ( fraction - 1.)
+                                       +2.0 * best->font_size_e * fraction * ( fraction - .5));
+            }
+
+            if ( FT_Set_Char_Size( face, font_size << 6, 0, 120, 0) != 0)
+                continue;
+
+            if( FT_Load_Char( face, c_char, FT_LOAD_DEFAULT) != 0
+                || FT_Get_Glyph( face->glyph, &o_glyph) != 0/*
+                || o_glyph->format != FT_GLYPH_FORMAT_OUTLINE*/)
+                continue;
+
+            /*
+             * Draw the outline for the glyph
+             */
+//            FT_Glyph_StrokeBorder( &o_glyph, stroker, false, true);
+//            if( o_glyph->format != FT_GLYPH_FORMAT_OUTLINE)
+//                continue;
+//
+            auto& raster = rasters[ j * max_length + i];
+//            renderSpans( library, &reinterpret_cast<FT_OutlineGlyph>( o_glyph)->outline,
+//                         &raster.spans.second);
+            raster.match = best;
+            raster.is_valid = true;
+            raster.level = j;
+            raster.index = j * max_length + i;
+            /*
+             * Render bitmap for the glyph
+             */
+            FT_Render_Glyph( face->glyph, FT_RENDER_MODE_NORMAL);
+            auto slot = face->glyph;
+            BBox rect;
+            int height{}, bearing_y{};
+            if( !std::isspace( c_char))
+            {
+                std::unique_ptr<uint8_t[]> buffer( new uint8_t[ slot->bitmap.width * slot->bitmap.rows]);
+                memmove( buffer.get(), slot->bitmap.buffer, slot->bitmap.width * slot->bitmap.rows);
+                auto &[ main, outline] = raster.spans;
+                /*
+                 * main: Defines the filling of the glyph
+                 * outline: defines the stroking of the glyph
+                 */
+                main = { .buffer = std::move( buffer),
+                        .left   = slot->bitmap_left,
+                        .top    = slot->bitmap_top,
+                        .width  = (int) slot->bitmap.width,
+                        .height = (int) slot->bitmap.rows};
+                if( !outline.empty())
+                {
+                    rect = { outline.front().x,
+                             outline.front().y,
+                             outline.front().x,
+                             outline.front().y};
+                }
+                else
+                {
+                    rect = {
+                            main.left,
+                            main.top - main.height,
+                            main.left + main.width - 1,
+                            main.top - main.height + main.height - 1
+                    };
+                }
+                /*
+                 * Calculate the exact bounding box for the outline
+                 * given a list of spans.
+                 */
+                for ( auto &s: outline)
+                {
+                    rect.expandTo( s.x, s.y);
+                    rect.expandTo( s.x + s.width - 1, s.y);
+                }
+                raster.advance = { static_cast<FT_Pos>(( o_glyph->advance.x >> 16) + guide.thickness * 2),
+                                  ( o_glyph->advance.y >> 16)};
+                height = rect.height();
+                if( i > 0 && FT_HAS_KERNING( face))
+                {
+                    FT_Get_Kerning( face, c_char, text_rows[ j][ i - 1],
+                                    FT_KERNING_DEFAULT, &adjustment);
+                    max_row_box.x += adjustment.x >> 6;
+                    max_row_box.y += adjustment.y >> 6;
+                }
+                /*
+                 * Set the spacing of the glyphs to ensure no extra space occurs
+                 * at the far end.
+                 */
+                max_row_box.x += ( i + 1 == t_len ? rect.width() : raster.advance.x);
+                max_row_box.y = std::max<long>( max_row_box.y, height);
+                raster.bbox = rect;
+                bearing_y = ( slot->metrics.horiBearingY >> 6) + guide.thickness * 2;
+                max_ascent  = std::max( max_ascent, bearing_y);
+                max_descent = std::max( max_descent, -rect.ymin);
+                baseline = std::min( rect.ymin, baseline); // This is the underline position for glyph groups
+            }
+            else
+            {
+                /*
+                 * If the character is space, use the default advance as the width of the glyph
+                 * since the bitmap.width and bitmap.rows will be zero.
+                 */
+                int default_width  = slot->metrics.horiAdvance >> 6;
+                max_row_box.x += default_width;
+                raster.advance.x = default_width;
+            }
+
+            FT_Done_Glyph( o_glyph);
         }
+        /*
+         * For every empty row( row containing only spaces),
+         * update height to the default vertical advance.
+         * Also, since the maximum height is zero, set it
+         * to the default height.
+         */
+        if( max_row_box.y == 0)
+        {
+            auto default_height = ( face->glyph->metrics.vertAdvance >> 6) + guide.thickness * 2;
+            for( size_t i = 0; i < text_rows[ j].size(); ++i)
+            {
+                auto c_char = text_rows[ j][ i];
+                if( !std::isspace( c_char))
+                    continue;
+                auto& raster = rasters[ j * max_length + i];
+                raster.advance.y = face->glyph->metrics.vertAdvance >> 6;
+            }
+            max_ascent = (int)default_height;
+        }
+        max_row_box.y = max_ascent + max_descent;
+        row_details[ j].width = (int)max_row_box.x;
+        if( max_row_box.y <= 0)
+            continue;
+        box_size.x = std::max( max_row_box.x, box_size.x); // The width of the largest row
+        auto row_line_height = line_height * ( j + 1 != t_row); // The spacing between glyphs
+        box_size.y += max_row_box.y + row_line_height;
+        row_details[ j].h_disp += box_size.y - row_line_height; // Offset at which each row should start
+        if( best->soak && best->color_easing_fn)
+            best->gradient->width = box_size.x;
+        best->gradient->height = box_size.y;
     }
-    
-    pen->x += glyph.xstep; // Move the pen forward for positioning of the next character
+
+    std::shared_ptr<uint32_t> pixel( ( uint32_t *)calloc( sizeof(uint32_t) * box_size.x, box_size.y),
+                                     []( auto *p){ free( p);});
+    auto buffer = FrameBuffer<uint32_t>{ pixel, static_cast<int32_t>( box_size.x), static_cast<int32_t>( box_size.y)};
+
+    draw( rasters, row_details, buffer, guide);
+
+    PropertyManager<FILE *> destination( stdout, []( FILE *maybe_destructible)
+    {
+        if( maybe_destructible != stdout)
+            fclose( maybe_destructible);
+        maybe_destructible = nullptr;
+    });
+
+    if( guide.src_filename != nullptr)
+    {
+        auto *handle = fopen( guide.src_filename, "wb");
+        if( handle)
+            destination.get() = handle;
+    }
+
+    if( guide.composition_rule)
+        composite( guide, buffer);
+    else
+    {
+        if( guide.as_image && guide.src_filename)
+            (guide.out_format == OutputFormat::JPEG ? writeJPG : writePNG)
+            ( guide.src_filename, buffer, guide.image_quality);
+        else
+            write( buffer, guide.raster_glyph,
+                   destination.get(), guide.kdroot.get());
+    }
+}
+
+void draw( const MonoGlyphs &rasters, RowDetails &row_details,
+           FrameBuffer<uint32_t> &frame, ApplicationHyperparameters &guide)
+{
+    auto n_glyphs = rasters.size();
+    auto n_levels = row_details.size();
+    for( auto& raster : rasters)
+     {
+        auto& [ main, outline] = raster.spans;
+        auto& rect = raster.bbox;
+        int height = raster.bbox.height();
+        if( !raster.is_valid)
+            continue;
+
+        auto& row_detail = row_details[ raster.level];
+        auto& pen = row_detail.pen;
+        auto& match = raster.match;
+        uint32_t color = match->scolor;
+        std::unique_ptr<uint32_t[]> row_colors;
+        int start = raster.index + 1 - match->start,
+            end   = match->end == -1 ? std::max<int>( n_glyphs, 1) : match->end - match->start;
+        auto is_conic_gradient = match->gradient->gradient_type == GradientType::Conic;
+        if( match->color_easing_fn && !is_conic_gradient)
+        {
+         if( !match->soak)
+         {
+             auto fraction = match->color_easing_fn(( float)start / end);
+             color = interpolateColor( match->scolor, match->ecolor, fraction);
+         }
+         else
+         {
+             auto width = raster.bbox.width();
+             row_colors.reset( new uint32_t[ width]);
+             for( FT_Int i = 0; i < width; ++i)
+             {
+                 auto fraction = match->color_easing_fn( ( float)match->gradient->startx++ / match->gradient->width);
+                 color = interpolateColor( match->scolor, match->ecolor, fraction);
+                 row_colors.get()[ i] = color;
+             }
+         }
+        }
+         /* v_offset: Aligns every row glyph to their respective baselines
+         *  h_offset: The adjustment necessary to comply with `Justification::Right` and `Justification::Center`
+         */
+        int v_offset = row_detail.h_disp - height - row_detail.max_descent - rect.ymin,
+            h_offset = (int)( ENUM_CAST( guide.j_mode) > 0)
+                           * (( frame.width - row_detail.width) / ENUM_CAST( guide.j_mode));
+        for ( auto& s: outline)
+        {
+            for ( int w = 0; w < s.width; ++w)
+            {
+                frame.buffer.get()[(( v_offset + height - 1 - ( s.y - rect.ymin) + pen.y)
+                             * frame.width + s.x - rect.xmin + w + h_offset + pen.x)]
+                             = easeColor( raster, color, row_colors.get(), ( s.x - rect.xmin),
+                                          n_glyphs, { s.x - rect.xmin, s.y - rect.ymin}, pen);
+            }
+        }
+        for( int j = 0, y = guide.thickness + v_offset; j < main.height; ++j, ++y)
+        {
+            for( int i = 0, x = guide.thickness + h_offset; i < main.width; ++i, ++x)
+            {
+                if( main.buffer.get()[ j * main.width + i] > 0)
+                {
+                    frame.buffer.get()[( y + pen.y) * frame.width + x + pen.x]
+                    = easeColor( raster, color, row_colors.get(), i,
+                                 n_glyphs, { x, y}, pen);
+                }
+            }
+        }
+
+        pen.x += raster.advance.x;
+        pen.y += raster.advance.y;
+    }
+}
+
+static size_t byteCount( uint8_t c )
+{
+    for( uint8_t n = 2u; n <= 6u; ++n )
+    {
+        bool val = ( ( uint8_t)(c >> n) ^ (0xFFU >> n));
+        if( !val )
+            return 8 - n;
+    }
+    return 1;
+}
+
+static uint32_t collate( uint8_t *str, size_t idx, uint8_t count )
+{
+    if( count == 1 )
+        return str[ idx];
+
+    uint32_t copy = count;
+
+    uint8_t buf[ count], *pbuf = buf;
+    memcpy( buf, str + idx, count);
+
+    while( copy > 1)
+        buf[ --copy] &= 0x3FU;
+
+    *pbuf &= 0xFFU >> ( count + 1u);
+    count -= 1;
+    size_t i = ( count << 2u ) + ( count << 1u);
+
+    uint32_t value = 0;
+    while(( int8_t)count >= 0)
+    {
+        value += *( pbuf++) << i;
+        --count;
+        i -= 6;
+    }
+
+    return value;
+}
+
+std::wstring toWString( const std::string& str)
+{
+    std::wstring wsRep;
+    for( size_t i = 0uL; i < str.size(); )
+    {
+        size_t byte_count = byteCount( str[i]);
+        wsRep += collate( ( uint8_t *)str.data(), i, byte_count - 1);
+        i += byte_count;
+    }
+    return wsRep;
+}
+
+std::pair<std::vector<std::wstring>, int> expand( std::wstring_view provision, Justification mode)
+{
+    std::vector<std::wstring> parts;
+    int j = 0, max_length = 0;
+    char prev = '\0';
+    for( size_t i = 0; i < provision.length(); ++i)
+    {
+        if( provision[ i] == '\n')
+        {
+            auto length = i - j - ( prev == '\r');
+            auto substring = provision.substr( j, length);
+            parts.emplace_back( substring);
+            j = i + 1;
+            max_length = std::max<int>( length, max_length);
+        }
+        prev = provision[ i];
+    }
+    parts.emplace_back( provision.substr( j));
+    max_length = std::max<int>( parts.back().length(), max_length);
+    for( auto& line : parts)
+    {
+        int rem  = max_length - line.length(),
+                left  = rem / ENUM_CAST( mode),
+                right = rem - ( left = ( left > 0) * left);
+        line.insert( 0, std::wstring( left, ' '));
+        line.append( std::wstring( right, ' '));
+    }
+    return { parts, max_length};
+}
+
+uint32_t easeColor( const MonoGlyph& raster, uint32_t color, uint32_t *row_colors, int ipos,
+                    int n_glyphs, Vec2D<int> pos, FT_Vector pen)
+{
+    auto& match = raster.match;
+    auto glyph_width = raster.bbox.width();
+    size_t start = raster.index - match->start,
+            end = match->end == -1 ? std::max<int>( n_glyphs, 1) : match->end - match->start;
+    auto cwidth = match->soak ? match->gradient->width : ( int32_t)end, cheight = match->gradient->height;
+    if( match->color_easing_fn)
+    {
+        if( match->gradient->gradient_type == GradientType::Radial)
+        {
+            auto& props = static_cast<RadialGradient *>( match->gradient.get())->props;
+            /*
+             * Computes the radial-gradient of color starting at `match->gradient->startx`
+             */
+            auto xy = Vec2D<float>( !match->soak ?
+                                    start : match->gradient->startx - glyph_width + pos.x, pos.y)
+                      / Vec2D<float>( cwidth, cheight);
+            xy -= Vec2D<float>( props.x, props.y); // Adjust all pixels so as to push the users origin at (0,0)
+            auto scale = cwidth / cheight;
+            if( cwidth > cheight)         // Converts the resulting elliptical shape into a circle.
+                xy.x *= scale;
+            else
+                xy.y *= scale;
+            auto d = xy.length();
+            auto r = props.z;               // Defines the spread distance.
+            auto c = smoothstep( r + d + 1., 3.f * r - 1., d); // Spread the circle around to form a smooth gradient.
+            auto startcolor = Vec3D( ( float)RED( match->scolor) / RGB_SCALE,
+                                     ( float)GREEN( match->scolor) / RGB_SCALE,
+                                     ( float)BLUE( match->scolor) / RGB_SCALE),
+                    endcolor    = Vec3D( ( float)RED( match->ecolor) / RGB_SCALE,
+                                         ( float)GREEN( match->ecolor) / RGB_SCALE,
+                                         ( float)BLUE( match->ecolor) / RGB_SCALE),
+                    finalcolor  = startcolor.lerp( endcolor, match->color_easing_fn( c));
+            color = RGBA( finalcolor.x * RGB_SCALE, finalcolor.y * RGB_SCALE,
+                          finalcolor.z * RGB_SCALE, ALPHA( color)); //TODO: Correct alpha value
+        }
+        else if( match->gradient->gradient_type == GradientType::Conic)
+        {
+            auto gradient = static_cast<ConicGradient *>( match->gradient.get());
+            auto origin = gradient->origin; // Object construction does not call assignment operator
+            Vec2D<float> center( cwidth / 2.f, cheight / 2.f);
+            if( gradient->origin.changed()) // Explicit access is needed is `origin` object is not copy assigned
+                center = Vec2D<float>( origin.x * ( cwidth - 1), origin.y * ( cheight - 1));
+            auto diff = ( Vec2D<float>( pos.x + pen.x,  pen.y + pos.y) - center);
+            float angle = diff.angle();
+            auto stops = gradient->color_variations;
+            if( !stops.empty())
+            {
+                auto prev_stop = *stops.begin();
+                auto stop_match = std::find_if( stops.begin(), stops.end(), [ angle, &prev_stop]( auto& stop)
+                {
+                    auto condition = angle >= prev_stop.second
+                                     && angle <= stop.second && prev_stop.second != stop.second;
+                    if( !condition)
+                        prev_stop = stop;
+                    return condition;
+                });
+                auto cur_stop = stop_match == stops.cend() ? *stops.cbegin() : *stop_match;
+                if( memcmp( prev_stop.first.rgb, cur_stop.first.rgb, 3) == 0)
+                    color = RGBA( cur_stop.first.rgb[ 0], cur_stop.first.rgb[ 1],
+                                  cur_stop.first.rgb[ 2], 255);
+                else
+                {
+                    auto fraction = ( angle - prev_stop.second) / ( cur_stop.second - prev_stop.second);
+                    if( match->color_easing_fn)
+                        fraction = match->color_easing_fn( fraction);
+                    color = colorLerp( RGBA( prev_stop.first.rgb[ 0], prev_stop.first.rgb[ 1],
+                                             prev_stop.first.rgb[ 2], 255),
+                                       RGBA( cur_stop.first.rgb[ 0], cur_stop.first.rgb[ 1],
+                                             cur_stop.first.rgb[ 2], 255), fraction);
+                }
+            }
+        }
+        else if( match->soak)
+            color = row_colors[ ipos];
+    }
+
+    return color;
 }
 
 float smoothstep( float left, float right, float x)
@@ -285,157 +598,6 @@ float smoothstep( float left, float right, float x)
 float clamp( float x, float lowerlimit, float upperlimit)
 {
   return x < lowerlimit ? lowerlimit : x > upperlimit ? upperlimit : x;
-}
-
-size_t countCharacters( std::string_view word)
-{
-    size_t value = 0;
-    auto *pw = word.data();
-    while( *pw)
-    {
-        size_t ccount = byteCount( *pw);
-        value += 1;
-        pw += ccount;
-    }
-
-    return value;
-}
-
-void render( std::string_view word, FT_Library library, FT_Face face, ApplicationHyperparameters &guide)
-{
-   auto& color_rule = guide.color_rule;
-   
-    std::unique_ptr<Glyph> head;
-    FT_Int width 	 = 0, // Total width of the buffer
-            mdescent = 0, // Holds the baseline for the character with most descent
-            mxheight = 0, // Maximum heigh of character 'x' according to various font sizes
-            hexcess  = 0; // Holds the ascent height based on the
-    // presence of descented characters like 'g'
-    FT_UInt prev 	= 0; // Holds previous character read
-
-    FT_Error error;
-
-    auto map = []( auto color_rule, auto bkroot)
-    {
-      auto rules = parseColorRule( color_rule, bkroot);
-      std::vector<std::shared_ptr<ColorRule>> new_rules( rules.size());
-      std::transform( rules.cbegin(), rules.cend(), new_rules.begin(),
-          []( auto rule) { return std::make_shared<ColorRule>( rule);});
-      return new_rules;
-    };
-
-    auto rules = color_rule == nullptr ? std::vector<std::shared_ptr<ColorRule>>{}
-                                       : map( color_rule, guide.bkroot.get());
-    auto dummy = ColorRule{};
-    size_t index = 0, nchars = countCharacters( word);
-    for( const char *pw = word.data(); *pw;)
-    {
-        FT_Int shift = byteCount( *pw);
-        FT_UInt character = collate( (uint8_t *)word.data(), pw - word.data(), shift);
-
-        std::shared_ptr<ColorRule> best( &dummy, []( auto dummy){});
-        index += 1;
-        for( auto& each: rules)
-        {
-            if( ( each->end == INT32_MIN && index == each->start) ||
-                ( index >= each->start && ( ( index <= each->end && each->end != INT32_MIN) || each->end == -1)))
-                best = each;
-        }
-
-        FT_Int font_size = best->font_size_b == UINT32_MAX ? best->font_size_b = guide.font_size
-        	                                               : best->font_size_b;
-        if( best->font_easing_fn)
-        {
-            size_t start = index - best->start,
-                    end = best->end == -1 ? MAX( nchars - 1, 1) : best->end - best->start;
-            auto fraction = best->font_easing_fn(( float)start / end);
-            if( best->font_size_m == UINT32_MAX && best->font_size_e != UINT32_MAX)
-                font_size = round( best->font_size_b * ( 1.0 - fraction) + fraction * best->font_size_e);
-            else if( best->font_size_m != UINT32_MAX && best->font_size_e != UINT32_MAX)
-                font_size = round( +2.0 * best->font_size_b * ( fraction - .5) * ( fraction - 1.)
-                                   -4.0 * best->font_size_m * fraction * ( fraction - 1.)
-                                   +2.0 * best->font_size_e * fraction * ( fraction - .5));
-        }
-
-        error = FT_Set_Pixel_Sizes( face, font_size, 0);
-
-        if( error != 0)
-        {
-            fprintf( stderr, "Setup error!");
-            exit( EXIT_FAILURE);
-        }
-
-        FT_Int xheight = 0;
-        error = FT_Load_Char( face, 'x', FT_LOAD_RENDER | FT_LOAD_MONOCHROME);
-        if( !error)
-            xheight = face->glyph->bitmap.rows;
-
-        error = FT_Load_Char( face, character, FT_LOAD_RENDER | FT_LOAD_MONOCHROME);
-        if ( error )
-            continue;
-
-        Glyph current = extract( face->glyph);
-        current.index = index;
-        current.match = best;
-        mxheight = MAX( mxheight, xheight);
-        hexcess  = MAX( hexcess,( current.height - xheight));
-        mdescent = MAX( mdescent, current.origin.y);
-        current.xstep += kerning( *pw, prev, face);
-        width += current.xstep;
-        if( best->soak && best->color_easing_fn)
-          best->gradient->width += current.xstep;
-		best->gradient->height = hexcess + mxheight + mdescent;
-        insert( head, std::move( current));
-
-        prev = character;
-        pw += shift;
-    }
-
-    // Final container height. Dependent on the presence of
-    // characters with stem like 'b' and characters with descent
-    // like 'g'
-
-    FT_Int height = hexcess + mxheight + mdescent;
-	uint32_t background_color = guide.background_color;
-	size_t out_size = width * height;
-    std::shared_ptr<uint32_t> out( ( uint32_t *)malloc( out_size * sizeof( uint32_t)), []( auto *p){ free( p);});
-    std::fill_n( out.get(), out_size, background_color);
-    
-    FT_Vector pen;
-    memset( &pen, 0, sizeof( pen));
-    auto frame = FrameBuffer<uint32_t>{ out, width, height};
-    for( std::shared_ptr<Glyph> current = std::move( head), prev_link; current != nullptr;)
-    {
-	  draw(*current, &pen, frame, mdescent, nchars - 1);
-        prev_link = current;
-        current = std::move( current->next);
-    }
-    
-    PropertyManager<FILE *> destination( stdout, []( FILE *maybe_destructible)
-    {
-      if( maybe_destructible != stdout)
-        fclose( maybe_destructible);
-      maybe_destructible = nullptr;
-    });
-    
-    if( guide.src_filename != nullptr)
-	{
-      auto *handle = fopen( guide.src_filename, "wb");
-      if( handle)
-		destination.get() = handle;
-	}
-    
-    auto buffer = FrameBuffer<uint32_t>{ std::move( out), width, height};
-    if( guide.composition_rule)
-        composite( guide, buffer);
-    else
-    {
-        if( guide.as_image && guide.src_filename)
-            ( guide.out_format == OutputFormat::JPEG ? writeJPG : writePNG)( guide.src_filename, buffer);
-        else
-            write( buffer, guide.raster_glyph, destination.get(), guide.kdroot.get());
-    }
-//    applyFilter( buffer, FilterMode::BOX_BLUR);
 }
 
 uint32_t hsvaToRgba( uint32_t hsv)
@@ -500,21 +662,6 @@ uint32_t rgbaToHsva( uint32_t rgb)
         hsv |= ( uint32_t)( ( uint8_t)( 171 + 43 * ( int32_t)( r - g) / ( int32_t)( rgbMax - rgbMin))) << 24u;
 
     return hsv | a;
-}
-
-uint32_t yCbCrToRgb( uint32_t color)
-{
-     uint8_t y  = RED( color),
-             cb = GREEN( color),
-             cr = BLUE( color);
-     int red   = ( y + 1.40200f * ( cr - 0x80)),
-         green = ( y - 0.34414f * ( cb - 0x80) - 0.71414 * ( cr - 0x80)),
-         blue  = ( y + 1.77299f * ( cb - 0x80));
-     red   = std::max( 0, std::min( 255, red));
-     green = std::max( 0, std::min( 255, green));
-     blue  = std::max( 0, std::min( 255, blue));
-
-     return RGB( red, green, blue);
 }
 
 uint32_t colorLerp( uint32_t lcolor, uint32_t rcolor, double progress)
@@ -607,7 +754,6 @@ void write( FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destin
     std::string sp( raster_bytes, ' ');
     auto width = frame.width,
     	 height = frame.height;
-    
     uint8_t fmt[] = { '\x1B', '[', '3', '8', ';', '5', ';', '0', '0', '0', 'm', '\0'};
     constexpr uint8_t offset = 7;
 
@@ -618,9 +764,9 @@ void write( FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destin
             double initial = INFINITY;
             uint32_t color =  frame.buffer.get()[ j * width + i];
             bool is_transparent = ( color & 0xFFu) == 0u;
-            auto nmatch = approximate( root, {( uint8_t)RED( color),
-                                              ( uint8_t)GREEN( color),
-                                              ( uint8_t)BLUE( color)}, initial);
+            auto nmatch = approximate( root, { ( uint8_t)RED( color),
+                                               ( uint8_t)GREEN( color),
+                                               ( uint8_t)BLUE( color)}, initial);
             fmt[     offset] = nmatch->index / 100 + '0';
             fmt[ offset + 1] = ( nmatch->index - ( fmt[ offset] - '0') * 100) / 10 + '0';
             fmt[ offset + 2] = nmatch->index % 10  + '0';
@@ -1064,8 +1210,8 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
    };
   
   models[ ENUM_CAST( c_rule.model)]( Default());
-  
-  ( guide.out_format == OutputFormat::JPEG ? writeJPG : writePNG)( guide.src_filename, image);
+
+    (guide.out_format == OutputFormat::JPEG ? writeJPG : writePNG)( guide.src_filename, image, guide.image_quality);
 }
 
 bool isJPEG( std::string_view filename)
@@ -1073,7 +1219,7 @@ bool isJPEG( std::string_view filename)
     auto *extension = strrchr( filename.data(), '.');
     if( extension && ++extension)
     {
-        std::regex rule( R"(^[jJ][pP][eE]?[gG]$)");
+        std::regex rule( R"(^jpe?g$)", std::regex_constants::icase);
         return std::regex_match( extension, extension + strlen( extension), rule);
     }
 
@@ -1175,8 +1321,6 @@ FrameBuffer<png_byte> readPNG( std::string_view filename)
 	 png_read_end( png_ptr, info_ptr);
 	 frame.buffer = std::move( image_data);
 	 frame.n_channel = png_get_channels( png_ptr, info_ptr);
-//	 if( has_background)
-//	   frame.metadata.get() = new Color( background_color);
    }
 
   png_destroy_read_struct( &png_ptr, &info_ptr, nullptr);
@@ -1184,7 +1328,7 @@ FrameBuffer<png_byte> readPNG( std::string_view filename)
    return std::move( frame);
 }
 
-void writePNG( std::string_view filename, FrameBuffer<uint32_t> &frame)
+void writePNG( std::string_view filename, FrameBuffer<uint32_t> &frame, int quality)
 {
     png::image<png::rgba_pixel> image( frame.width, frame.height);
     auto buffer = frame.buffer.get();
@@ -1250,7 +1394,7 @@ FrameBuffer<uint8_t> readJPEG( std::string_view filename)
     return frame;
 }
 
-void writeJPG( std::string_view filename, FrameBuffer<uint32_t> &frame)
+void writeJPG( std::string_view filename, FrameBuffer<uint32_t> &frame, int quality)
 {
    auto *handle = fopen( filename.data(), "wb");
    if( handle == nullptr)
@@ -1275,7 +1419,7 @@ void writeJPG( std::string_view filename, FrameBuffer<uint32_t> &frame)
    
    jpeg_set_defaults( &compressor);
    compressor.dct_method  = JDCT_FLOAT;
-   jpeg_set_quality( &compressor, 100, TRUE);
+   jpeg_set_quality( &compressor, quality, TRUE);
    compressor.raw_data_in = FALSE;
    compressor.smoothing_factor = 100;
 //   compressor.optimize_coding = TRUE;
@@ -1299,45 +1443,6 @@ void writeJPG( std::string_view filename, FrameBuffer<uint32_t> &frame)
 	}
 
 	jpeg_finish_compress( &compressor);
-}
-
-static size_t byteCount( uint8_t c )
-{
-    for( uint8_t n = 2u; n <= 6u; ++n )
-    {
-        bool val = ( ( uint8_t)(c >> n) ^ (0xFFU >> n));
-        if( !val )
-            return 8 - n;
-    }
-    return 1;
-}
-
-static uint32_t collate( uint8_t *str, size_t idx, uint8_t count )
-{
-    if( count == 1 )
-        return str[idx];
-
-    uint32_t copy = count;
-
-    uint8_t buf[ count], *pbuf = buf;
-    memcpy( buf, str + idx, count);
-
-    while( copy > 1 )
-        buf[ --copy] &= 0x3FU;
-
-    *pbuf &= 0xFFU >> (count + 1u);
-    count -= 1;
-    size_t i = ( count << 2u ) + ( count << 1u);
-
-    uint32_t value = 0;
-    while( (int8_t)count >= 0 )
-    {
-        value += *( pbuf++) << i;
-        --count;
-        i -= 6;
-    }
-
-    return value;
 }
 
 uint32_t getNumber( const char *&ctx, uint8_t base)
@@ -1743,11 +1848,11 @@ std::array<float, count> parseFloats( const char *&rule)
    return response;
 }
 
-std::vector<std::string> partition( std::string_view sgradient)
+std::vector<std::string> partition( std::string_view provision, std::string_view regexpr)
 {
    std::cmatch search_result;
-   std::regex  key( R"(\s*,\s*(?=[a-zA-Z]))"); // Find a `,` and assert that the comma is followed by an alphabet.
-  std::cregex_iterator begin( sgradient.cbegin(), sgradient.cend(), key),
+   std::regex  key( regexpr.data()); // Find a `,` and assert that the comma is followed by an alphabet.
+  std::cregex_iterator begin( provision.cbegin(), provision.cend(), key),
   					   end, prev;
   
   std::vector<std::string> results;
@@ -1777,7 +1882,7 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
 	   // TODO: Report error of missing parenthesis
 	 }
   
-	 auto stops = partition( gradient_part);
+	 auto stops = partition( gradient_part, R"(\s*,\s*(?=[a-zA-Z]))");
 	 size_t pos;
 	 if( !stops.empty() && ( pos = stops[ 0].find( "at")) != std::string::npos)
 	 {
@@ -2466,11 +2571,15 @@ void requestFontList()
     if( !FcInit())
         return;
 
+    auto locale_name = std::locale("").name();
+    if( size_t idx = locale_name.find( '_'); idx != std::string::npos)
+        locale_name = locale_name.substr( 0, idx).insert( 0, ":lang=");
     PropertyManager<FcConfig *> config( FcConfigGetCurrent(), FcConfigDestroy);
     FcConfigSetRescanInterval( config.get(), 0);
-    PropertyManager<FcPattern *> pattern( FcPatternCreate(), FcPatternDestroy);
-    PropertyManager<FcObjectSet *> font_object_set( FcObjectSetBuild( FC_FILE, nullptr), FcObjectSetDestroy);
-    PropertyManager<FcFontSet *> font_set( FcFontList(config.get(), pattern.get(), font_object_set.get()),
+    PropertyManager<FcPattern *> pattern( FcNameParse((FcChar8 *)locale_name.c_str()), FcPatternDestroy);
+    PropertyManager<FcObjectSet *> font_object_set( FcObjectSetBuild ( FC_OUTLINE, FC_STYLE, FC_FAMILY, nullptr),
+                                                    FcObjectSetDestroy);
+    PropertyManager<FcFontSet *> font_set( FcFontList( config.get(), pattern.get(), font_object_set.get()),
 	[]( auto font_set_local)
     {
       if( font_set_local)
@@ -2482,14 +2591,88 @@ void requestFontList()
         int i = 0;
         do
         {
-          PropertyManager<const char *> font( ( const char *)FcNameUnparse( font_set->fonts[ i]),
-              []( auto font) { free( ( FcChar8 *)font); });
-            auto *breakp = strchr( font.get(), '/');
-            printf( "\t%s\n", breakp);
+          PropertyManager<const char *> font_manager( ( const char *)FcNameUnparse( font_set->fonts[ i]),
+              []( auto *p) { free( ( FcChar8 *)p); });
+            std::string_view font( font_manager.get());
+            if( font.empty())
+                continue;
+            auto parts = partition( font, ":");
+            if( parts.size() != 3)
+                continue;
+            std::smatch sm;
+            std::regex key( ".*(?:(normal)|(bold)|(italic)|(regular)).*", std::regex_constants::icase);
+            if( std::regex_search( parts[ 1].cbegin(), parts[ 1].cend(), sm, key))
+            {
+                std::string style;
+                if( sm[ 1].matched || sm[ 4].matched) style.append( "Normal");
+                if( sm[ 2].matched) style.append( style.empty() ? "Bold" : ", Bold");
+                if( sm[ 3].matched) style.append( style.empty() ? "Italic" : ", Italic");
+                std::cout << "Family: " << parts[ 0] << ", style(s): " << style <<'\n';
+            }
         }
         while( ++i < font_set->nfont);
     }
     FcFini();
+}
+
+std::string getFontFile( std::string_view font)
+{
+    if( !FcInit())
+        return {};
+
+    const char *styles[] = { nullptr, "normal", "bold", "italic", "regular"},
+               *style    = styles[ 1];
+    std::cmatch cm;
+    std::regex key( ".*(?:(normal)|(bold)|(italic)|(regular)).*", std::regex_constants::icase);
+    if( std::regex_search( font.cbegin(), font.cend(), cm, key))
+    {
+        auto trim_pos = std::min( { cm.position( 1), cm.position( 2), cm.position( 3), cm.position( 4)});
+        style = styles[ cm[ 1].matched * 1];
+        style = styles[ cm[ 2].matched * 2];
+        style = styles[ cm[ 3].matched * 3];
+        style = styles[ cm[ 4].matched * 4];
+        if( style == nullptr)
+            style = styles[ 1];
+        while( trim_pos > 0 && font[ --trim_pos] == ' ')
+            ;
+        font.remove_suffix( font.size() - trim_pos - 1);
+    }
+
+    PropertyManager<FcConfig *> config( FcConfigGetCurrent(), FcConfigDestroy);
+    FcConfigSetRescanInterval( config.get(), 0);
+    auto parts = partition( font, R"(\s*,\s*)");
+    if( parts.empty())
+        parts.emplace_back( font);
+    for( auto& part : parts)
+    {
+        PropertyManager<FcPattern *> pattern( FcPatternCreate(), FcPatternDestroy);
+        FcPatternAddString( pattern.get(), FC_FAMILY, ( const FcChar8 *)part.data());
+        PropertyManager<FcObjectSet *> font_object_set( FcObjectSetBuild ( FC_FILE, nullptr),
+                                                        FcObjectSetDestroy);
+        PropertyManager<FcFontSet *> font_set( FcFontList( config.get(), pattern.get(), font_object_set.get()),
+                                               []( auto font_set_local)
+                                               {
+                                                   if( font_set_local)
+                                                       FcFontSetDestroy( font_set_local);
+                                               });
+        if( font_set && font_set->nfont > 0)
+        {
+            int i = 0;
+            do
+            {
+                PropertyManager<const char *> font_manager( ( const char *)FcNameUnparse( font_set->fonts[ 0]),
+                                                            []( auto *p) { free( ( FcChar8 *)p); });
+                if( font_manager.get() == nullptr)
+                    continue;
+                auto *filename = strchr( font_manager.get(), '/');
+                if( strcasestr( filename, style) == 0)
+                    return filename;
+            }
+            while( ++i < font_set->nfont);
+        }
+    }
+
+    return {};
 }
 
 int main( int ac, char *av[])
@@ -2952,14 +3135,17 @@ int main( int ac, char *av[])
   FT_Error          error;
 
     /*
-     * Schema: av[ 0] [--list-fonts|--font-file=FILE [--font-size=NUM] [--color-rule=RULE] [--drawing-character=CHAR] [--output FILE]] text
+     * Schema: av[ 0] [--list-fonts|--font-file=FILE [--font-size=NUM] [--color-rule=RULE]
+     * [--drawing-character=CHAR] [--output FILE]] text
      */
   
-  const char *fontfile = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-               *font_size = "10",
-               *background_color{ nullptr},
-               *word,
-               *program = *av;
+  const char *font_profile{ "../common-fonts/Times New Roman/times new roman.ttf"},
+             *justification{ nullptr},
+             *image_quality{ nullptr},
+             *font_size{ "10"},
+             *background_color{ nullptr},
+             *word,
+             *program{ *av};
 
     while( --ac > 0 && ( *++av)[ 0] == '-')
     {
@@ -2983,8 +3169,8 @@ int main( int ac, char *av[])
             business_rules.out_format = isJPEG( business_rules.src_filename) ?
                                         OutputFormat::JPEG : business_rules.out_format;
         }
-        else if( strstr( directive, "font-file") != nullptr)
-            selection = &fontfile;
+        else if( strstr( directive, "font-profile") != nullptr)
+            selection = &font_profile;
         else if( strstr( directive, "color-rule") != nullptr)
             selection = &business_rules.color_rule;
 		else if( strstr( directive, "composition-rule") != nullptr)
@@ -2997,6 +3183,10 @@ int main( int ac, char *av[])
             selection = &business_rules.raster_glyph;
         else if( strstr( directive, "composition-image") != nullptr)
           	selection = &business_rules.dest_filename;
+        else if( strstr( directive, "justify") != nullptr)
+            selection = &justification;
+        else if( strstr( directive, "quality-index") != nullptr)
+            selection = &image_quality;
 
         if( selection != nullptr && ( index = strchr( directive, '=')) != nullptr)
             *selection = index + 1;
@@ -3006,6 +3196,19 @@ int main( int ac, char *av[])
             break;
         }
     }
+
+    if( justification != nullptr)
+    {
+        if( std::cmatch cm; std::regex_match( justification, justification + strlen( justification), cm,
+            std::regex( R"(^(left)|(right)|(center)$)")), std::regex_constants::icase)
+        {
+            business_rules.j_mode = cm[ 1].matched ? Justification::Left
+                                                   : cm[ 2].matched ? Justification::Right : Justification::Center;
+        }
+    }
+
+    if( image_quality != nullptr)
+        business_rules.image_quality = strtol( image_quality, nullptr, 10);
     
     if( background_color)
       business_rules.background_color = extractColor( background_color, business_rules.bkroot.get());
@@ -3019,7 +3222,7 @@ int main( int ac, char *av[])
                    *name = start != nullptr ? start + 1 : program,
                    *arguments[] = {
                         "--list-fonts",
-                        "--font-file=FILE",
+                        "--font-profile=FILE|Family [Normal|Regular|Bold|Italic]",
                         "--color-rule=RULE",
                         "--font-size=NUM",
                         "--drawing-character=CHAR",
@@ -3038,14 +3241,15 @@ int main( int ac, char *av[])
         }
 
         fprintf( stderr, "Usage: %s [%s|%s [%s] [%s] [%s] [%s] [%s]] text\n", name,
-                *arguments, *( arguments + 1), *( arguments + 2), *( arguments + 3), *( arguments + 4), *( arguments + 5), *( arguments + 6));
+                *arguments, *( arguments + 1), *( arguments + 2), *( arguments + 3),
+                *( arguments + 4), *( arguments + 5), *( arguments + 6));
 
         fprintf( stderr, "Displays block form of character sequence\n\n");
         fprintf( stderr, "Arguments:\n");
         FPRINTF("\t%s%sList location of all installed fonts.\n", *arguments);
         FPRINTF("\t%s%sSet the font file to be used for display.\n", *(arguments + 1));
         FPRINTF("\t%s%sPaint image based on the RULE given by: ^(\\[(\\d+)(\\.\\.(\\d+)?)?\\]"
-                       "\\{(#|0?x)\\d{6,8}\\})(;\\[(\\d+)(\\.\\.(\\d+)?)?\\]\\{(\\#|0?x)\\d{6,8}\\})*;?$.\n", *(arguments + 2));
+                "\\{(#|0?x)\\d{6,8}\\})(;\\[(\\d+)(\\.\\.(\\d+)?)?\\]\\{(\\#|0?x)\\d{6,8}\\})*;?$.\n", *(arguments + 2));
         FPRINTFD( "\t%s%sExample: [1]{#244839};[2]{#456676};[3..4]{#559930};[5..]{#567898};\n", *( arguments + 2), false);
         FPRINTFD( "\t%s%s  Word: `Hello` ==>  H -> #244839\n", *( arguments + 2), false);
         FPRINTFD( "\t%s%s  Word: `Hello` ==>  e -> #456676\n", *( arguments + 2), false);
@@ -3067,15 +3271,40 @@ int main( int ac, char *av[])
       exit( EXIT_FAILURE);
     }
 
-    error = FT_New_Face( library.get(), fontfile, 0, &face.get());
+    if( strrchr( font_profile, '.') == nullptr)
+    {
+        auto file = getFontFile( font_profile);
+        if( file.empty())
+        {
+            fprintf( stderr, "Unable to parse font");
+            exit( EXIT_FAILURE);
+        }
+        error = FT_New_Face( library.get(), file.c_str(), 0, &face.get());
+    }
+    else
+        error = FT_New_Face(library.get(), font_profile, 0, &face.get());
 
     if( error != 0)
     {
         fprintf( stderr, "Font file is invalid!");
         exit( EXIT_FAILURE);
     }
-    
-  	render( word, library.get(), face.get(), business_rules);
+
+    auto ext_pos = strrchr( word, '.');
+    if( ext_pos != nullptr && strcasecmp( ext_pos + 1, "txt") == 0)
+    {
+        std::wifstream handle( word, std::ios::in | std::ios::ate);
+        if( handle.good())
+        {
+            std::wstring content( handle.tellg(), L'\0');
+            handle.seekg( 0, std::ios::beg);
+            handle.read( &content[ 0], content.size());
+            render( library.get(), face.get(), content, business_rules);
+            handle.close();
+        }
+    }
+    else
+        render( library.get(), face.get(), toWString( word), business_rules);
   
   return 0;
 }
