@@ -108,14 +108,15 @@ struct MonoGlyph
     std::shared_ptr<ColorRule> match;
     BBox bbox;
     FT_Vector advance;
-    size_t level{}, index{};
+    Vec2D<int> pos{};
+    size_t level{};
     bool is_valid{ false};
 };
 typedef std::vector<MonoGlyph> MonoGlyphs;
 
 struct RowDetail
 {
-    int baseline{ INT_MAX}, h_disp{},
+    int baseline{ INT_MAX}, v_disp{},
             max_descent{}, width{};
     FT_Vector pen{ 0, 0};
 };
@@ -139,8 +140,8 @@ enum class Justification
 };
 
 std::pair<std::vector<std::wstring>, int> expand( std::wstring_view provision, Justification mode);
-uint32_t easeColor( const MonoGlyph& raster, uint32_t color, uint32_t *row_colors, int ipos,
-                    int n_glyphs, Vec2D<int> pos, FT_Vector pen);
+uint32_t
+easeColor(const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<int> size, Vec2D<int> pos, FT_Vector pen);
 
 enum class GradientType { Linear, Radial, Conic};
 
@@ -263,7 +264,8 @@ class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
 
 struct ColorRule
 {
-    int32_t start = 0, end = -1;
+    Vec2D<int32_t> start{ 1, 1}, end{ -1, -1};
+//    int32_t start = 0, end = -1;
     PropertyProxy<uint32_t> scolor{ 0x000000FFu}, ecolor{ 0x000000FFu};
     uint32_t font_size_b = UINT32_MAX, font_size_m = UINT32_MAX,
              font_size_e = UINT32_MAX;
@@ -436,7 +438,7 @@ static size_t byteCount( uint8_t c );
 
 static uint32_t collate( uint8_t *str, size_t idx, uint8_t count);
 
-std::wstring toWString( const std::string& str);
+std::wstring toWString( std::string str);
 
 template <size_t count>
 std::array<float, count> parseFloats( const char *&rule);
@@ -455,7 +457,7 @@ uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor);
 
 void fillEasingMode( std::function<float(float)> &function, const char *&rule, BKNode *bkroot, char eoc);
 
-uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, double progress);
+uint32_t interpolateColor(uint32_t scolor, uint32_t ecolor, float progress);
 
 uint32_t decodeColorName(const char *&ctx, BKNode *bkroot);
 
@@ -463,7 +465,7 @@ uint32_t rgbaToHsva( uint32_t rgb);
 
 uint32_t hsvaToRgba( uint32_t hsv);
 
-uint32_t colorLerp( uint32_t lcolor, uint32_t rcolor, double progress);
+uint32_t colorLerp(uint32_t lcolor, uint32_t rcolor, float progress);
 
 XyZColor xyzFromRgb( uint32_t color);
 
@@ -531,7 +533,9 @@ struct ApplicationHyperparameters
   Justification           j_mode{ Justification::Left};
   PropertyProxy<uint32_t> background_color{};
   bool 					  as_image{ false};
-  int                     image_quality{ 100};
+  bool                    ease_col{ false};
+  int                     image_quality{ 100},
+                          dpi{ 120};
   OutputFormat            out_format{ OutputFormat::PNG};
   CompositionRule		  composition;
 };
