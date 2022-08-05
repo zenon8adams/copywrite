@@ -129,8 +129,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
     };
     auto rules = color_rule == nullptr ? std::vector<std::shared_ptr<ColorRule>>{}
                                        : map( color_rule, guide.bkroot.get());
-    auto dummy = ColorRule{};
-
+    auto general = std::make_shared<ColorRule>();
     auto [ text_rows, max_length]= expand( text, guide.j_mode);
     MonoGlyphs rasters( text_rows.size() * max_length);
     RowDetails row_details( text_rows.size());
@@ -147,8 +146,8 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
         FT_Vector max_row_box{ 0, 0}, adjustment;
         auto &baseline = row_details[ j].baseline,
              &max_descent = row_details[ j].max_descent;
-        std::shared_ptr<ColorRule> best( &dummy, []( auto dummy){});
         auto line_height = 0;
+        auto best = general;
         for( size_t i = 0, t_len = text_rows[ i].length(); i < t_len; ++i)
         {
             auto c_char = text_rows[ j][ i];
@@ -435,26 +434,37 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
                 int i = s.x - rect.xmin + w,
                     j = s.y - rect.ymin,
                     color_index = guide.ease_col ? height - 1 - j : i;
-
-                if( match->gradient->gradient_type == GradientType::Linear)
-                    dest = match->soak ? row_colors.get()[ color_index] : color;
+                if( match->color_easing_fn)
+                {
+                    if( match->gradient->gradient_type == GradientType::Linear)
+                        dest = match->soak ? row_colors.get()[ color_index] : color;
+                    else
+                        dest = easeColor( raster, row_detail, Vec2D<int>( n_glyphs / n_levels, n_levels),
+                                          { i, height - 1 - j}, pen);
+                }
                 else
-                    dest = easeColor( raster, row_detail, Vec2D<int>( n_glyphs / n_levels, n_levels),
-                            { i, height - 1 - j}, pen);
+                    dest = color;
                 if( i >= guide.thickness && i < ( width - guide.thickness))
                 {
                     int m_index = ( height - 1 - j - guide.thickness) * main.width + ( i - guide.thickness);
                     if( m_index >= 0 && m_index < main.width * main.height)
-                        if( main.buffer.get()[ m_index] > 0)
+                    {
+                        if ( main.buffer.get()[ m_index] > 0)
                         {
-                            if( match->gradient->gradient_type == GradientType::Linear)
-                                dest = match->soak ? row_colors.get()[ color_index] : color;
+                            if ( match->color_easing_fn)
+                            {
+                                if ( match->gradient->gradient_type == GradientType::Linear)
+                                    dest = match->soak ? row_colors.get()[color_index] : color;
+                                else
+                                    dest = easeColor( raster, row_detail,
+                                                      Vec2D<int>(n_glyphs / n_levels, n_levels),
+                                                      {(int) (i - guide.thickness),
+                                                      (int) (height - 1 - j - guide.thickness)}, pen);
+                            }
                             else
-                                dest = easeColor( raster, row_detail,
-                                                  Vec2D<int>( n_glyphs / n_levels, n_levels),
-                                                  {(int) (i - guide.thickness),
-                                                  (int) ( height - 1 - j - guide.thickness)}, pen);
+                                dest = color;
                         }
+                    }
                 }
             }
         }
@@ -553,77 +563,70 @@ uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail,
                              UNSET( match->end.y) ? std::max<int>( size.y - 1, 1) : match->end.y - match->start.y);
     auto cwidth  = match->soak ? match->gradient->width : ( int32_t)end.x,
          cheight = match->soak ? match->gradient->height : ( int32_t)end.y;
-    if( match->color_easing_fn)
+    if( match->gradient->gradient_type == GradientType::Radial)
     {
-        if( match->gradient->gradient_type == GradientType::Radial)
+        auto& props = static_cast<RadialGradient *>( match->gradient.get())->props;
+        /*
+         * Computes the radial-gradient of color starting at `match->gradient->startx`
+         */
+        auto xy = Vec2D<float>( match->soak ? pos.x + pen.x : start.x,
+                                match->soak ? pos.y + row_detail.v_disp - glyph_height : start.y)
+                  / Vec2D<float>( cwidth, cheight);
+        xy -= Vec2D<float>( props.x, props.y); // Adjust all pixels so as to push the users origin at (0,0)
+        auto scale = ( float)cwidth / ( float)cheight;
+        if( cwidth > cheight)         // Converts the resulting elliptical shape into a circle.
+            xy.x *= scale;
+        else
+            xy.y *= scale;
+        auto d = xy.length();
+        /*
+         *  Adjust the spread to smoothen out edges
+         */
+        auto left  = props.z - .3 < 0 ? props.z : props.z - .3;
+        auto right = props.z - .3 < 0 ? props.z : props.z + .3;
+        auto c = smoothstep( left, right, d); // Spread the circle around to form a smooth gradient.
+        auto startcolor = Vec3D( ( float)RED( match->scolor) / RGB_SCALE,
+                                 ( float)GREEN( match->scolor) / RGB_SCALE,
+                                 ( float)BLUE( match->scolor) / RGB_SCALE),
+                endcolor    = Vec3D( ( float)RED( match->ecolor) / RGB_SCALE,
+                                     ( float)GREEN( match->ecolor) / RGB_SCALE,
+                                     ( float)BLUE( match->ecolor) / RGB_SCALE),
+                finalcolor  = startcolor.lerp( endcolor, match->color_easing_fn( c));
+        color = RGBA( finalcolor.x * RGB_SCALE, finalcolor.y * RGB_SCALE,
+                      finalcolor.z * RGB_SCALE, ALPHA( color)); //TODO: Correct alpha value
+    }
+    else if( match->gradient->gradient_type == GradientType::Conic)
+    {
+        auto gradient = static_cast<ConicGradient *>( match->gradient.get());
+        auto origin = gradient->origin; // Object construction does not call assignment operator
+        Vec2D<float> center( cwidth / 2.f, cheight / 2.f);
+        if( gradient->origin.changed()) // Explicit access is needed is `origin` object is not copy assigned
+            center = Vec2D<float>( origin.x * ( cwidth - 1), origin.y * ( cheight - 1));
+        auto diff = ( Vec2D<float>( match->soak ? pos.x + pen.x : start.x,
+                                    match->soak ? pos.y + pen.y + row_detail.v_disp - glyph_height : start.y)
+                      - center);
+        float angle = diff.angle();
+        auto stops = gradient->color_variations;
+        if( !stops.empty())
         {
-            auto& props = static_cast<RadialGradient *>( match->gradient.get())->props;
-            /*
-             * Computes the radial-gradient of color starting at `match->gradient->startx`
-             */
-            auto xy = Vec2D<float>( match->soak ? pos.x + pen.x : start.x,
-                                    match->soak ? pos.y + row_detail.v_disp - glyph_height : start.y)
-                               / Vec2D<float>( cwidth, cheight);
-            xy -= Vec2D<float>( props.x, props.y); // Adjust all pixels so as to push the users origin at (0,0)
-            auto scale = ( float)cwidth / ( float)cheight;
-            if( cwidth > cheight)         // Converts the resulting elliptical shape into a circle.
-                xy.x *= scale;
-            else
-                xy.y *= scale;
-            auto d = xy.length();
-            /*
-             *  Adjust the spread to smoothen out edges
-             */
-            auto left  = props.z - .3 < 0 ? props.z : props.z - .3;
-            auto right = props.z - .3 < 0 ? props.z : props.z + .3;
-            auto c = smoothstep( left, right, d); // Spread the circle around to form a smooth gradient.
-            auto startcolor = Vec3D( ( float)RED( match->scolor) / RGB_SCALE,
-                                     ( float)GREEN( match->scolor) / RGB_SCALE,
-                                     ( float)BLUE( match->scolor) / RGB_SCALE),
-                    endcolor    = Vec3D( ( float)RED( match->ecolor) / RGB_SCALE,
-                                         ( float)GREEN( match->ecolor) / RGB_SCALE,
-                                         ( float)BLUE( match->ecolor) / RGB_SCALE),
-                    finalcolor  = startcolor.lerp( endcolor, match->color_easing_fn( c));
-            color = RGBA( finalcolor.x * RGB_SCALE, finalcolor.y * RGB_SCALE,
-                          finalcolor.z * RGB_SCALE, ALPHA( color)); //TODO: Correct alpha value
-        }
-        else if( match->gradient->gradient_type == GradientType::Conic)
-        {
-            auto gradient = static_cast<ConicGradient *>( match->gradient.get());
-            auto origin = gradient->origin; // Object construction does not call assignment operator
-            Vec2D<float> center( cwidth / 2.f, cheight / 2.f);
-            if( gradient->origin.changed()) // Explicit access is needed is `origin` object is not copy assigned
-                center = Vec2D<float>( origin.x * ( cwidth - 1), origin.y * ( cheight - 1));
-            auto diff = ( Vec2D<float>( match->soak ? pos.x + pen.x : start.x,
-                                        match->soak ? pos.y + pen.y + row_detail.v_disp - glyph_height : start.y)
-                                        - center);
-            float angle = diff.angle();
-            auto stops = gradient->color_variations;
-            if( !stops.empty())
+            auto prev_stop = *stops.begin();
+            auto stop_match = std::find_if( stops.begin(), stops.end(), [ angle, &prev_stop]( auto& stop)
             {
-                auto prev_stop = *stops.begin();
-                auto stop_match = std::find_if( stops.begin(), stops.end(), [ angle, &prev_stop]( auto& stop)
-                {
-                    auto condition = angle >= prev_stop.second
-                                     && angle <= stop.second && prev_stop.second != stop.second;
-                    if( !condition)
-                        prev_stop = stop;
-                    return condition;
-                });
-                auto cur_stop = stop_match == stops.cend() ? *stops.cbegin() : *stop_match;
-                if( memcmp( prev_stop.first.rgb, cur_stop.first.rgb, 3) == 0)
-                    color = RGBA( cur_stop.first.rgb[ 0], cur_stop.first.rgb[ 1],
-                                  cur_stop.first.rgb[ 2], 255);
-                else
-                {
-                    auto fraction = ( angle - prev_stop.second) / ( cur_stop.second - prev_stop.second);
-                    if( match->color_easing_fn)
-                        fraction = match->color_easing_fn( fraction);
-                    color = colorLerp( RGBA( prev_stop.first.rgb[ 0], prev_stop.first.rgb[ 1],
-                                             prev_stop.first.rgb[ 2], 255),
-                                       RGBA( cur_stop.first.rgb[ 0], cur_stop.first.rgb[ 1],
-                                             cur_stop.first.rgb[ 2], 255), fraction);
-                }
+                auto condition = angle >= prev_stop.second
+                                 && angle <= stop.second && prev_stop.second != stop.second;
+                if( !condition)
+                    prev_stop = stop;
+                return condition;
+            });
+            auto cur_stop = stop_match == stops.cend() ? *stops.cbegin() : *stop_match;
+            if( ( prev_stop.first & ~0xFFu) == ( cur_stop.first & ~0xFFu))
+                color = cur_stop.first;
+            else
+            {
+                auto fraction = ( angle - prev_stop.second) / ( cur_stop.second - prev_stop.second);
+                if( match->color_easing_fn)
+                    fraction = match->color_easing_fn( fraction);
+                color = colorLerp( prev_stop.first, cur_stop.first, fraction);
             }
         }
     }
@@ -1968,10 +1971,7 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
                                                      ? decodeColorName( underlying_data, bkroot)
                                                      : extractColor( underlying_data, bkroot);
                              actual_gradient.color_variations.emplace_back(
-                                     Color{ ( uint8_t)RED( color_components),
-                                           ( uint8_t)GREEN( color_components),
-                                           ( uint8_t)BLUE( color_components)},
-                                           initial_run ? SIZE_MAX : std::abs( (int)end_angle));
+                                     color_components, initial_run ? SIZE_MAX : std::abs( (int)end_angle));
                              if( end_angle != SIZE_MAX && (int)end_angle < 0)
                                  fprintf( stderr, "Negative position not allowed! |%d| will be used\n", (int)end_angle);
                          }
@@ -2003,13 +2003,9 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
    
    auto& cstops = actual_gradient.color_variations;
    if( color_rule.scolor.changed())
-     cstops.insert( cstops.begin(), { { ( uint8_t)RED( color_rule.scolor),
-										( uint8_t)GREEN( color_rule.scolor),
-										( uint8_t)BLUE( color_rule.scolor)
-									  }, SIZE_MAX});
+     cstops.insert( cstops.begin(), { color_rule.scolor, SIZE_MAX});
    if( color_rule.ecolor.changed())
-     cstops.emplace_back( Color{ ( uint8_t)RED( color_rule.ecolor), ( uint8_t)GREEN( color_rule.ecolor),
-						         ( uint8_t)BLUE( color_rule.ecolor)}, SIZE_MAX);
+     cstops.emplace_back( color_rule.ecolor, SIZE_MAX);
    size_t cstops_length = cstops.size();
    if( cstops_length > 0)
    {
@@ -2178,7 +2174,7 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                 {
                     if( ltrim( rule) && *rule == '(')
                     {
-                        ccolor.scolor = mixColor( ++rule, nullptr);
+                        ccolor.scolor = mixColor( ++rule, bkroot);
                     }
                     else if( *rule != '-')
                     {
@@ -2205,7 +2201,7 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
 							}
 							
 							if( ltrim( ++rule) && *rule == '(')
-							  ccolor.ecolor = mixColor( ++rule, nullptr);
+							  ccolor.ecolor = mixColor( ++rule, bkroot);
 							else if( *rule != '\0')
 							  ccolor.ecolor = extractColor( rule, bkroot);
 							else

@@ -140,8 +140,8 @@ enum class Justification
 };
 
 std::pair<std::vector<std::wstring>, int> expand( std::wstring_view provision, Justification mode);
-uint32_t
-easeColor(const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<int> size, Vec2D<int> pos, FT_Vector pen);
+uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail,
+                    Vec2D<int> size, Vec2D<int> pos, FT_Vector pen);
 
 enum class GradientType { Linear, Radial, Conic};
 
@@ -289,7 +289,7 @@ struct XyZColor
 struct ConicGradient : BaseGradient
 {
   PropertyProxy<Vec2D<float>> origin{};
-  std::vector<std::pair<Color, size_t>> color_variations;
+  std::vector<std::pair<uint32_t, size_t>> color_variations;
   ConicGradient() : BaseGradient{ .gradient_type = GradientType::Conic}
   {
   }
@@ -419,7 +419,8 @@ struct FrameBuffer
   std::shared_ptr<Size_Class>buffer;
   int32_t width, height, n_channel;
   PropertyManager<void *> metadata;
-  FrameBuffer( std::shared_ptr<Size_Class> buffer = nullptr, int32_t width = {}, int32_t height = {}, int32_t bit_depth = {})
+  FrameBuffer( std::shared_ptr<Size_Class> buffer = nullptr,
+               int32_t width = {}, int32_t height = {}, int32_t bit_depth = {})
   : buffer( buffer), width( width), height( height), n_channel( bit_depth)
     , metadata( ( void *)nullptr, []( auto *p){ if( p) free( p);})
   {
