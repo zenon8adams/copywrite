@@ -2,7 +2,7 @@
 /*                                                                         */
 /*  copywrite.cpp                                                          */
 /*                                                                         */
-/*    Driver program to create stamp					                   */
+/*    A terminal based text customization utility					       */
 /*                                                                         */
 /*  Copyright 2022 by Adesina Meekness                                     */
 /*                                                                         */
@@ -57,13 +57,13 @@
 #define ZERO( fl)                      ( std::abs( fl) <= EPSILON)
 #define EQUAL( al, bl)                 ZERO( ( al) - ( bl))
 #define UNSET( x)                      (( x) == -1)
-#define RED( color)                    ( ( color) >> 24u)
-#define GREEN( color)                  ( ( ( color) >> 16u) & 0xFFu)
-#define BLUE( color)                   ( ( ( color) >> 8u) & 0xFFu)
-#define ALPHA( color)                  ( ( color) & 0xFFu)
-#define RGBA( red, green, blue, alpha) ( ( ( uint32_t)( red)) << 24u |\
-                                         ( ( uint32_t)( green)) << 16u |\
-                                         ( ( uint32_t)( blue)) << 8u | alpha)
+#define RED( color)                    (( color) >> 24u)
+#define GREEN( color)                  ((( color) >> 16u) & 0xFFu)
+#define BLUE( color)                   ((( color) >> 8u) & 0xFFu)
+#define ALPHA( color)                  (( color) & 0xFFu)
+#define RGBA( red, green, blue, alpha) (( ( uint32_t)( red)) << 24u |\
+                                       (( uint32_t)( green)) << 16u |\
+                                       (( uint32_t)( blue)) << 8u | alpha)
 #define RGB( red, green, blue)         RGBA( red, green, blue, 0u)
 #define SCALE_RGB( color, scale)       RGB( RED( color) * ( scale), GREEN( color) * ( scale), BLUE( color) * ( scale))
 #define XYZ_SCALE                      775
@@ -198,7 +198,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
                     fraction = best->font_easing_fn(( float)start.x / (float)end.x);
                 if( UNSET( best->font_size_m) && !UNSET( best->font_size_e))
                     font_size = round( best->font_size_b * ( 1.0 - fraction) + fraction * best->font_size_e);
-                else if( UNSET( best->font_size_m) && UNSET( best->font_size_e))
+                else if( !UNSET( best->font_size_m) && !UNSET( best->font_size_e))
                     font_size = round( +2.0 * best->font_size_b * ( fraction - .5) * ( fraction - 1.)
                                        -4.0 * best->font_size_m * fraction * ( fraction - 1.)
                                        +2.0 * best->font_size_e * fraction * ( fraction - .5));
@@ -223,7 +223,6 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
             renderSpans( library, &reinterpret_cast<FT_OutlineGlyph>( o_glyph)->outline,
                          &raster.spans.second);
             raster.match = best;
-            raster.is_valid = true;
             raster.level = j;
             raster.pos = Vec2D<int>( i + 1, j + 1);
             /*
@@ -235,6 +234,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
             int height{}, bearing_y{};
             if( !std::isspace( c_char))
             {
+                raster.is_graph = true;
                 std::unique_ptr<uint8_t[]> buffer( new uint8_t[ slot->bitmap.width * slot->bitmap.rows]);
                 memmove( buffer.get(), slot->bitmap.buffer, slot->bitmap.width * slot->bitmap.rows);
                 auto &[ main, outline] = raster.spans;
@@ -300,7 +300,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
                  * If the character is space, use the default advance as the width of the glyph
                  * since the bitmap.width and bitmap.rows will be zero.
                  */
-                int default_width  = slot->metrics.horiAdvance >> 6;
+                int default_width  = ( slot->metrics.horiAdvance >> 6) + guide.thickness * 2;
                 max_row_box.x += default_width;
                 raster.advance.x = default_width;
             }
@@ -330,7 +330,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
                 if( !std::isspace( c_char))
                     continue;
                 auto& raster = rasters[ j * max_length + i];
-                raster.advance.y = face->glyph->metrics.vertAdvance >> 6;
+                raster.advance.y = default_height;
             }
             max_ascent = (int)default_height;
         }
@@ -370,7 +370,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
     else
     {
         if( guide.as_image && guide.src_filename)
-            (guide.out_format == OutputFormat::JPEG ? writeJPG : writePNG)
+            ( guide.out_format == OutputFormat::JPEG ? writeJPG : writePNG)
             ( guide.src_filename, buffer, guide.image_quality);
         else
             write( buffer, guide.raster_glyph,
@@ -383,19 +383,30 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
 {
     auto n_glyphs = rasters.size();
     auto n_levels = row_details.size();
-    int acc_dim;
+    int acc_dim{};
     for( auto& raster : rasters)
      {
         auto& [ main, outline] = raster.spans;
-        auto& rect = raster.bbox;
-        int width = raster.bbox.width(),
-            height = raster.bbox.height();
-        if( !raster.is_valid)
-            continue;
-
+        auto& rect  = raster.bbox;
+        int width   = raster.is_graph ? raster.bbox.width()  : raster.advance.x,
+            height  = raster.is_graph ? raster.bbox.height() : raster.advance.y;
+        auto length = guide.ease_col ? height : width;
+        auto& match = raster.match;
         auto& row_detail = row_details[ raster.level];
         auto& pen = row_detail.pen;
-        auto& match = raster.match;
+        if( !raster.is_graph)
+        {
+            /*
+             * If this glyph is not a graph, make sure to keep the linear gradient
+             * consistent.
+             */
+            if( match->soak && match->gradient->gradient_type == GradientType::Linear)
+                acc_dim = guide.ease_col ? row_detail.v_disp - height : ( raster.pos.x != 1) * ( acc_dim + length);
+            pen.x += width;
+            pen.y += height;
+            continue;
+        }
+
         uint32_t inner_color   = LOW_BYTE( match->scolor),
                  outline_color = HIGH_BYTE( match->scolor);
         std::unique_ptr<uint64_t[]> row_colors;
@@ -415,18 +426,20 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
          }
          else
          {
-             auto length = guide.ease_col ? height : width,
-                  extent = guide.ease_col ? match->gradient->height : match->gradient->width;
+             auto extent = guide.ease_col ? match->gradient->height : match->gradient->width;
              acc_dim = guide.ease_col ? row_detail.v_disp - height : ( raster.pos.x != 1) * ( acc_dim + length);
              row_colors.reset( new uint64_t[ length]);
              for( FT_Int i = 0; i < length; ++i)
              {
-                 auto fraction = match->color_easing_fn(
-                         ( float) ( i + acc_dim) / extent);
+                 auto fraction = match->color_easing_fn(( float)( i + acc_dim) / extent);
                  inner_color   = interpolateColor( LOW_BYTE( match->scolor), LOW_BYTE( match->ecolor), fraction);
                  outline_color = interpolateColor( HIGH_BYTE( match->scolor), HIGH_BYTE( match->ecolor), fraction);
                  row_colors.get()[ i] = CONCAT_BYTES( outline_color, inner_color);
              }
+             /*
+              * Add text advance gap to character to arrive at appropriate color easing value.
+              */
+             acc_dim += guide.ease_col ? raster.advance.y - height : raster.advance.x - width;
          }
         }
          /* v_offset: Aligns every row glyph to their respective baselines
@@ -453,8 +466,8 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
                             dest = match->soak ? HIGH_BYTE( row_colors.get()[ color_index]) : outline_color;
                         else
                             dest = easeColor( raster, row_detail, Vec2D<int>( n_glyphs / n_levels, n_levels),
-                                             { i, height - 1 - j}, pen,
-                                             { HIGH_BYTE( match->scolor), HIGH_BYTE( match->ecolor)}, true);
+                                              { i, height - 1 - j}, pen,
+                                              { HIGH_BYTE( match->scolor), HIGH_BYTE( match->ecolor)}, true);
                     }
                     else
                         dest = outline_color;
@@ -471,11 +484,9 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
                                 if ( match->gradient->gradient_type == GradientType::Linear)
                                     dest = match->soak ? LOW_BYTE( row_colors.get()[ color_index]) : inner_color;
                                 else
-                                    dest = easeColor(raster, row_detail,
-                                                     Vec2D<int>( n_glyphs / n_levels, n_levels),
-                                                     {(int) (i - guide.thickness),
-                                                      (int) (height - 1 - j - guide.thickness)}, pen,
-                                                     { LOW_BYTE( match->scolor), LOW_BYTE( match->ecolor)}, false);
+                                    dest = easeColor( raster, row_detail, Vec2D<int>( n_glyphs / n_levels, n_levels),
+                                                      { i, height - 1 - j}, pen,
+                                                      { LOW_BYTE( match->scolor), LOW_BYTE( match->ecolor)}, false);
                             }
                             else
                                 dest = inner_color;
@@ -1750,11 +1761,14 @@ uint64_t extractColor( const char *&rule, BKNode *bkroot)
                 color_name = SCALE_RGB( color_name, cscale) | ALPHA( color_name);
             }
 
+            if( ltrim( rule) && *rule == '/')
+                return CONCAT_BYTES( extractColor( ++rule, bkroot), color_name);
+
             return color_name;
         }
 
         if( ltrim( rule) && *rule == '/')
-            return extractColor( ++rule, bkroot) << 32u | color_name | 0xFFu;
+            return CONCAT_BYTES( extractColor( ++rule, bkroot), color_name | 0xFFu);
 
         return ( color_name | 0xFFu) << shift;
     }
@@ -1789,7 +1803,7 @@ uint64_t extractColor( const char *&rule, BKNode *bkroot)
         }
 
         if( ltrim( rule) && *rule == '/')
-            return extractColor( ++rule, bkroot) << 32u | ccolor;
+            return CONCAT_BYTES( extractColor( ++rule, bkroot), ccolor);
     }
     else
     {
@@ -3291,6 +3305,40 @@ int main( int ac, char *av[])
             requestFontList();
 
             exit( EXIT_SUCCESS);
+        }
+        else if( strcmp( directive, "list-easings") == 0)
+        {
+            printf( "Available easing functions:\n");
+            printf( "%s\n", FN_IEASEINSINE);
+            printf( "%s\n", FN_IEASEOUTSINE);
+            printf( "%s\n", FN_IEASEINOUTSINE);
+            printf( "%s\n", FN_IEASEINQUAD);
+            printf( "%s\n", FN_IEASEOUTQUAD);
+            printf( "%s\n", FN_IEASEINOUTQUAD);
+            printf( "%s\n", FN_IEASEINCUBIC);
+            printf( "%s\n", FN_IEASEOUTCUBIC);
+            printf( "%s\n", FN_IEASEINOUTCUBIC);
+            printf( "%s\n", FN_IEASEINQUART);
+            printf( "%s\n", FN_IEASEOUTQUART);
+            printf( "%s\n", FN_IEASEINOUTQUART);
+            printf( "%s\n", FN_IEASEINQUINT);
+            printf( "%s\n", FN_IEASEOUTQUINT);
+            printf( "%s\n", FN_IEASEINOUTQUINT);
+            printf( "%s\n", FN_IEASEINEXPO);
+            printf( "%s\n", FN_IEASEOUTEXPO);
+            printf( "%s\n", FN_IEASEINOUTEXPO);
+            printf( "%s\n", FN_IEASEINCIRC);
+            printf( "%s\n", FN_IEASEOUTCIRC);
+            printf( "%s\n", FN_IEASEINOUTCIRC);
+            printf( "%s\n", FN_IEASEINBACK);
+            printf( "%s\n", FN_IEASEOUTBACK);
+            printf( "%s\n", FN_IEASEINOUTBACK);
+            printf( "%s\n", FN_IEASEINELASTIC);
+            printf( "%s\n", FN_IEASEOUTELASTIC);
+            printf( "%s\n", FN_IEASEINOUTELASTIC);
+            printf( "%s\n", FN_IEASEINBOUNCE);
+            printf( "%s\n", FN_IEASEOUTBOUNCE);
+            printf( "%s\n", FN_IEASEINOUTBOUNCE);
         }
         else if( strcmp( directive, "as-image") == 0)
             business_rules.as_image = true;

@@ -111,7 +111,7 @@ struct MonoGlyph
     FT_Vector advance;
     Vec2D<int> pos{};
     size_t level{};
-    bool is_valid{ false};
+    bool is_graph{ false};
 };
 typedef std::vector<MonoGlyph> MonoGlyphs;
 
@@ -141,8 +141,8 @@ enum class Justification
 };
 
 std::pair<std::vector<std::wstring>, int> expand( std::wstring_view provision, Justification mode);
-uint32_t easeColor(const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<int> size, Vec2D<int> pos, FT_Vector pen,
-                   Vec2D<uint32_t> color_shift, bool is_outline);
+uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<int> size,
+                    Vec2D<int> pos, FT_Vector pen, Vec2D<uint32_t> color_shift, bool is_outline);
 
 enum class GradientType { Linear, Radial, Conic};
 
