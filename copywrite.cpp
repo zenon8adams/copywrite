@@ -32,6 +32,7 @@
 #include <functional>
 #include <regex>
 #include <variant>
+#include <cstdint>
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
 #include "geo_vector.hpp"
@@ -95,8 +96,11 @@
  * 11 10 09 08 07 06 05 04 03 02 01 00
  */
 #define COMPOSITION_TABLE		       0x0064046AU
-#define COMPOSITON_SIZE( idx)          ( ( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U)) & 1U)
-#define COMPOSITION_SIDE( idx)		   ( ( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U + 1U)) & 1U)
+#define COMPOSITON_SIZE( idx)          (( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U)) & 1U)
+#define COMPOSITION_SIDE( idx)		   (( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U + 1U)) & 1U)
+#define LOW_BYTE( value)               (( uint32_t)(( value) & 0xFFFFFFFFu))
+#define HIGH_BYTE( value)              (( uint32_t)(( value) >> 32u))
+#define CONCAT_BYTES( high, low)       (( uint64_t)( high) << 32u | low)
 
 void spansCallback( int y, int count, const FT_Span *spans, void *user)
 {
@@ -147,10 +151,10 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
         auto &baseline = row_details[ j].baseline,
              &max_descent = row_details[ j].max_descent;
         auto line_height = 0;
-        auto best = general;
         for( size_t i = 0, t_len = text_rows[ i].length(); i < t_len; ++i)
         {
             auto c_char = text_rows[ j][ i];
+            auto best = general;
             /*
              * Select color to apply on glyph
              */
@@ -158,21 +162,20 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
             {
                 if( UNSET( each->end.x) && UNSET( each->end.y))
                 {
-                    best = each;
-                    continue;
-                }
-
-                if( UNSET( each->end.x) || UNSET( each->end.y))
-                {
-                    if( UNSET( each->end.x) && j + 1 >= each->start.y && j <= each->end.y)
-                        best = each;
-                    else if( i + 1 >= each->start.x && i + 1 <= each->end.x)
+                    if( i + 1 >= each->start.x && j + 1 >= each->start.y)
                         best = each;
                     continue;
                 }
 
-                if( i + 1 >= each->start.x && i + 1 <= each->end.x && j + 1 >= each->start.y && j + 1 <= each->end.y)
-                    best = each;
+               if(( UNSET( each->end.x) && j + 1 >= each->start.y && j + 1 <= each->end.y) ||
+                  ( UNSET( each->end.y) && i + 1 >= each->start.x && i + 1 <= each->end.x))
+               {
+                   best = each;
+                   continue;
+               }
+
+               if( i + 1 >= each->start.x && i + 1 <= each->end.x && j + 1 >= each->start.y && j + 1 <= each->end.y)
+                   best = each;
             }
 
             /*
@@ -180,8 +183,6 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
              */
             FT_Int font_size = UNSET( best->font_size_b) ? best->font_size_b = guide.font_size
                                                                : best->font_size_b;
-            line_height = font_size * guide.line_height;
-            bool col = true;
             if( best->font_easing_fn)
             {
                 auto start = Vec2D<int>( i + 1 - best->start.x, j + 1 - best->start.y),
@@ -202,6 +203,8 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
                                        -4.0 * best->font_size_m * fraction * ( fraction - 1.)
                                        +2.0 * best->font_size_e * fraction * ( fraction - .5));
             }
+
+            line_height = font_size * guide.line_height;
 
             if ( FT_Set_Char_Size( face, font_size << 6, 0, guide.dpi, 0) != 0)
                 continue;
@@ -302,6 +305,14 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
                 raster.advance.x = default_width;
             }
 
+            if( best->color_easing_fn && best != general)
+            {
+                best->gradient->width = std::max( max_row_box.x, box_size.x);
+                best->gradient->height = box_size.y + ( max_row_box.y == 0 ? ( face->glyph->metrics.vertAdvance >> 6)
+                                         + guide.thickness * 2
+                                         : max_ascent + max_descent) + line_height * ( j + 1 != t_row);
+            }
+
             FT_Done_Glyph( o_glyph);
         }
         /*
@@ -331,9 +342,6 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
         auto row_line_height = line_height * ( j + 1 != t_row); // The spacing between glyphs
         box_size.y += max_row_box.y + row_line_height;
         row_details[ j].v_disp += box_size.y - row_line_height; // Offset at which each row should start
-        if( best->soak && best->color_easing_fn)
-            best->gradient->width = box_size.x;
-        best->gradient->height = box_size.y;
     }
 
     std::shared_ptr<uint32_t> pixel(( uint32_t *)malloc( sizeof( uint32_t) * box_size.x * box_size.y),
@@ -388,8 +396,9 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
         auto& row_detail = row_details[ raster.level];
         auto& pen = row_detail.pen;
         auto& match = raster.match;
-        uint32_t color = match->scolor;
-        std::unique_ptr<uint32_t[]> row_colors;
+        uint32_t inner_color   = LOW_BYTE( match->scolor),
+                 outline_color = HIGH_BYTE( match->scolor);
+        std::unique_ptr<uint64_t[]> row_colors;
         if( match->color_easing_fn && match->gradient->gradient_type == GradientType::Linear)
         {
          if( !match->soak)
@@ -401,21 +410,22 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
                                      ? std::max<int>( n_levels - 1, 1) : match->end.y - match->start.y);
              auto fraction = match->color_easing_fn( guide.ease_col ? ( float)start.y
                              / end.y : ( float)start.x / end.x);
-             color = interpolateColor( match->scolor, match->ecolor, fraction);
-             printf( "start: (%d, %d), end: (%d, %d)\n", start.x, start.y, end.x, end.y);
+             inner_color   = interpolateColor( LOW_BYTE( match->scolor), LOW_BYTE( match->ecolor), fraction);
+             outline_color = interpolateColor( HIGH_BYTE( match->scolor), HIGH_BYTE( match->ecolor), fraction);
          }
          else
          {
              auto length = guide.ease_col ? height : width,
                   extent = guide.ease_col ? match->gradient->height : match->gradient->width;
              acc_dim = guide.ease_col ? row_detail.v_disp - height : ( raster.pos.x != 1) * ( acc_dim + length);
-             row_colors.reset( new uint32_t[ length]);
+             row_colors.reset( new uint64_t[ length]);
              for( FT_Int i = 0; i < length; ++i)
              {
                  auto fraction = match->color_easing_fn(
                          ( float) ( i + acc_dim) / extent);
-                 color = interpolateColor( match->scolor, match->ecolor, fraction);
-                 row_colors.get()[ i] = color;
+                 inner_color   = interpolateColor( LOW_BYTE( match->scolor), LOW_BYTE( match->ecolor), fraction);
+                 outline_color = interpolateColor( HIGH_BYTE( match->scolor), HIGH_BYTE( match->ecolor), fraction);
+                 row_colors.get()[ i] = CONCAT_BYTES( outline_color, inner_color);
              }
          }
         }
@@ -434,17 +444,22 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
                 int i = s.x - rect.xmin + w,
                     j = s.y - rect.ymin,
                     color_index = guide.ease_col ? height - 1 - j : i;
-                if( match->color_easing_fn)
+                if( guide.thickness > 0)
                 {
-                    if( match->gradient->gradient_type == GradientType::Linear)
-                        dest = match->soak ? row_colors.get()[ color_index] : color;
+                    if( match->color_easing_fn)
+                    {
+                        // Paint outline
+                        if( match->gradient->gradient_type == GradientType::Linear)
+                            dest = match->soak ? HIGH_BYTE( row_colors.get()[ color_index]) : outline_color;
+                        else
+                            dest = easeColor( raster, row_detail, Vec2D<int>( n_glyphs / n_levels, n_levels),
+                                             { i, height - 1 - j}, pen,
+                                             { HIGH_BYTE( match->scolor), HIGH_BYTE( match->ecolor)}, true);
+                    }
                     else
-                        dest = easeColor( raster, row_detail, Vec2D<int>( n_glyphs / n_levels, n_levels),
-                                          { i, height - 1 - j}, pen);
+                        dest = outline_color;
                 }
-                else
-                    dest = color;
-                if( i >= guide.thickness && i < ( width - guide.thickness))
+                if( i >= guide.thickness && i < ( width - guide.thickness)) // Paint fill
                 {
                     int m_index = ( height - 1 - j - guide.thickness) * main.width + ( i - guide.thickness);
                     if( m_index >= 0 && m_index < main.width * main.height)
@@ -454,15 +469,16 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
                             if ( match->color_easing_fn)
                             {
                                 if ( match->gradient->gradient_type == GradientType::Linear)
-                                    dest = match->soak ? row_colors.get()[color_index] : color;
+                                    dest = match->soak ? LOW_BYTE( row_colors.get()[ color_index]) : inner_color;
                                 else
-                                    dest = easeColor( raster, row_detail,
-                                                      Vec2D<int>(n_glyphs / n_levels, n_levels),
-                                                      {(int) (i - guide.thickness),
-                                                      (int) (height - 1 - j - guide.thickness)}, pen);
+                                    dest = easeColor(raster, row_detail,
+                                                     Vec2D<int>( n_glyphs / n_levels, n_levels),
+                                                     {(int) (i - guide.thickness),
+                                                      (int) (height - 1 - j - guide.thickness)}, pen,
+                                                     { LOW_BYTE( match->scolor), LOW_BYTE( match->ecolor)}, false);
                             }
                             else
-                                dest = color;
+                                dest = inner_color;
                         }
                     }
                 }
@@ -474,7 +490,7 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
     }
 }
 
-static size_t byteCount( uint8_t c )
+static size_t byteCount( uint8_t c)
 {
     for( uint8_t n = 2u; n <= 6u; ++n )
     {
@@ -551,13 +567,13 @@ std::pair<std::vector<std::wstring>, int> expand( std::wstring_view provision, J
     return { parts, max_length};
 }
 
-uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail,
-                    Vec2D<int> size, Vec2D<int> pos, FT_Vector pen)
+uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<int> size,
+                    Vec2D<int> pos, FT_Vector pen, Vec2D<uint32_t> color_shift, bool is_outline)
 {
     auto& match = raster.match;
     auto glyph_width = raster.bbox.width();
     auto glyph_height = raster.bbox.height();
-    auto color = match->scolor;
+    auto color = is_outline ? HIGH_BYTE( match->scolor) : LOW_BYTE( match->scolor);
     auto start = Vec2D<int>( raster.pos.x - match->start.x, raster.pos.y - match->start.y),
          end   = Vec2D<int>( UNSET( match->end.x) ? std::max<int>( size.x - 1, 1) : match->end.x - match->start.x,
                              UNSET( match->end.y) ? std::max<int>( size.y - 1, 1) : match->end.y - match->start.y);
@@ -582,16 +598,17 @@ uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail,
         /*
          *  Adjust the spread to smoothen out edges
          */
-        auto left  = props.z - .3 < 0 ? props.z : props.z - .3;
-        auto right = props.z - .3 < 0 ? props.z : props.z + .3;
+        auto spread = props.z * std::sqrt( .25 * scale * scale + .25);
+        auto left   = spread - .2 < 0 ? spread : spread - .2;
+        auto right  = spread - .2 < 0 ? spread : spread + .2;
         auto c = smoothstep( left, right, d); // Spread the circle around to form a smooth gradient.
-        auto startcolor = Vec3D( ( float)RED( match->scolor) / RGB_SCALE,
-                                 ( float)GREEN( match->scolor) / RGB_SCALE,
-                                 ( float)BLUE( match->scolor) / RGB_SCALE),
-                endcolor    = Vec3D( ( float)RED( match->ecolor) / RGB_SCALE,
-                                     ( float)GREEN( match->ecolor) / RGB_SCALE,
-                                     ( float)BLUE( match->ecolor) / RGB_SCALE),
-                finalcolor  = startcolor.lerp( endcolor, match->color_easing_fn( c));
+        auto startcolor = Vec3D( ( float)RED( color_shift.x) / RGB_SCALE,
+                                 ( float)GREEN( color_shift.x) / RGB_SCALE,
+                                 ( float)BLUE( color_shift.x) / RGB_SCALE),
+             endcolor   = Vec3D( ( float)RED( color_shift.y) / RGB_SCALE,
+                                     ( float)GREEN( color_shift.y) / RGB_SCALE,
+                                     ( float)BLUE( color_shift.y) / RGB_SCALE),
+             finalcolor  = startcolor.lerp( endcolor, match->color_easing_fn( c));
         color = RGBA( finalcolor.x * RGB_SCALE, finalcolor.y * RGB_SCALE,
                       finalcolor.z * RGB_SCALE, ALPHA( color)); //TODO: Correct alpha value
     }
@@ -619,14 +636,15 @@ uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail,
                 return condition;
             });
             auto cur_stop = stop_match == stops.cend() ? *stops.cbegin() : *stop_match;
-            if( ( prev_stop.first & ~0xFFu) == ( cur_stop.first & ~0xFFu))
-                color = cur_stop.first;
+            if( ( prev_stop.first & ~0xFFuLL) == ( cur_stop.first & ~0xFFuLL))
+                color = is_outline ? HIGH_BYTE( cur_stop.first) : LOW_BYTE( cur_stop.first);
             else
             {
                 auto fraction = ( angle - prev_stop.second) / ( cur_stop.second - prev_stop.second);
                 if( match->color_easing_fn)
                     fraction = match->color_easing_fn( fraction);
-                color = colorLerp( prev_stop.first, cur_stop.first, fraction);
+                return is_outline ? colorLerp( HIGH_BYTE( prev_stop.first), HIGH_BYTE( cur_stop.first), fraction)
+                                  : colorLerp( LOW_BYTE( prev_stop.first), LOW_BYTE( cur_stop.first), fraction);
             }
         }
     }
@@ -684,29 +702,29 @@ uint32_t hsvaToRgba( uint32_t hsv)
 
 uint32_t rgbaToHsva( uint32_t rgb)
 {
-    uint32_t rgbMin, rgbMax, hsv{},
+    uint32_t rgb_min, rgb_max, hsv{},
              r = RED( rgb),
              g = GREEN( rgb),
              b = BLUE( rgb),
              a = ALPHA( rgb);
 
-    rgbMax = MAX( r, MAX( g, b));
-    rgbMin = MIN( r, MIN( g, b));
+    rgb_max = MAX( r, MAX( g, b));
+    rgb_min = MIN( r, MIN( g, b));
 
-    hsv = rgbMax << 8u;
+    hsv = rgb_max << 8u;
     if ( hsv == 0)
         return hsv | a;
 
-    hsv |= ( 0xFFu * ( ( int32_t)( rgbMax - rgbMin)) / ( hsv >> 8u)) << 16u;
-    if ( ( hsv >> 16u & 0xFFu) == 0)
+    hsv |= ( 0xFFu * (( int32_t)( rgb_max - rgb_min)) / ( hsv >> 8u)) << 16u;
+    if (( hsv >> 16u & 0xFFu) == 0)
         return hsv | a;
 
-    if ( rgbMax == r)
-        hsv |= ( uint32_t)( ( uint8_t)( 0 + 43 * ( int32_t)( g - b) / ( int32_t)( rgbMax - rgbMin))) << 24u;
-    else if ( rgbMax == g)
-        hsv |= ( uint32_t)( ( uint8_t)(  85 + 43 * ( int32_t)( b - r) / ( int32_t)( rgbMax - rgbMin))) << 24u;
+    if( rgb_max == r)
+        hsv |= ( uint32_t)(( uint8_t)( 0 + 43 * ( int32_t)( g - b) / ( int32_t)( rgb_max - rgb_min))) << 24u;
+    else if( rgb_max == g)
+        hsv |= ( uint32_t)(( uint8_t)(  85 + 43 * ( int32_t)( b - r) / ( int32_t)( rgb_max - rgb_min))) << 24u;
     else
-        hsv |= ( uint32_t)( ( uint8_t)( 171 + 43 * ( int32_t)( r - g) / ( int32_t)( rgbMax - rgbMin))) << 24u;
+        hsv |= ( uint32_t)(( uint8_t)( 171 + 43 * ( int32_t)( r - g) / ( int32_t)( rgb_max - rgb_min))) << 24u;
 
     return hsv | a;
 }
@@ -1107,7 +1125,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 					uint32_t c_color = b_color;
 					if( index > 0 && index < s_frame_dimension)
 					 	c_color = s_frame.buffer.get()[ index];
-					auto final_color = mixRgb( b_color, c_color);
+					auto final_color = sumMix(b_color, c_color);
 					auto alpha = ( uint16_t)( c_color & 0xFFu) + ( b_color & 0xFFu);
 					final_color = final_color | std::min( 0xFFu, alpha);
 					image.buffer.get()[ j * final_width + i] = final_color;
@@ -1218,7 +1236,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 	    auto *d_buffer = d_frame.buffer.get();
 		for( int y = origin.y, j = 0; j < final_height; ++y, ++j)
 		{
-		  for (int x = origin.x, i = 0; i < final_width; ++x, ++i)
+		  for( int x = origin.x, i = 0; i < final_width; ++x, ++i)
 		  {
 			auto point = Vec2D<float>( x, y);
 			auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
@@ -1492,9 +1510,9 @@ void writeJPG( std::string_view filename, FrameBuffer<uint32_t> &frame, int qual
 	jpeg_finish_compress( &compressor);
 }
 
-uint32_t getNumber( const char *&ctx, uint8_t base)
+uint64_t getNumber( const char *&ctx, uint8_t base)
 {
-    uint32_t weight = 0;
+    uint64_t weight = 0;
     while( isxdigit( *ctx))
     {
         uint8_t character = tolower( *( ctx++));
@@ -1691,18 +1709,25 @@ bool ltrim( const char*& p)
     return true;
 }
 
-uint32_t extractColor( const char *&rule, BKNode *bkroot)
+uint64_t extractColor( const char *&rule, BKNode *bkroot)
 {
+    uint64_t ccolor{};
     ltrim( rule);
-    int8_t cratio = -1;
+    int8_t cratio = -1, shift = 0;
     const char *prev = rule;
+    if( *rule == '/')
+    {
+        shift = 32u;
+        ++rule;
+    }
+
 	if( compareOr<std::equal_to<char>>( *rule, '#', 'x'))
 	  ++rule;
 	else if( strncasecmp( rule, "0x", 2) == 0)
 	  rule += 2;
 	else if( isalpha( *rule))
     {
-        auto color_name = decodeColorName( rule, bkroot);
+        uint64_t color_name = decodeColorName( rule, bkroot);
         if( *rule == ':')
         {
             if( *++rule == ':')
@@ -1728,7 +1753,10 @@ uint32_t extractColor( const char *&rule, BKNode *bkroot)
             return color_name;
         }
 
-        return color_name | 0xFFu;
+        if( ltrim( rule) && *rule == '/')
+            return extractColor( ++rule, bkroot) << 32u | color_name | 0xFFu;
+
+        return ( color_name | 0xFFu) << shift;
     }
     else
     {
@@ -1737,11 +1765,10 @@ uint32_t extractColor( const char *&rule, BKNode *bkroot)
 //        exit( EXIT_FAILURE);
     }
 
-    uint32_t ccolor{};
     prev = rule;
     if( isxdigit( *rule))
     {
-        ccolor = getNumber(rule, 16);
+        ccolor = getNumber( rule, 16);
         uint8_t ccount = rule - prev;
         if( ccolor == 0 || ( ccount != 6 && ccount != 8))
         {
@@ -1760,6 +1787,9 @@ uint32_t extractColor( const char *&rule, BKNode *bkroot)
             double cscale = cratio / 100.0;
             ccolor = SCALE_RGB( ccolor, cscale);
         }
+
+        if( ltrim( rule) && *rule == '/')
+            return extractColor( ++rule, bkroot) << 32u | ccolor;
     }
     else
     {
@@ -1767,7 +1797,7 @@ uint32_t extractColor( const char *&rule, BKNode *bkroot)
         exit( EXIT_FAILURE);
     }
 
-    return ccolor;
+    return ccolor << shift;
 }
 
 XyZColor xyzFromRgb( uint32_t color)
@@ -1796,7 +1826,7 @@ uint32_t xyzToRgb( XyZColor color)
     return RGB( r, g, b);
 }
 
-uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor)
+uint32_t sumMix(uint32_t lcolor, uint32_t rcolor)
 {
     /*
      * References:
@@ -1820,9 +1850,25 @@ uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor)
     return xyzToRgb( { xmix, ymix, zmix});
 }
 
+uint32_t subMix( uint32_t lcolor, uint32_t rcolor)
+{
+    auto lred   = RGB_SCALE - RED( lcolor),
+         lgreen = RGB_SCALE - GREEN( lcolor),
+         lblue  = RGB_SCALE - BLUE( lcolor),
+         rred   = RGB_SCALE - RED( rcolor),
+         rgreen = RGB_SCALE - GREEN( rcolor),
+         rblue  = RGB_SCALE - BLUE( rcolor);
+
+    auto r = RGB_SCALE - std::sqrt( .5 * ( lred * lred + rred * rred)),
+         g = RGB_SCALE - std::sqrt( .5 * ( lgreen * lgreen + rgreen * rgreen)),
+         b = RGB_SCALE - std::sqrt( .5 * ( lblue * lblue + rblue * rblue));
+
+    return RGB( r, g, b);
+}
+
 uint32_t mixColor( const char *&ctx, BKNode *bkroot)
 {
-    uint32_t lcolor{}, rcolor{};
+    uint64_t lcolor{}, rcolor{};
     uint8_t alpha = 0xFFu;
     char op = '\0';
     while( ltrim( ctx) && *ctx != ')')
@@ -1843,21 +1889,14 @@ uint32_t mixColor( const char *&ctx, BKNode *bkroot)
         alpha = getNumber( ++ctx, 16);
 
     if( op == '+') // Additive color mixing
-        return mixRgb( lcolor, rcolor) | alpha;
+    {
+        return CONCAT_BYTES( sumMix( HIGH_BYTE( lcolor), HIGH_BYTE( rcolor)) | alpha,
+                             sumMix( LOW_BYTE( lcolor), LOW_BYTE( rcolor)) | alpha);
+    }
     else if( op == '-')
     {
-        auto lred   = RGB_SCALE - RED( lcolor),
-             lgreen = RGB_SCALE - GREEN( lcolor),
-             lblue  = RGB_SCALE - BLUE( lcolor),
-             rred   = RGB_SCALE - RED( rcolor),
-             rgreen = RGB_SCALE - GREEN( rcolor),
-             rblue  = RGB_SCALE - BLUE( rcolor);
-
-        auto r = RGB_SCALE - std::sqrt( .5 * ( lred * lred + rred * rred)),
-             g = RGB_SCALE - std::sqrt( .5 * ( lgreen * lgreen + rgreen * rgreen)),
-             b = RGB_SCALE - std::sqrt( .5 * ( lblue * lblue + rblue * rblue));
-
-        return RGBA( r, g, b, alpha);
+        return CONCAT_BYTES( subMix( HIGH_BYTE( lcolor), HIGH_BYTE( rcolor)) | alpha,
+                             subMix( LOW_BYTE( lcolor), LOW_BYTE( rcolor)) | alpha);
     }
 
     return lcolor;
@@ -1916,7 +1955,7 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
 {
    ConicGradient actual_gradient;
    std::string gradient_part;
-   size_t start_angle = 0;
+   int start_angle = 0;
    if( *rule == '(')
    {
      ++rule;
@@ -1942,7 +1981,7 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
 	 std::smatch match_results;
      if( !stops.empty())
      {
-         std::regex matcher( R"(^(.+?)(?:\s+([-+]?\d+)deg)?(?:\s+([-+]?\d+)deg)?\s*$)", std::regex_constants::icase);
+         std::regex matcher( R"(^(.+?)(?:\s+(\d+)deg)?(?:\s+(\d+)deg)?\s*$)", std::regex_constants::icase);
          for( size_t i = 0, n_stops = stops.size(); i < n_stops; ++i)
          {
              size_t end_angle{ SIZE_MAX};
@@ -1967,9 +2006,7 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
                          else
                          {
                              const char *underlying_data = maybe_color.data();
-                             auto color_components = isalpha( *underlying_data)
-                                                     ? decodeColorName( underlying_data, bkroot)
-                                                     : extractColor( underlying_data, bkroot);
+                             auto color_components = extractColor( underlying_data, bkroot);
                              actual_gradient.color_variations.emplace_back(
                                      color_components, initial_run ? SIZE_MAX : std::abs( (int)end_angle));
                              if( end_angle != SIZE_MAX && (int)end_angle < 0)
@@ -1987,7 +2024,7 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
      }
      else
      {
-         std::regex matcher( R"(\s*from\s+([+-]?\d+)deg\s*)", std::regex_constants::icase);
+         std::regex matcher( R"(\s*from\s+(\d+)deg\s*)", std::regex_constants::icase);
          if( std::regex_match( gradient_part.cbegin(), gradient_part.cend(), match_results, matcher))
              start_angle = std::stoi( match_results[ 1].str());
      }
@@ -2033,9 +2070,9 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
 	   	cstops[ i].second = std::max( cstops[ i - 1].second, cstops[ i].second);
 	 }
    }
-   
-   if( size_t i = 0; true)
+
    {
+     size_t i = 0;
 	 for( ; i < cstops_length; ++i)
 	 {
 	   // Offset all entries to start at start_angle
@@ -2049,7 +2086,7 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
 	 if( i < cstops_length)
 	   cstops.erase( cstops.begin() + i + 1, cstops.end());
    }
-   
+
    return actual_gradient;
 }
 
@@ -2104,13 +2141,21 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                         else if( *rule == '(')
                         {
                             ++rule;
-                            ccolor.end.x = getNumber( rule);
+                            // Allow user to specify -1 in case they want to
+                            // set `end.y` alone.
+                            if( *rule == '-' && rule[ 1] == '1')
+                                rule += 2;
+                            else
+                                ccolor.end.x = getNumber( rule);
                             if( ltrim( rule) && *rule++ != ',')
                             {
                                 fprintf( stderr, "Expected a `,` near -> %s", rule);
                                 exit( EXIT_FAILURE);
                             }
-                            ccolor.end.y = getNumber( rule);
+                            if( *rule == '-' && rule[ 1] == '1') // A sentinel of -1 is also allowed
+                                rule += 2;
+                            else
+                                ccolor.end.y = getNumber( rule);
                             if( ltrim( rule) && *rule++ != ')')
                             {
                                 fprintf( stderr, "Expected a `)` near -> %s", rule);
@@ -2181,7 +2226,6 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                         prev = rule;
                         ccolor.scolor = extractColor( rule,  bkroot);
                     }
-
                     if( ltrim( rule) && *rule == '-')
                     {
                       	auto gradient_is_next = compareOr<std::equal_to<char>>( std::tolower( rule[ 1]), 'c', 'r');
@@ -2305,7 +2349,7 @@ void insert( std::shared_ptr<BKNode> &node, std::string_view word, BKNode::Group
 }
 
 void findWordMatch( BKNode *node, std::string_view word, BKNode::Group word_group,
-				   int threshold, std::vector<std::string> &matches)
+				    int threshold, std::vector<std::string> &matches)
 {
     if( node == nullptr)
         return;
@@ -3227,6 +3271,8 @@ int main( int ac, char *av[])
   const char *font_profile{ "../common-fonts/Times New Roman/times new roman.ttf"},
              *justification{ nullptr},
              *image_quality{ nullptr},
+             *resolution{ nullptr},
+             *stroke_width{ nullptr},
              *line_height{ nullptr},
              *font_size{ "10"},
              *background_color{ nullptr},
@@ -3271,6 +3317,10 @@ int main( int ac, char *av[])
           	selection = &business_rules.dest_filename;
         else if( strstr( directive, "line-height") != nullptr)
             selection = &line_height;
+        else if( strstr( directive, "stroke-width") != nullptr)
+            selection = &stroke_width;
+        else if( strstr( directive, "dpi") != nullptr)
+            selection = &resolution;
         else if( strstr( directive, "justify") != nullptr)
             selection = &justification;
         else if( strstr( directive, "quality-index") != nullptr)
@@ -3287,6 +3337,10 @@ int main( int ac, char *av[])
 
     if( line_height != nullptr)
         business_rules.line_height = strtof( line_height, nullptr);
+    if( stroke_width != nullptr)
+        business_rules.thickness = strtoul( stroke_width, nullptr, 10);
+    if( resolution != nullptr)
+        business_rules.dpi = strtoul( resolution, nullptr, 10);
     if( justification != nullptr)
     {
         if( std::cmatch cm; std::regex_match( justification, justification + strlen( justification), cm,

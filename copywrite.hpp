@@ -38,6 +38,7 @@
 #include <variant>
 #include <image.hpp>
 #include <jpeglib.h>
+#include <cstdint>
 
 #ifndef PNG_STDIO_SUPPORTED
 typedef FILE                * png_FILE_p;
@@ -140,8 +141,8 @@ enum class Justification
 };
 
 std::pair<std::vector<std::wstring>, int> expand( std::wstring_view provision, Justification mode);
-uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail,
-                    Vec2D<int> size, Vec2D<int> pos, FT_Vector pen);
+uint32_t easeColor(const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<int> size, Vec2D<int> pos, FT_Vector pen,
+                   Vec2D<uint32_t> color_shift, bool is_outline);
 
 enum class GradientType { Linear, Radial, Conic};
 
@@ -187,13 +188,7 @@ class PropertyProxy
   {
 	return value;
   }
-  
-  template <typename Callable>
-  void setCallAfterModified( Callable&& callable)
-  {
-	state_change_callable = callable;
-  }
-  
+
   T operator=( T another)
   {
     if( state_change_callable)
@@ -206,7 +201,7 @@ class PropertyProxy
   {
     return changed_since_initialization;
   }
- private:
+private:
   T value;
   std::function<void( T)> state_change_callable;
   bool changed_since_initialization{ false};
@@ -227,13 +222,7 @@ class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
   {
   }
 
-  template <typename Callable>
-  void setCallAfterModified( Callable&& callable)
-  {
-	state_change_callable = callable;
-  }
-  
-  operator T()
+    operator T()
   {
 	return *this;
   }
@@ -265,8 +254,7 @@ class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
 struct ColorRule
 {
     Vec2D<int32_t> start{ 1, 1}, end{ -1, -1};
-//    int32_t start = 0, end = -1;
-    PropertyProxy<uint32_t> scolor{ 0x000000FFu}, ecolor{ 0x000000FFu};
+    PropertyProxy<uint64_t> scolor{ 0x000000FFu}, ecolor{ 0x000000FFu};
     uint32_t font_size_b = UINT32_MAX, font_size_m = UINT32_MAX,
              font_size_e = UINT32_MAX;
     bool soak{ false};
@@ -289,7 +277,7 @@ struct XyZColor
 struct ConicGradient : BaseGradient
 {
   PropertyProxy<Vec2D<float>> origin{};
-  std::vector<std::pair<uint32_t, size_t>> color_variations;
+  std::vector<std::pair<uint64_t, size_t>> color_variations;
   ConicGradient() : BaseGradient{ .gradient_type = GradientType::Conic}
   {
   }
@@ -450,11 +438,13 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
 
 std::vector<ColorRule> parseColorRule(const char *rule, BKNode *bkroot);
 
-uint32_t extractColor( const char *&rule, BKNode *bkroot);
+uint64_t extractColor(const char *&rule, BKNode *bkroot);
 
 uint32_t mixColor( const char *&ctx, BKNode *bkroot);
 
-uint32_t mixRgb( uint32_t lcolor, uint32_t rcolor);
+uint32_t sumMix(uint32_t lcolor, uint32_t rcolor);
+
+uint32_t subMix( uint32_t lcolor, uint32_t rcolor);
 
 void fillEasingMode( std::function<float(float)> &function, const char *&rule, BKNode *bkroot, char eoc);
 
@@ -487,7 +477,7 @@ std::vector<std::string> findWordMatch( BKNode *node, std::string_view word, BKN
 
 bool ltrim( const char*& p);
 
-uint32_t getNumber( const char *&ctx, uint8_t base = 10);
+uint64_t getNumber(const char *&ctx, uint8_t base = 10);
 
 struct CompositionRule
 {

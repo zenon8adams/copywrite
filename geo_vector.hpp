@@ -95,17 +95,7 @@ struct Vec2D
   {
     return std::sqrt( x * x + y * y);
   }
-  
-  Vec2D unit() const
-  {
-    return { x / length(), y / length()};
-  }
-  
-  Vec2D scaleBy( float scale) const
-  {
-    return { x * scale, y * scale};
-  }
-  
+
   [[nodiscard]] float angle() const
   {
     if( x < 0)
@@ -137,13 +127,6 @@ struct Vec3D
   Vec3D operator+( Vec3D right) const;
 
   Vec3D lerp( Vec3D end, float rate);
-};
-
-// Line Drawing utilities
-struct OutputBuffer
-{
-  uint64_t *out{ nullptr};
-  float width{}, height{};
 };
 
 #endif //COPYWRITE__GEO_VECTOR_HPP_
