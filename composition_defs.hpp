@@ -1,8 +1,8 @@
 /***************************************************************************/
 /*                                                                         */
-/*  copywrite.cpp                                                          */
+/*  composition_defs.cpp                                                   */
 /*                                                                         */
-/*    Driver program to create stamp					                   */
+/*    List of image composition modes					                   */
 /*                                                                         */
 /*  Copyright 2022 by Adesina Meekness                                     */
 /*                                                                         */

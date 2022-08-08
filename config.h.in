@@ -1,0 +1,6 @@
+#cmakedefine CUSTOM_FONT_SUPPORTED
+#cmakedefine PNG_SUPPORTED
+#cmakedefine JPG_SUPPORTED
+#if defined( CUSTOM_FONT_SUPPORTED)
+    #define FONT_ARCHIVE        "copywrite-installed-fonts.zip"
+#endif

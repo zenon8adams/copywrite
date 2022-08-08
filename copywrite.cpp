@@ -32,7 +32,9 @@
 #include <functional>
 #include <regex>
 #include <variant>
+#include <cassert>
 #include <cstdint>
+#include <fstream>
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
 #include "geo_vector.hpp"
@@ -92,6 +94,7 @@
  * SourceOver      = 09,
  * SourceOut       = 10,
  * Xor             = 11
+ * COMPOSITION_TABLE LAYOUT:
  * 01 10 01 00 00 00 01 00 01 10 10 10
  * 11 10 09 08 07 06 05 04 03 02 01 00
  */
@@ -358,24 +361,35 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
         maybe_destructible = nullptr;
     });
 
-    if( guide.src_filename != nullptr)
-    {
-        auto *handle = fopen( guide.src_filename, "wb");
-        if( handle)
-            destination.get() = handle;
-    }
+#if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
 
     if( guide.composition_rule)
         composite( guide, buffer);
     else
     {
         if( guide.as_image && guide.src_filename)
-            ( guide.out_format == OutputFormat::JPEG ? writeJPG : writePNG)
+    #if defined( JPG_SUPPORTED) && defined( PNG_SUPPORTED)
+            ( guide.out_format == OutputFormat::JPEG ? writeJPEG : writePNG)
+    #elif defined( JPG_SUPPORTED)
+            writeJPEG
+    #else
+            writePNG
+    #endif
             ( guide.src_filename, buffer, guide.image_quality);
         else
-            write( buffer, guide.raster_glyph,
-                   destination.get(), guide.kdroot.get());
+#endif
+        {
+            if( guide.src_filename != nullptr)
+            {
+                auto *handle = fopen( guide.src_filename, "wb");
+                if( handle)
+                    destination.get() = handle;
+            }
+            write( buffer, guide.raster_glyph, destination.get(), guide.kdroot.get());
+        }
+#if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
     }
+#endif
 }
 
 void draw( const MonoGlyphs &rasters, RowDetails &row_details,
@@ -936,13 +950,24 @@ void applyFilter( FrameBuffer<uint32_t> &frame, uint8_t filter)
   frame.buffer = dest;
 }
 
+#if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
+
 void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame)
 {
    auto c_rule = parseCompositionRule( guide.composition_rule);
    if( c_rule.model == MODEL_ENUM( NotApplicable))
      return;
-   
+
+#if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
    auto d_frame = ( isJPEG( guide.dest_filename) ? readJPEG : readPNG)( guide.dest_filename);
+#elif defined( PNG_SUPPORTED)
+   auto d_frame = readPNG( guide.dest_filename);
+#else
+   if( !isJPEG( guide.dest_filename))
+       return;
+   auto d_frame = readJPEG( guide.dest_filename);
+#endif
+
    if( d_frame.buffer == nullptr)
      return;
    
@@ -1287,8 +1312,19 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
   
   models[ ENUM_CAST( c_rule.model)]( Default());
 
-  ( guide.out_format == OutputFormat::JPEG ? writeJPG : writePNG)( guide.src_filename, image, guide.image_quality);
+#if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
+    ( guide.out_format == OutputFormat::JPEG ? writeJPEG : writePNG)( guide.src_filename, image, guide.image_quality);
+#elif defined( PNG_SUPPORTED)
+    writePNG( guide.src_filename, image, guide.image_quality);
+#else
+    writeJPEG( guide.src_filename, image, guide.image_quality);
+#endif
+
 }
+
+#endif
+
+#if defined( JPG_SUPPORTED)
 
 bool isJPEG( std::string_view filename)
 {
@@ -1300,123 +1336,6 @@ bool isJPEG( std::string_view filename)
     }
 
     return false;
-}
-
-FrameBuffer<png_byte> readPNG( std::string_view filename)
-{
-   constexpr const auto BYTES_READ = 8;
-   char magic[ BYTES_READ];
-   PropertyManager<FILE *> handle( fopen( filename.data(), "rb"), []( auto *p) { if( p) fclose( p); p = nullptr;});
-   if( handle.get() == nullptr)
-     return {};
-   
-   if( fread( magic, 1, BYTES_READ, handle.get()) != BYTES_READ)
-     return {};
-   
-   if( png_sig_cmp( png_const_bytep ( magic), 0, BYTES_READ)) //TODO report invalid png
-     return {};
-   
-   png_structp png_ptr = png_create_read_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-   if( png_ptr == nullptr)
-     return {};
-   
-   png_infop info_ptr = png_create_info_struct( png_ptr);
-   if( info_ptr == nullptr)
-     png_destroy_read_struct( &png_ptr, nullptr, nullptr);
-   
-   if( setjmp( png_jmpbuf( png_ptr)))
-   {
-     png_destroy_read_struct( &png_ptr, &info_ptr, nullptr);
-     return {};
-   }
-
-   png_init_io( png_ptr, handle.get());
-   png_set_sig_bytes( png_ptr, BYTES_READ);
-   png_read_info( png_ptr, info_ptr);
- 
-   FrameBuffer<png_byte> frame;
-   png_int_32 bit_depth, color_type;
-   png_get_IHDR( png_ptr, info_ptr,
-				 reinterpret_cast<png_uint_32 *>( &frame.width),
-				 reinterpret_cast<png_uint_32 *>( &frame.height),
-				 &bit_depth, &color_type, nullptr, nullptr, nullptr);
-   Color background_color;
-   bool has_background = false;
-   if( png_get_valid( png_ptr, info_ptr, PNG_INFO_bKGD))
-   {
-	 png_color_16p background;
-     png_get_bKGD( png_ptr, info_ptr, &background);
-     auto& [ red, green, blue] = background_color.rgb;
-     if( bit_depth == 16)
-	 {
-       red   = background->red   >> 8u;
-       green = background->green >> 8u;
-       blue  = background->blue  >> 8u;
- 	 }
-     else if( color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
-	 {
-       if( bit_depth == 1)
-         red = green = blue = background->gray ? 255 : 0;
-       else if( bit_depth == 2)
-         red = green = blue = ( 255 / 3)  * background->gray;
-       else
-         red = green = blue = ( 255 / 15) * background->gray;
-	 }
-     else
-	 {
-       red   = background->red;
-       green = background->green;
-       blue  = background->blue;
-	 }
-     
-     has_background = true;
-   }
-   
-   if( color_type == PNG_COLOR_TYPE_PALETTE)
-     png_set_palette_to_rgb( png_ptr);
-   else if( color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
-     png_set_expand_gray_1_2_4_to_8( png_ptr);
-   else if( png_get_valid( png_ptr, info_ptr, PNG_INFO_tRNS))
-     png_set_tRNS_to_alpha( png_ptr);
-   
-   if( bit_depth == 16)
-   	png_set_strip_16( png_ptr);
-   if( color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
-     png_set_gray_to_rgb( png_ptr);
-   
-   png_read_update_info( png_ptr, info_ptr);
-   png_uint_32 row_bytes = png_get_rowbytes( png_ptr, info_ptr);
-   std::unique_ptr<png_byte, DeleterType> image_data( ( png_bytep)malloc( frame.height * row_bytes),
-   	                                                  []( auto *p){ free( p);});
-  if( image_data)
-   {
-	 png_bytep row_pointers[ frame.height];
-	 for( size_t i = 0; i < frame.height; ++i)
-	   row_pointers[ i] = image_data.get() + i * row_bytes;
-	 png_read_image( png_ptr, row_pointers);
-	 png_read_end( png_ptr, info_ptr);
-	 frame.buffer = std::move( image_data);
-	 frame.n_channel = png_get_channels( png_ptr, info_ptr);
-   }
-
-  png_destroy_read_struct( &png_ptr, &info_ptr, nullptr);
-
-   return std::move( frame);
-}
-
-void writePNG( std::string_view filename, FrameBuffer<uint32_t> &frame, int quality)
-{
-    png::image<png::rgba_pixel> image( frame.width, frame.height);
-    auto buffer = frame.buffer.get();
-    for( png_uint_32 j = 0; j < frame.height; ++j)
-    {
-        for ( png_uint_32 i = 0; i < frame.width; ++i)
-        {
-            auto pixel = PNG_ENDIAN( buffer[ j * frame.width + i]);
-            image.set_pixel( i, j, *(( png::rgba_pixel *)&pixel));
-        }
-    }
-    image.write( filename.data());
 }
 
 FrameBuffer<uint8_t> readJPEG( std::string_view filename)
@@ -1470,56 +1389,183 @@ FrameBuffer<uint8_t> readJPEG( std::string_view filename)
     return frame;
 }
 
-void writeJPG( std::string_view filename, FrameBuffer<uint32_t> &frame, int quality)
+void writeJPEG( std::string filename, FrameBuffer<uint32_t> &frame, int quality)
 {
-   auto *handle = fopen( filename.data(), "wb");
-   if( handle == nullptr)
-       return;
-   PropertyManager<FILE *> f_manager( handle, []( auto *p){ fclose( p);});
-   jpeg_compress_struct compressor;
-   PropertyManager<jpeg_compress_struct *> manager( &compressor, jpeg_destroy_compress);
-   
-   jpeg_error_mgr error_mgr;
-   compressor.err = jpeg_std_error( &error_mgr);
-   
-   jpeg_create_compress( &compressor);
-   jpeg_stdio_dest(&compressor, handle);
-   
-   compressor.image_width = frame.width;
-   compressor.image_height = frame.height;
-   compressor.input_components = 3;
-   compressor.in_color_space = JCS_RGB;
-   compressor.write_JFIF_header = TRUE;
-   compressor.JFIF_major_version = JPEG_LIB_VERSION_MAJOR;
-   compressor.JFIF_minor_version = JPEG_LIB_VERSION_MINOR;
-   
-   jpeg_set_defaults( &compressor);
-   compressor.dct_method  = JDCT_FLOAT;
-   jpeg_set_quality( &compressor, quality, TRUE);
-   compressor.raw_data_in = FALSE;
-   compressor.smoothing_factor = 100;
+    using namespace std::string_literals;
+    filename = std::regex_replace( filename, std::regex( R"(\..+)", std::regex_constants::icase), R"(.jpg)"s);
+    auto *handle = fopen( filename.data(), "wb");
+    if( handle == nullptr)
+        return;
+    PropertyManager<FILE *> f_manager( handle, []( auto *p){ fclose( p);});
+    jpeg_compress_struct compressor;
+    PropertyManager<jpeg_compress_struct *> manager( &compressor, jpeg_destroy_compress);
+
+    jpeg_error_mgr error_mgr;
+    compressor.err = jpeg_std_error( &error_mgr);
+
+    jpeg_create_compress( &compressor);
+    jpeg_stdio_dest(&compressor, handle);
+
+    compressor.image_width = frame.width;
+    compressor.image_height = frame.height;
+    compressor.input_components = 3;
+    compressor.in_color_space = JCS_RGB;
+    compressor.write_JFIF_header = TRUE;
+    compressor.JFIF_major_version = JPEG_LIB_VERSION_MAJOR;
+    compressor.JFIF_minor_version = JPEG_LIB_VERSION_MINOR;
+
+    jpeg_set_defaults( &compressor);
+    compressor.dct_method  = JDCT_FLOAT;
+    jpeg_set_quality( &compressor, quality, TRUE);
+    compressor.raw_data_in = FALSE;
+    compressor.smoothing_factor = 100;
 //   compressor.optimize_coding = TRUE;
 
-	const auto row_stride = compressor.image_width * 3;
-	jpeg_start_compress( &compressor, TRUE);
-	auto buffer = frame.buffer.get();
-	PropertyManager<uint8_t *> row_manager( new uint8_t[ row_stride], []( auto *p) { delete[] p;});
-	auto row_buffer = row_manager.get();
-	for( int j = 0; j < compressor.image_height; ++j)
-	{
-	  for( int i = 0; i < compressor.image_width; ++i)
-	  {
-		auto index = j * compressor.image_width + i;
-		auto pixel = buffer[ index];
-		row_buffer[ i * 3 + 0] = RED( pixel);
-		row_buffer[ i * 3 + 1] = GREEN( pixel);
-		row_buffer[ i * 3 + 2] = BLUE( pixel);
-	  }
-	  jpeg_write_scanlines( &compressor, &row_buffer, 1);
-	}
+    const auto row_stride = compressor.image_width * 3;
+    jpeg_start_compress( &compressor, TRUE);
+    auto buffer = frame.buffer.get();
+    PropertyManager<uint8_t *> row_manager( new uint8_t[ row_stride], []( auto *p) { delete[] p;});
+    auto row_buffer = row_manager.get();
+    for( int j = 0; j < compressor.image_height; ++j)
+    {
+        for( int i = 0; i < compressor.image_width; ++i)
+        {
+            auto index = j * compressor.image_width + i;
+            auto pixel = buffer[ index];
+            row_buffer[ i * 3 + 0] = RED( pixel);
+            row_buffer[ i * 3 + 1] = GREEN( pixel);
+            row_buffer[ i * 3 + 2] = BLUE( pixel);
+        }
+        jpeg_write_scanlines( &compressor, &row_buffer, 1);
+    }
 
-	jpeg_finish_compress( &compressor);
+    jpeg_finish_compress( &compressor);
 }
+
+#endif
+
+#if defined( PNG_SUPPORTED)
+
+FrameBuffer<uint8_t> readPNG( std::string_view filename)
+{
+   constexpr const auto BYTES_READ = 8;
+   char magic[ BYTES_READ];
+   PropertyManager<FILE *> handle( fopen( filename.data(), "rb"), []( auto *p) { if( p) fclose( p); p = nullptr;});
+   if( handle.get() == nullptr)
+     return {};
+   
+   if( fread( magic, 1, BYTES_READ, handle.get()) != BYTES_READ)
+     return {};
+   
+   if( png_sig_cmp( png_const_bytep ( magic), 0, BYTES_READ)) //TODO report invalid png
+     return {};
+   
+   png_structp png_ptr = png_create_read_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+   if( png_ptr == nullptr)
+     return {};
+   
+   png_infop info_ptr = png_create_info_struct( png_ptr);
+   if( info_ptr == nullptr)
+     png_destroy_read_struct( &png_ptr, nullptr, nullptr);
+   
+   if( setjmp( png_jmpbuf( png_ptr)))
+   {
+     png_destroy_read_struct( &png_ptr, &info_ptr, nullptr);
+     return {};
+   }
+
+   png_init_io( png_ptr, handle.get());
+   png_set_sig_bytes( png_ptr, BYTES_READ);
+   png_read_info( png_ptr, info_ptr);
+ 
+   FrameBuffer<uint8_t> frame;
+   int32_t bit_depth, color_type;
+   png_get_IHDR( png_ptr, info_ptr,
+				 reinterpret_cast<uint32_t *>( &frame.width),
+				 reinterpret_cast<uint32_t *>( &frame.height),
+				 &bit_depth, &color_type, nullptr, nullptr, nullptr);
+   Color background_color;
+   bool has_background = false;
+   if( png_get_valid( png_ptr, info_ptr, PNG_INFO_bKGD))
+   {
+	 png_color_16p background;
+     png_get_bKGD( png_ptr, info_ptr, &background);
+     auto& [ red, green, blue] = background_color.rgb;
+     if( bit_depth == 16)
+	 {
+       red   = background->red   >> 8u;
+       green = background->green >> 8u;
+       blue  = background->blue  >> 8u;
+ 	 }
+     else if( color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
+	 {
+       if( bit_depth == 1)
+         red = green = blue = background->gray ? 255 : 0;
+       else if( bit_depth == 2)
+         red = green = blue = ( 255 / 3)  * background->gray;
+       else
+         red = green = blue = ( 255 / 15) * background->gray;
+	 }
+     else
+	 {
+       red   = background->red;
+       green = background->green;
+       blue  = background->blue;
+	 }
+     
+     has_background = true;
+   }
+   
+   if( color_type == PNG_COLOR_TYPE_PALETTE)
+     png_set_palette_to_rgb( png_ptr);
+   else if( color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
+     png_set_expand_gray_1_2_4_to_8( png_ptr);
+   else if( png_get_valid( png_ptr, info_ptr, PNG_INFO_tRNS))
+     png_set_tRNS_to_alpha( png_ptr);
+   
+   if( bit_depth == 16)
+   	png_set_strip_16( png_ptr);
+   if( color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
+     png_set_gray_to_rgb( png_ptr);
+   
+   png_read_update_info( png_ptr, info_ptr);
+   uint32_t row_bytes = png_get_rowbytes( png_ptr, info_ptr);
+   std::unique_ptr<uint8_t, DeleterType> image_data( ( uint8_t *)malloc( frame.height * row_bytes),
+   	                                                  []( auto *p){ free( p);});
+  if( image_data)
+   {
+	 uint8_t * row_pointers[ frame.height];
+	 for( size_t i = 0; i < frame.height; ++i)
+	   row_pointers[ i] = image_data.get() + i * row_bytes;
+	 png_read_image( png_ptr, row_pointers);
+	 png_read_end( png_ptr, info_ptr);
+	 frame.buffer = std::move( image_data);
+	 frame.n_channel = png_get_channels( png_ptr, info_ptr);
+   }
+
+  png_destroy_read_struct( &png_ptr, &info_ptr, nullptr);
+
+   return std::move( frame);
+}
+
+void writePNG( std::string filename, FrameBuffer<uint32_t> &frame, int quality)
+{
+    using namespace std::string_literals;
+    filename = std::regex_replace( filename, std::regex( R"(\..+)", std::regex_constants::icase), R"(.png)"s);
+    png::image<png::rgba_pixel> image( frame.width, frame.height);
+    auto buffer = frame.buffer.get();
+    for( uint32_t j = 0; j < frame.height; ++j)
+    {
+        for ( uint32_t i = 0; i < frame.width; ++i)
+        {
+            auto pixel = PNG_ENDIAN( buffer[ j * frame.width + i]);
+            image.set_pixel( i, j, *(( png::rgba_pixel *)&pixel));
+        }
+    }
+    image.write( filename.data());
+}
+
+#endif
 
 uint64_t getNumber( const char *&ctx, uint8_t base)
 {
@@ -2803,7 +2849,7 @@ std::string getFontFile( std::string_view font)
             int i = 0;
             do
             {
-                PropertyManager<const char *> font_manager( ( const char *)FcNameUnparse( font_set->fonts[ 0]),
+                PropertyManager<const char *> font_manager( ( const char *)FcNameUnparse( font_set->fonts[ i]),
                                                             []( auto *p) { free( ( FcChar8 *)p); });
                 if( font_manager.get() == nullptr)
                     continue;
@@ -2817,6 +2863,194 @@ std::string getFontFile( std::string_view font)
 
     return {};
 }
+
+#if defined( CUSTOM_FONT_SUPPORTED)
+
+std::pair<std::string, std::string> requestFontInfo( std::string_view font_file)
+{
+    if( !FcInit())
+        return {};
+
+    PropertyManager<void *> finalizer( ( void *)nullptr, []( auto *){ FcFini();});
+    PropertyManager<FcFontSet *> font_set( FcFontSetCreate(), FcFontSetDestroy);
+    PropertyManager<FcStrSet *> font_dirs( FcStrSetCreate(), FcStrSetDestroy);
+    if( !FcFileScan( font_set.get(), font_dirs.get(), nullptr, nullptr, ( const FcChar8 *)font_file.data(), false))
+        return {};
+
+    if( font_set && font_set->nfont > 0)
+    {
+        PropertyManager<FcChar8*> font_family(
+                FcPatternFormat( font_set->fonts[ 0], ( const FcChar8 *)"%{family}"), free);
+        PropertyManager<FcChar8*> font_style(
+                FcPatternFormat( font_set->fonts[ 0], ( const FcChar8 *)"%{style}"), free);
+        return { ( const char *)font_family.get(), ( const char *)font_style.get()};
+    }
+    return {};
+}
+
+void installFont( std::string_view font_file)
+{
+    int code;
+    zip_error_t zip_error;
+    zip_error_init( &zip_error);
+    PropertyManager<zip_error_t *>( &zip_error, zip_error_fini);
+    PropertyManager<zip_t *> zipper( zip_open( FONT_ARCHIVE, ZIP_CREATE | ZIP_CHECKCONS, &code),
+                                     []( auto *zipper) { if( zipper != nullptr) zip_close( zipper);});
+    if( code == -1)
+        return;
+    auto [ font_family, font_style] = requestFontInfo( font_file);
+    if( font_family.empty() || font_style.empty())
+        return;
+
+    code = zip_dir_add( zipper.get(), font_family.c_str(), ZIP_FL_ENC_GUESS);
+    if( code == -1 && zip_error.zip_err != ZIP_ER_EXISTS)
+        return;
+
+    PropertyManager<zip_source *> src( zip_source_file_create( font_file.data(), 0, -1, &zip_error),
+                                       []( auto *src) { zip_source_close( src);  zip_source_free( src);});
+    if( src.get() == nullptr)
+        return;
+
+    zip_source_keep( src.get());
+
+    std::string modified_font_filename;
+    auto *font_filename = strrchr( font_file.data(), '/');
+    if( font_filename == nullptr)
+        font_filename = font_file.data();
+    else
+        ++font_filename;
+
+    std::string file( font_family);
+    font_family.erase( std::remove_if( font_family.begin(), font_family.end(), isspace), font_family.end());
+    if( strcasestr( font_filename, font_style.c_str()) == nullptr)
+    {
+        auto *p_ext = strrchr( font_filename, '.');
+        if( p_ext != nullptr)
+            modified_font_filename.append( font_family);
+        modified_font_filename.append( "-");
+        modified_font_filename.append( font_style);
+        if( p_ext != nullptr)
+            modified_font_filename.append( p_ext);
+    }
+    else
+        modified_font_filename = font_filename;
+
+    file.append( "/");
+    file.append( modified_font_filename);
+    code = zip_file_add( zipper.get(), file.c_str(), src.get(), ZIP_FL_ENC_GUESS);
+    if( code == -1 && zip_error.zip_err == ZIP_ER_EXISTS)
+    {
+        printf( "Font file already exists do you want to overwrite(yes/no/y/n)? ");
+        std::string reply;
+        std::getline( std::cin, reply);
+        std::transform( reply.begin(), reply.end(), reply.begin(), tolower);
+        if( compareOr<std::equal_to<std::string>>( reply, "yes", "no", "y", "n"))
+        {
+            code = zip_file_add( zipper.get(), file.c_str(), src.get(), ZIP_FL_OVERWRITE);
+            if( code == -1)
+            {
+                fprintf( stderr, "Unable to add font file: (An error occurred!\n");
+                return;
+            }
+        }
+    }
+}
+
+void executeActionOnFont( std::string_view font_name, FontActivity mode, std::function<void( std::vector<void *>)> fn)
+{
+    int code;
+    zip_error_t zip_error;
+    zip_error_init( &zip_error);
+    PropertyManager<zip_error_t *>( &zip_error, zip_error_fini);
+    PropertyManager<zip_t *> zipper( zip_open( FONT_ARCHIVE, ZIP_CREATE | ZIP_CHECKCONS, &code),
+                                     []( auto *zipper) { if( zipper != nullptr) zip_close( zipper);});
+    if( code == -1)
+        return;
+
+    auto parts = partition( font_name, R"(\s*-\s*)");
+    std::string style( "Regular");
+    if( parts.empty())
+        return;
+
+    if( parts.size() > 1)
+        style = parts[ 1];
+
+    auto n_entries = zip_get_num_entries( zipper.get(), 0);
+    if( n_entries == -1)
+        return;
+
+    zip_stat_t stat;
+    zip_stat_init( &stat);
+
+    std::string font_file( parts[ 0]);
+    parts[ 0].erase( std::remove_if( parts[ 0].begin(), parts[ 0].end(), isspace), parts[ 0].end());
+    font_file.append( "/");
+    font_file.append( parts[ 0]);
+    font_file.append( "-");
+    font_file.append( style);
+    int64_t i = 0;
+    for( ; i < n_entries; ++i)
+    {
+        if( zip_stat_index( zipper.get(), i, 0, &stat) < 0
+            || ( stat.valid & ZIP_STAT_NAME) == 0
+            ||  *( stat.name + strlen( stat.name) - 1) == '/')
+            continue;
+
+        if( strcasestr( stat.name, font_file.c_str()) != nullptr)
+            break;
+    }
+
+    if( ( stat.valid & ZIP_STAT_INDEX) == 0)
+        return;
+
+    std::vector<void *> params;
+    if( mode == FontActivity::Delete)
+    {
+        params.push_back( ( void *)( zipper.get()));
+        params.push_back( ( void *)&stat.index);
+    }
+    else if( mode == FontActivity::Read)
+    {
+        if( stat.size == 0)
+            return;
+        void *buffer = malloc( stat.size);
+        if( buffer == nullptr)
+            return;
+
+        PropertyManager<zip_file_t *> handle( zip_fopen_index( zipper.get(), stat.index, ZIP_FL_UNCHANGED),
+                                              []( auto *p){ if( p != nullptr) zip_fclose( p);});
+        assert( zip_fread( handle.get(), buffer, stat.size) == stat.size);
+        params.push_back( buffer);
+        params.push_back( ( void *)&stat.size);
+    }
+
+    fn( params);
+}
+
+void uninstallFont( std::string_view font)
+{
+    executeActionOnFont( font, FontActivity::Delete, []( std::vector<void *> params)
+    {
+        auto *zipper = ( zip_t *)params[ 0];
+        auto index = ( int64_t *)params[ 1];
+        zip_delete( zipper, *index);
+    });
+}
+
+std::pair<int64_t, std::unique_ptr<uint8_t, DeleterType>> useInstalledFont( std::string_view font_name)
+{
+    std::unique_ptr<uint8_t, DeleterType> information(( uint8_t *)nullptr, []( auto *p){ if( p) free( p);});
+    int64_t size{ -1};
+    executeActionOnFont( font_name, FontActivity::Read, [ &information, &size]( std::vector<void *> params)
+    {
+        information.reset(( uint8_t *)params[ 0]);
+        size = *( int64_t *)params[ 1];
+    });
+
+    return { size, std::move( information)};
+}
+
+#endif
 
 int main( int ac, char *av[])
 {
@@ -3285,6 +3519,10 @@ int main( int ac, char *av[])
   const char *font_profile{ "../common-fonts/Times New Roman/times new roman.ttf"},
              *justification{ nullptr},
              *image_quality{ nullptr},
+#if defined( CUSTOM_FONT_SUPPORTED)
+             *custom_font{ nullptr},
+             *custom_font_action{ nullptr},
+#endif
              *resolution{ nullptr},
              *stroke_width{ nullptr},
              *line_height{ nullptr},
@@ -3340,40 +3578,59 @@ int main( int ac, char *av[])
             printf( "%s\n", FN_IEASEOUTBOUNCE);
             printf( "%s\n", FN_IEASEINOUTBOUNCE);
         }
-        else if( strcmp( directive, "as-image") == 0)
-            business_rules.as_image = true;
-        else if( strcmp( directive, "output") == 0 && ac > 0)
-        {
-            ac -= 1;
-            business_rules.src_filename = *++av;
-            business_rules.out_format = isJPEG( business_rules.src_filename) ?
-                                        OutputFormat::JPEG : business_rules.out_format;
-        }
         else if( strstr( directive, "font-profile") != nullptr)
             selection = &font_profile;
         else if( strstr( directive, "color-rule") != nullptr)
             selection = &business_rules.color_rule;
-		else if( strstr( directive, "composition-rule") != nullptr)
+        else if( strcmp( directive, "output") == 0 && ac > 0)
+        {
+            ac -= 1;
+            business_rules.src_filename = *++av;
+#if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
+            business_rules.out_format = isJPEG( business_rules.src_filename) ?
+                                        OutputFormat::JPEG : business_rules.out_format;
+#elif defined( PNG_SUPPORTED)
+            business_rules.out_format = OutputFormat::PNG;
+#elif defined( JPG_SUPPORTED)
+            business_rules.out_format = OutputFormat::JPEG;
+#endif
+        }
+#if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
+        else if( strstr( directive, "composition-rule") != nullptr)
 		  selection = &business_rules.composition_rule;
+        else if( strstr( directive, "composition-image") != nullptr)
+            selection = &business_rules.dest_filename;
+        else if( strcmp( directive, "as-image") == 0)
+            business_rules.as_image = true;
+        else if( strstr( directive, "quality-index") != nullptr)
+            selection = &image_quality;
+        else if( strstr( directive, "dpi") != nullptr)
+            selection = &resolution;
+#endif
         else if( strstr( directive, "font-size") != nullptr)
             selection = &font_size;
         else if( strstr( directive, "background-color") != nullptr)
           selection = &background_color;
         else if( strstr( directive, "drawing-character") != nullptr)
             selection = &business_rules.raster_glyph;
-        else if( strstr( directive, "composition-image") != nullptr)
-          	selection = &business_rules.dest_filename;
         else if( strstr( directive, "line-height") != nullptr)
             selection = &line_height;
         else if( strstr( directive, "stroke-width") != nullptr)
             selection = &stroke_width;
-        else if( strstr( directive, "dpi") != nullptr)
-            selection = &resolution;
         else if( strstr( directive, "justify") != nullptr)
             selection = &justification;
-        else if( strstr( directive, "quality-index") != nullptr)
-            selection = &image_quality;
-
+#if defined( CUSTOM_FONT_SUPPORTED)
+        else if( strstr( directive, "uninstall-font") != nullptr)
+        {
+            custom_font_action = "uninstall";
+            selection = &custom_font;
+        }
+        else if( strstr( directive, "install-font") != nullptr)
+        {
+            custom_font_action = "install";
+            selection = &custom_font;
+        }
+#endif
         if( selection != nullptr && ( index = strchr( directive, '=')) != nullptr)
             *selection = index + 1;
         else if( selection != nullptr)
@@ -3387,8 +3644,7 @@ int main( int ac, char *av[])
         business_rules.line_height = strtof( line_height, nullptr);
     if( stroke_width != nullptr)
         business_rules.thickness = strtoul( stroke_width, nullptr, 10);
-    if( resolution != nullptr)
-        business_rules.dpi = strtoul( resolution, nullptr, 10);
+
     if( justification != nullptr)
     {
         if( std::cmatch cm; std::regex_match( justification, justification + strlen( justification), cm,
@@ -3399,13 +3655,22 @@ int main( int ac, char *av[])
         }
     }
 
+#if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
+    if( resolution != nullptr)
+        business_rules.dpi = strtoul( resolution, nullptr, 10);
+
     if( image_quality != nullptr)
         business_rules.image_quality = strtol( image_quality, nullptr, 10);
-    
+#endif
     if( background_color)
       business_rules.background_color = extractColor( background_color, business_rules.bkroot.get());
 
     business_rules.font_size = strtol( font_size, nullptr, 10);
+
+#if defined( CUSTOM_FONT_SUPPORTED)
+    if( custom_font != nullptr)
+        ( strcmp( custom_font_action, "install") == 0 ? installFont : uninstallFont)( custom_font);
+#endif
 
     if( ac == 1)
         word = *av;
@@ -3464,18 +3729,26 @@ int main( int ac, char *av[])
       exit( EXIT_FAILURE);
     }
 
+    std::unique_ptr<uint8_t, DeleterType> custom_profile(( uint8_t *)nullptr, []( auto *p){ if( p) free( p);});
     if( strrchr( font_profile, '.') == nullptr)
     {
-        auto file = getFontFile( font_profile);
-        if( file.empty())
+        int64_t size;
+        std::tie( size, custom_profile) = useInstalledFont( font_profile);
+        if( !UNSET( size))
+            error = FT_New_Memory_Face( library.get(), ( const FT_Byte *)custom_profile.get(), size, 0, &face.get());
+        else
         {
-            fprintf( stderr, "Unable to parse font");
-            exit( EXIT_FAILURE);
+            auto file = getFontFile( font_profile);
+            if( file.empty())
+            {
+                fprintf( stderr, "Unable to parse font");
+                exit( EXIT_FAILURE);
+            }
+            error = FT_New_Face( library.get(), file.c_str(), 0, &face.get());
         }
-        error = FT_New_Face( library.get(), file.c_str(), 0, &face.get());
     }
     else
-        error = FT_New_Face(library.get(), font_profile, 0, &face.get());
+        error = FT_New_Face( library.get(), font_profile, 0, &face.get());
 
     if( error != 0)
     {

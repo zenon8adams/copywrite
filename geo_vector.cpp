@@ -1,8 +1,8 @@
 /***************************************************************************/
 /*                                                                         */
-/*  copywrite.cpp                                                          */
+/*  geo_vector.cpp                                                         */
 /*                                                                         */
-/*    Driver program to create stamp					                   */
+/*    Vec3D class                    					                   */
 /*                                                                         */
 /*  Copyright 2022 by Adesina Meekness                                     */
 /*                                                                         */

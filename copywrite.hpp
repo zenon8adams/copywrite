@@ -27,6 +27,7 @@
 #ifndef COPYWRITE_HPP
 #define COPYWRITE_HPP
 
+#include "config.h"
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_STROKER_H
@@ -34,30 +35,35 @@
 #include <vector>
 #include <functional>
 #include <memory>
+#include <regex>
 #include <cmath>
 #include <variant>
-#include <image.hpp>
-#include <jpeglib.h>
-#include <cstdint>
 
-#ifndef PNG_STDIO_SUPPORTED
-typedef FILE                * png_FILE_p;
+#if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
+    #if defined( __GNUC__) || defined( __clang__)
+        #define swap32( x) __builtin_bswap32( x)
+    #else
+        #define swap32( x)  (( x >> 24) | (( x >> 8) & 0x0000FF00) | (( x << 8) & 0x00FF0000) | ( x << 24));
+    #endif
+    #if __LITTLE_ENDIAN
+        #define PNG_ENDIAN( dword) swap32( dword)
+    #else
+        #define PNG_ENDIAN( dword) dword
+    #endif
+    #if defined( PNG_SUPPORTED)
+        #include <image.hpp>
+    #endif
+    #if defined( JPG_SUPPORTED)
+        #include <jpeglib.h>
+    #endif
+#endif
+
+#if defined( CUSTOM_FONT_SUPPORTED)
+#include <zip.h>
 #endif
 
 #include FT_FREETYPE_H
 #include "geo_vector.hpp"
-
-#if defined(__GNUC__) || defined(__clang__)
-    #define swap32( x) __builtin_bswap32( x)
-#else
-    #define swap32( x)  (( x >> 24) | (( x >> 8) & 0x0000FF00) | (( x << 8) & 0x00FF0000) | ( x << 24));
-#endif
-
-#if __LITTLE_ENDIAN
-#define PNG_ENDIAN( dword) swap32( dword)
-#else
-#define PNG_ENDIAN( dword) dword
-#endif
 
 #define MAX_DIFF_TOLERANCE 20
 
@@ -123,7 +129,6 @@ struct RowDetail
 };
 typedef std::vector<RowDetail> RowDetails;
 
-
 /*
  * Each row of the output is a span.
  * The `count` argument defines the number of pixels that should be painted `coverage
@@ -173,17 +178,17 @@ class PropertyProxy
   PropertyProxy()
   {
   }
-  
+
   explicit PropertyProxy( T value)
   : value( value)
   {
   }
-  
+
   operator T() const
   {
     return value;
   }
-  
+
   [[nodiscard]] T cast()
   {
 	return value;
@@ -196,7 +201,7 @@ class PropertyProxy
     changed_since_initialization = true;
      return value = std::forward<T>( another);
   }
-  
+
   [[nodiscard]] bool changed() const
   {
     return changed_since_initialization;
@@ -215,7 +220,7 @@ class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
   PropertyProxy(): T()
   {
   }
-  
+
   template <typename... Args>
   explicit PropertyProxy( Args&&... values)
 	  : T( std::forward<T>( values)...)
@@ -226,21 +231,21 @@ class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
   {
 	return *this;
   }
-  
+
   T& cast()
   {
     return *this;
   }
-  
+
   T operator=( T another)
   {
     if( state_change_callable)
       std::invoke( state_change_callable, *static_cast<T*>( this));
-    
+
 	changed_since_initialization = true;
 	return T::operator=( std::forward<T>( another));
   }
-  
+
   [[nodiscard]] bool changed() const
   {
 	return changed_since_initialization;
@@ -324,10 +329,10 @@ class PropertyManager
   : destructor( std::forward<Deleter>( deleter))
   {
   }
-  
+
   PropertyManager( const PropertyManager&) = delete;
   PropertyManager( PropertyManager&&) = default;
-  
+
   auto& get()
   {
     return resource;
@@ -550,19 +555,51 @@ bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test);
 
 void applyFilter( FrameBuffer<uint32_t> &frame, uint8_t filter);
 
-void composite(ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame);
+#if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
+
+void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame);
+
+#endif
+
+#if defined( JPG_SUPPORTED)
 
 bool isJPEG( std::string_view filename);
 
-FrameBuffer<png_byte> readPNG( std::string_view filename);
-
 FrameBuffer<uint8_t> readJPEG( std::string_view filename);
 
-void writeJPG(std::string_view filename, FrameBuffer<uint32_t> &frame, int quality);
+void writeJPEG( std::string filename, FrameBuffer<uint32_t> &frame, int quality);
 
-void writePNG(std::string_view filename, FrameBuffer<uint32_t> &frame, int quality);
+#endif
+
+#if defined( PNG_SUPPORTED)
+
+FrameBuffer<uint8_t> readPNG( std::string_view filename);
+
+void writePNG( std::string filename, FrameBuffer<uint32_t> &frame, int quality);
+
+#endif
 
 void requestFontList();
+
+#if defined( CUSTOM_FONT_SUPPORTED)
+
+std::pair<std::string, std::string> requestFontInfo( std::string_view font_file);
+
+void installFont( std::string_view font_file);
+
+enum class FontActivity
+{
+    Read,
+    Delete
+};
+
+void executeActionOnFont( std::string_view font_name, FontActivity mode, std::function<void( std::vector<void *>)> fn);
+
+void uninstallFont( std::string_view font);
+
+std::pair<int64_t, std::unique_ptr<uint8_t, DeleterType>> useInstalledFont( std::string_view font_name);
+
+#endif
 
 std::string getFontFile( std::string_view font);
 

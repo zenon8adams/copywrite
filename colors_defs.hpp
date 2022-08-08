@@ -1,8 +1,8 @@
 /***************************************************************************/
 /*                                                                         */
-/*  copywrite.cpp                                                          */
+/*  colors_defs.cpp                                                        */
 /*                                                                         */
-/*    Driver program to create stamp					                   */
+/*    List of color names and it hex-code.					               */
 /*                                                                         */
 /*  Copyright 2022 by Adesina Meekness                                     */
 /*                                                                         */

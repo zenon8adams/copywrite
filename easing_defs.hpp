@@ -1,8 +1,8 @@
 /***************************************************************************/
 /*                                                                         */
-/*  copywrite.cpp                                                          */
+/*  easing_defs.cpp                                                        */
 /*                                                                         */
-/*    Driver program to create stamp					                   */
+/*    List of supported easing functions				                   */
 /*                                                                         */
 /*  Copyright 2022 by Adesina Meekness                                     */
 /*                                                                         */
