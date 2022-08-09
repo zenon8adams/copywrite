@@ -27,10 +27,15 @@
 #define UNINSTALL_FONT                    "uninstall-font"
 #define INSTALL_FONT                      "install-font"
 #define QUALITY_INDEX                     "quality-index"
+#define EASING_DIRECTION                  "easing-direction"
+#define  PADDING_LEFT                     "padding-left"
+#define  PADDING_RIGHT                    "padding-right"
+#define  PADDING_TOP                      "padding-top"
+#define  PADDING_BOTTOM                   "padding-bottom"
 #define HELP_PROMPT                       "help"
 
-#define LIST_FONTS_SHORT_FORM             "fL"
-#define FONT_PROFILE_SHORT_FORM           "fP"
+#define LIST_FONTS_SHORT_FORM             "lF"
+#define FONT_PROFILE_SHORT_FORM           "pF"
 #define COLOR_RULE_SHORT_FORM             "rC"
 #define FONT_SIZE_SHORT_FORM              "sF"
 #define DRAWING_CHARACTER_SHORT_FORM      "cD"
@@ -48,6 +53,11 @@
 #define UNINSTALL_FONT_SHORT_FORM         "uF"
 #define INSTALL_FONT_SHORT_FORM           "iF"
 #define QUALITY_INDEX_SHORT_FORM          "iQ"
+#define EASING_DIRECTION_SHORT_FORM       "dE"
+#define PADDING_LEFT_SHORT_FORM           "pL"
+#define PADDING_RIGHT_SHORT_FORM          "pR"
+#define PADDING_TOP_SHORT_FORM            "pT"
+#define PADDING_BOTTOM_SHORT_FORM         "pB"
 #define HELP_PROMPT_SHORT_FORM            "h"
 
 #define OPTIONIFY( value)               OPTION_PREFIX value
@@ -180,6 +190,27 @@
                                         "Usage:\n" \
                                          OPTIONIFY( COMPOSITION_IMAGE) "=image.png\n"
 
+#define EASING_DIRECTION_MESSAGE        "Specify the direction for color to flow in linear gradient.\n" \
+                                        "Allowed values are: `row` or `col`.\n" \
+                                        "Usage:\n" \
+                                        OPTIONIFY( EASING_DIRECTION) "=row\n"
+
+#define PADDING_LEFT_MESSAGE            "Set the spacing left of generated text.\n" \
+                                        "Usage:\n" \
+                                        OPTIONIFY( PADDING_LEFT) "=10\n"
+
+#define PADDING_RIGHT_MESSAGE           "Set the spacing right of generated text.\n" \
+                                        "Usage:\n" \
+                                        OPTIONIFY( PADDING_RIGHT) "=10\n"
+
+#define PADDING_TOP_MESSAGE                     "Set the spacing above generated text.\n" \
+                                        "Usage:\n" \
+                                        OPTIONIFY( PADDING_TOP) "=10\n"
+
+#define PADDING_BOTTOM_MESSAGE          "Set the spacing below generated text.\n" \
+                                        "Usage:\n" \
+                                        OPTIONIFY( PADDING_BOTTOM) "=10\n"
+
 #define HELP_PROMPT_MESSAGE             "Show this prompt.\n" \
 
 #define START(var) ( 
@@ -205,4 +236,9 @@
                        ADD( UNINSTALL_FONT        ) \
                        ADD( INSTALL_FONT          ) \
                        ADD( QUALITY_INDEX         ) \
+                       ADD( EASING_DIRECTION      ) \
+                       ADD( PADDING_LEFT          ) \
+                       ADD( PADDING_RIGHT         ) \
+                       ADD( PADDING_TOP           ) \
+                       ADD( PADDING_BOTTOM        ) \
                        END( HELP_PROMPT           )

@@ -515,6 +515,12 @@ enum class OutputFormat
     JPEG
 };
 
+struct Padding
+{
+    int left{}, right{},
+        top{}, bottom{};
+};
+
 struct ApplicationHyperparameters
 {
   const char 			 *raster_glyph{ "\u2589"},
@@ -530,9 +536,10 @@ struct ApplicationHyperparameters
   Justification           j_mode{ Justification::Left};
   PropertyProxy<uint32_t> background_color{};
   bool 					  as_image{ false};
-  bool                    ease_col{ true};
+  bool                    ease_col{ false};
   int                     image_quality{ 100},
                           dpi{ 120};
+  Padding                 pad{};
   OutputFormat            out_format{ OutputFormat::PNG};
   CompositionRule		  composition;
 };

@@ -94,6 +94,8 @@
 #define HIGH_BYTE( value)              (( uint32_t)(( value) >> 32u))
 #define CONCAT_BYTES( high, low)       (( uint64_t)( high) << 32u | low)
 
+#define FOUND_STRING( xpr)             (( xpr) == 0)
+
 void spansCallback( int y, int count, const FT_Span *spans, void *user)
 {
     auto *sptr = (Spans *)user;
@@ -336,6 +338,8 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
         row_details[ j].v_disp += box_size.y - row_line_height; // Offset at which each row should start
     }
 
+    box_size.x += guide.pad.left + guide.pad.right;
+    box_size.y += guide.pad.top  + guide.pad.bottom;
     std::shared_ptr<uint32_t> pixel(( uint32_t *)malloc( sizeof( uint32_t) * box_size.x * box_size.y),
                                      []( auto *p){ free( p);});
     std::fill_n( pixel.get(), box_size.x * box_size.y, guide.background_color.cast());
@@ -448,9 +452,9 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
          /* v_offset: Aligns every row glyph to their respective baselines
          *  h_offset: The adjustment necessary to comply with `Justification::Right` and `Justification::Center`
          */
-        int v_offset = row_detail.v_disp - height - row_detail.max_descent - rect.ymin,
+        int v_offset = row_detail.v_disp - height - row_detail.max_descent - rect.ymin + guide.pad.top,
             h_offset = (int)( ENUM_CAST( guide.j_mode) > 0)
-                           * (( frame.width - row_detail.width) / ENUM_CAST( guide.j_mode));
+                           * (( frame.width - row_detail.width) / ENUM_CAST( guide.j_mode)) + guide.pad.left;
          for ( auto& s: outline)
         {
             for ( int w = 0; w < s.width; ++w)
@@ -3511,8 +3515,13 @@ int main( int ac, char *av[])
              *custom_font_action{ nullptr},
 #endif
              *resolution{ nullptr},
+             *padding_left{ nullptr},
+             *padding_right{ nullptr},
+             *padding_top{ nullptr},
+             *padding_bottom{ nullptr},
              *stroke_width{ nullptr},
              *line_height{ nullptr},
+             *easing_direction{ nullptr},
              *font_size{ "10"},
              *background_color{ nullptr},
              *word,
@@ -3521,19 +3530,24 @@ int main( int ac, char *av[])
     while( --ac > 0 && ( *++av)[ 0] == '-')
     {
         const char *directive = *av + 1 + ( *( *av + 1) == '-'), // Allow for only one hyphen
+                   *end = strrchr( directive, '='),
                    *index = nullptr,
                    **selection = nullptr;
+        size_t count = end == nullptr ? strlen( directive) : end - directive;
 
-        if( strcmp( directive, HELP_PROMPT) == 0 || strcmp( directive, SHORT( HELP_PROMPT)) == 0)
+        if( FOUND_STRING( strcmp( directive, HELP_PROMPT))
+            || FOUND_STRING( strcmp( directive, SHORT( HELP_PROMPT))))
             goto help;
-        else if( strcmp( directive, LIST_FONTS) == 0 || strcmp( directive, SHORT( LIST_FONTS)) == 0)
+        else if( FOUND_STRING( strcmp( directive, LIST_FONTS))
+                 || FOUND_STRING( strcmp( directive, SHORT( LIST_FONTS))))
         {
             puts( "Available fonts:\n");
             requestFontList();
 
             exit( EXIT_SUCCESS);
         }
-        else if( strcmp( directive, LIST_EASINGS) == 0 || strcmp( directive, SHORT( LIST_EASINGS)) == 0)
+        else if( FOUND_STRING( strcmp( directive, LIST_EASINGS))
+                 || FOUND_STRING( strcmp( directive, SHORT( LIST_EASINGS))))
         {
             printf( "Available easing functions:\n");
             printf( "%s\n", FN_IEASEINSINE);
@@ -3567,11 +3581,14 @@ int main( int ac, char *av[])
             printf( "%s\n", FN_IEASEOUTBOUNCE);
             printf( "%s\n", FN_IEASEINOUTBOUNCE);
         }
-        else if( strstr( directive, FONT_PROFILE) != nullptr || strstr( directive, SHORT( FONT_PROFILE)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, FONT_PROFILE, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( FONT_PROFILE), count)))
             selection = &font_profile;
-        else if( strstr( directive, COLOR_RULE) != nullptr || strstr( directive, SHORT( COLOR_RULE)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, COLOR_RULE, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( COLOR_RULE), count)))
             selection = &business_rules.color_rule;
-        else if( strcmp( directive, OUTPUT) == 0 || strcmp( directive, SHORT( OUTPUT)) == 0 && ac > 0)
+        else if( FOUND_STRING( strcmp( directive, OUTPUT))
+                 || FOUND_STRING( strcmp( directive, SHORT( OUTPUT))) && ac > 0)
         {
             ac -= 1;
             business_rules.src_filename = *++av;
@@ -3585,8 +3602,8 @@ int main( int ac, char *av[])
 #endif
         }
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
-        else if( strcmp( directive, LIST_COMPOSITION_MODES) == 0
-                 || strcmp( directive, SHORT( LIST_COMPOSITION_MODES)) == 0)
+        else if( FOUND_STRING( strcmp( directive, LIST_COMPOSITION_MODES))
+                 || FOUND_STRING( strcmp( directive, SHORT( LIST_COMPOSITION_MODES))))
         {
             printf( "Available composition methods:\n");
             printf( "%s\n", COPY);
@@ -3601,44 +3618,67 @@ int main( int ac, char *av[])
             printf( "%s\n", SOURCE_OUT);
             printf( "%s\n", XOR);
         }
-        else if( strstr( directive, COMPOSITION_RULE) != nullptr
-                 || strstr( directive, SHORT( COMPOSITION_RULE)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, COMPOSITION_RULE, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( COMPOSITION_RULE), count)))
 		  selection = &business_rules.composition_rule;
-        else if( strstr( directive, COMPOSITION_IMAGE) != nullptr
-                || strstr( directive, SHORT( COMPOSITION_IMAGE)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, COMPOSITION_IMAGE, count))
+                || FOUND_STRING( strncmp( directive, SHORT( COMPOSITION_IMAGE), count)))
             selection = &business_rules.dest_filename;
-        else if( strcmp( directive, AS_IMAGE) == 0 || strcmp( directive, SHORT( AS_IMAGE)) == 0)
+        else if( FOUND_STRING( strcmp( directive, AS_IMAGE)) || FOUND_STRING( strcmp( directive, SHORT( AS_IMAGE))))
             business_rules.as_image = true;
-        else if( strstr( directive, QUALITY_INDEX) != nullptr || strstr( directive, SHORT( QUALITY_INDEX)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, QUALITY_INDEX, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( QUALITY_INDEX), count)))
             selection = &image_quality;
-        else if( strstr( directive, DPI) != nullptr || strstr( directive, SHORT( DPI)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, DPI, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( DPI), count)))
             selection = &resolution;
+        else if( FOUND_STRING( strncmp( directive, EASING_DIRECTION, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( EASING_DIRECTION), count)))
+            selection = &easing_direction;
 #endif
-        else if( strstr( directive, FONT_SIZE) != nullptr || strstr( directive, SHORT( FONT_SIZE)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, FONT_SIZE, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( FONT_SIZE), count)))
             selection = &font_size;
-        else if( strstr( directive, BACKGROUND_COLOR) != nullptr
-                || strstr( directive, SHORT( BACKGROUND_COLOR)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, BACKGROUND_COLOR, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( BACKGROUND_COLOR), count)))
           selection = &background_color;
-        else if( strstr( directive, DRAWING_CHARACTER) != nullptr
-                 || strstr( directive, SHORT( DRAWING_CHARACTER)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, DRAWING_CHARACTER, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( DRAWING_CHARACTER), count)))
             selection = &business_rules.raster_glyph;
-        else if( strstr( directive, LINE_HEIGHT) != nullptr || strstr( directive, SHORT( LINE_HEIGHT)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, LINE_HEIGHT, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( LINE_HEIGHT), count)))
             selection = &line_height;
-        else if( strstr( directive, STROKE_WIDTH) != nullptr || strstr( directive, SHORT( STROKE_WIDTH)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, STROKE_WIDTH, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( STROKE_WIDTH), count)))
             selection = &stroke_width;
-        else if( strstr( directive, JUSTIFY) != nullptr || strstr( directive, SHORT( JUSTIFY)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, JUSTIFY, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( JUSTIFY), count)))
             selection = &justification;
 #if defined( CUSTOM_FONT_SUPPORTED)
-        else if( strstr( directive, UNINSTALL_FONT) != nullptr || strstr( directive, SHORT( UNINSTALL_FONT)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, UNINSTALL_FONT, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( UNINSTALL_FONT), count)))
         {
             custom_font_action = "uninstall";
             selection = &custom_font;
         }
-        else if( strstr( directive, INSTALL_FONT) != nullptr || strstr( directive, SHORT( INSTALL_FONT)) != nullptr)
+        else if( FOUND_STRING( strncmp( directive, INSTALL_FONT, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( INSTALL_FONT), count)))
         {
             custom_font_action = "install";
             selection = &custom_font;
         }
+        else if( FOUND_STRING( strncmp( directive, PADDING_LEFT, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( PADDING_LEFT), count)))
+            selection = &padding_left;
+        else if( FOUND_STRING( strncmp( directive, PADDING_RIGHT, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( PADDING_RIGHT), count)))
+            selection = &padding_right;
+        else if( FOUND_STRING( strncmp( directive, PADDING_TOP, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( PADDING_TOP), count)))
+            selection = &padding_top;
+        else if( FOUND_STRING( strncmp( directive, PADDING_BOTTOM, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( PADDING_BOTTOM), count)))
+            selection = &padding_bottom;
 #endif
         if( selection != nullptr && ( index = strchr( directive, '=')) != nullptr)
             *selection = index + 1;
@@ -3653,6 +3693,14 @@ int main( int ac, char *av[])
         business_rules.line_height = strtof( line_height, nullptr);
     if( stroke_width != nullptr)
         business_rules.thickness = strtoul( stroke_width, nullptr, 10);
+    if( padding_left != nullptr)
+        business_rules.pad.left = strtol( padding_left, nullptr, 10);
+    if( padding_right != nullptr)
+        business_rules.pad.right = strtol( padding_right, nullptr, 10);
+    if( padding_top != nullptr)
+        business_rules.pad.top = strtol( padding_top, nullptr, 10);
+    if( padding_bottom != nullptr)
+        business_rules.pad.bottom = strtol( padding_bottom, nullptr, 10);
 
     if( justification != nullptr)
     {
@@ -3678,8 +3726,16 @@ int main( int ac, char *av[])
 
 #if defined( CUSTOM_FONT_SUPPORTED)
     if( custom_font != nullptr)
-        ( strcmp( custom_font_action, "install") == 0 ? installFont : uninstallFont)( custom_font);
+        ( FOUND_STRING( strcmp( custom_font_action, "install")) ? installFont : uninstallFont)( custom_font);
 #endif
+
+    if( easing_direction != nullptr)
+    {
+        std::regex rule( R"(^(row)|(col)$)", std::regex_constants::icase);
+        std::cmatch cm;
+        if( std::regex_match( easing_direction, easing_direction + strlen( easing_direction), cm, rule))
+            business_rules.ease_col = cm[ 2].matched;
+    }
 
     if( ac == 1)
         word = *av;
@@ -3707,6 +3763,11 @@ int main( int ac, char *av[])
             STRUCTURE_PREFIX( UNINSTALL_FONT),
             STRUCTURE_PREFIX( INSTALL_FONT),
             STRUCTURE_PREFIX( QUALITY_INDEX),
+            STRUCTURE_PREFIX( EASING_DIRECTION),
+            STRUCTURE_PREFIX( PADDING_LEFT),
+            STRUCTURE_PREFIX( PADDING_RIGHT),
+            STRUCTURE_PREFIX( PADDING_TOP),
+            STRUCTURE_PREFIX( PADDING_BOTTOM),
             STRUCTURE_PREFIX( HELP_PROMPT)
         };
         std::array<std::string_view, OPTIONS_COUNT> options_message =
@@ -3730,6 +3791,11 @@ int main( int ac, char *av[])
             MESSAGE( UNINSTALL_FONT),
             MESSAGE( INSTALL_FONT),
             MESSAGE( QUALITY_INDEX),
+            MESSAGE( EASING_DIRECTION),
+            MESSAGE( PADDING_LEFT),
+            MESSAGE( PADDING_RIGHT),
+            MESSAGE( PADDING_TOP),
+            MESSAGE( PADDING_BOTTOM),
             MESSAGE( HELP_PROMPT)
         };
 
