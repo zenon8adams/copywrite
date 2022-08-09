@@ -2,5 +2,181 @@
 #cmakedefine PNG_SUPPORTED
 #cmakedefine JPG_SUPPORTED
 #if defined( CUSTOM_FONT_SUPPORTED)
-    #define FONT_ARCHIVE        "copywrite-installed-fonts.zip"
+    #define FONT_ARCHIVE                "copywrite-installed-fonts.zip"
 #endif
+
+#define __RECORD                        __LINE__
+#define __ADD(v)
+
+#define OPTION_PREFIX                   "-@OPTION_PREFIX@"
+#define LIST_FONTS                      "list-fonts"
+#define FONT_PROFILE                    "font-profile"
+#define COLOR_RULE                      "color-rule"
+#define FONT_SIZE                       "font-size"
+#define DRAWING_CHARACTER               "drawing-character"
+#define AS_IMAGE                        "as-image"
+#define OUTPUT                          "output"
+#define LIST_EASINGS                    "list-easings"
+#define LIST_COMPOSITION_MODES          "list-composition-modes"
+#define COMPOSITION_RULE                "composition-rule"
+#define COMPOSITION_IMAGE               "composition-image"
+#define DPI                             "dpi"
+#define BACKGROUND_COLOR                "background-color"
+#define LINE_HEIGHT                     "line-height"
+#define JUSTIFY                         "justify"
+#define STROKE_WIDTH                    "stroke-width"
+#define UNINSTALL_FONT                  "uninstall-font"
+#define INSTALL_FONT                    "install-font"
+#define QUALITY_INDEX                   "quality-index"
+
+#define CONCAT( left, right)            left ## right
+#define OPTIONIFY(value)                OPTION_PREFIX value
+#define MESSAGE( option)                option ## _MESSAGE
+
+#define LIST_FONTS_MESSAGE              "Lists the fonts installed on your @OPERATING_SYSTEM@ system.\n" \
+
+#define FONT_PROFILE_MESSAGE            "Set the font family to use for display.\n\n" \
+                                        "See " OPTIONIFY( INSTALL_FONT) "\n"\
+                                        "Example:\n" \
+                                        OPTIONIFY( FONT_PROFILE) "=\"Noto sans Regular\"\n" \
+                                        "If font is already installed, use: " \
+                                        OPTIONIFY( FONT_PROFILE) "=\"Noto sans - Regular\"\n"
+
+#define FONT_SIZE_MESSAGE               "Set the default font size used by characters that don't match any\n\n" \
+                                        "rule or with rules not with no explicit font size specified.\n"
+
+#define AS_IMAGE_MESSAGE                "Prepare output mode to export in image format.\n\n" \
+                                        "This option only works if it is configured with" \
+                                        " -DPNG_SUPPORTED=ON or -DJPG_SUPPORTED=ON\n"
+
+#define OUTPUT_MESSAGE                  "Set the filename to write rendering into\n\n" \
+                                         OPTIONIFY( OUTPUT) " image.png\n" \
+                                        "NB! jpeg images are also supported.\n"
+
+#define DPI_MESSAGE                     "Set the resolution of the characters to display.\n" \
+
+#define LINE_HEIGHT_MESSAGE             "Set the distance between rows of text.\n" \
+
+#define QUALITY_INDEX_MESSAGE           "Set the quality of the output image.\n" \
+
+#define JUSTIFY_MESSAGE                 "Move multiline text `left`, `right` or `center`.\n\n" \
+                                        "Usage:\n" \
+                                         OPTIONIFY( JUSTIFY) "=left\n"
+
+#define STROKE_WIDTH_MESSAGE            "Set the outline thickness for all characters.\n\n" \
+                                        "Usage:\n" \
+                                        OPTIONIFY( STROKE_WIDTH) "=12\n"
+
+#define DRAWING_CHARACTER_MESSAGE       OPTIONIFY( DRAWING_CHARACTER) "='#' use this character\n\n" \
+                                        " to display in console mode.\n"
+
+#define INSTALL_FONT_MESSAGE            "Add font file to the list to use usable fonts.\n\n" \
+                                        "This option is only available if source code is \n" \
+                                        "compiled with -DCUSTOM_FONT_SUPPORTED=ON\n"
+
+#define UNINSTALL_FONT_MESSAGE          "Removed `font-family - font-face` from the list of installed font.\n\n" \
+                                        "This option is only available if source code is\n" \
+                                        "compiled with -DCUSTOM_FONT_SUPPORTED=ON\n"
+
+#define BACKGROUND_COLOR_MESSAGE        "Set the background color of the output image to generated.\n\n" \
+                                        "This option if only available if source code is compiled with\n" \
+                                        "-DPNG_SUPPORTED=ON or -DJPG_SUPPORTED=ON\n"
+
+#define LIST_EASINGS_MESSAGE             OPTIONIFY( LIST_EASINGS) " list the easing functions available.\n" \
+
+#define LIST_COMPOSITION_MODES_MESSAGE  "List all composition modes available.\n" \
+
+#define COLOR_RULE_MESSAGE              "Set the color rule to use in generating text.\n\n" \
+                                        "Usage examples:\n" \
+                                        "SINGLE LINE TEXTS:\n" \
+                                        "1. "  OPTIONIFY( COLOR_RULE) "=[1]{Red}\n" \
+                                        "    Set the first character encountered in text to red.\n" \
+                                        "2. "  OPTIONIFY( COLOR_RULE) "=[1..]{Red}\n" \
+                                        "    Set all text characters encountered in text to red.\n" \
+                                        "3. "  OPTIONIFY( COLOR_RULE) "=[1..4]{Red}\n" \
+                                        "    Set the first to fourth characters in text to red.\n" \
+                                        "4. "  OPTIONIFY( COLOR_RULE) "=[1..4:50]{Red}\n" \
+                                        "    Set the first to fourth characters to 50px and color to red.\n" \
+                                        "5. "  OPTIONIFY( COLOR_RULE) "=[1..4:50-30 -easeInOutSine]{Red}\n" \
+                                        "    Set the first to fourth character to tween from 50 to 30px using\n" \
+                                        " easeInOutSine as the easing function. Paint the text red.\n" \
+                                        "6. " OPTIONIFY( COLOR_RULE) "=[1..4:50-30-60 -easeInOutSine]{Red}\n" \
+                                        "    Set the first to fourth character to tween from 50px to 30px\n" \
+                                        " and then finally, finish at 60px. Paint the font color red.\n" \
+                                        "7. "  OPTIONIFY( COLOR_RULE) "=[1..]{Red -> Green}\n" \
+                                        "    Set all characters to transition color from red to green using\n" \
+                                        " linear easing function.\nNote that the easing will be character based.\n" \
+                                        " If easing within characters is expected, a `+` should be added\n" \
+                                        " (e.g [1..]{ Red -> Green +}).\n" \
+                                        "8. " OPTIONIFY( COLOR_RULE) "=[1..]{Red -> Green +easeInOutSine}\n" \
+                                        "    Set all characters to transition color from red to green using\n" \
+                                        " easeInOutSine function.\nNote that the easing will be character based.\n" \
+                                        "If easing within characters is expected, a `+` should be added\n" \
+                                        " (e.g [1..]{ Red -> Green +easeInOutSine}).\n" \
+                                        "9. "  OPTIONIFY( COLOR_RULE) "=[1..]{Red -> Green -R(.5, .5, .3) +}\n" \
+                                        "    Set all characters to transition color from Red to Green using\n" \
+                                        " radial gradient at origin (0.5, 0.5) with spread at 0.3\n" \
+                                        "10. "  OPTIONIFY( COLOR_RULE) "=[1..]{Red -> Green -C +}\n" \
+                                        "    Set all characters to colors transition from red to green using\n" \
+                                        " conical gradient.\n" \
+                                        "11. "  OPTIONIFY( COLOR_RULE) "=[1..]{-C(red, green, blue) +}\n" \
+                                        "    Set all characters to transition color from red at 0deg\n"\
+                                        " to green at 180deg and finally ending with blue at 360deg.\n" \
+                                        "Any number of colors are allowed as opposed to radial gradient which\n" \
+                                        " allows only two color transition.\n" \
+                                        "12. "  OPTIONIFY( COLOR_RULE) "=[1..]{-C(from 50deg, " \
+                                        "red, blue 180deg, orange) +}\n" \
+                                        "    Set all characters to ease using conical gradient.\n"\
+                                        "The conical angle starts at 50deg, blue starts at 180deg\n" \
+                                        " and finishes with orange.\n" \
+                                        "MULTILINE TEXTS:\n" \
+                                        "1. "  OPTIONIFY( COLOR_RULE) "=[(1,1)]{Red}\n" \
+                                        "    Set the character at the first row and first column(only) to red.\n" \
+                                        "2. "  OPTIONIFY( COLOR_RULE) "=[(1,1)..]{Red}\n" \
+                                        "    Set all characters in text to color red.\n" \
+                                        "    This command is has same effect as:\n" \
+                                        "    "  OPTIONIFY( COLOR_RULE) "=[(1,1)..(-1,-1)]{Red}\n" \
+                                        "3. "  OPTIONIFY( COLOR_RULE) "=[(1,1)..(-1,3)]{Red}\n" \
+                                        "    Set all characters that are contained in the bounding box created\n" \
+                                        " by (1, 1) to (3, 3) to red.\n\n" \
+                                        "NB! The color rules defined for single line texts also work here as well.\n" \
+
+#define COMPOSITION_RULE_MESSAGE        "Set the method through which the generated text\n\n" \
+                                        " is blended with an image provided by " OPTIONIFY( COMPOSITION_RULE) "\n\n" \
+                                        "Usage examples:\n" \
+                                        "1. "  OPTIONIFY( COMPOSITION_RULE) "=\"mode=source-over\"\n" \
+                                        "Set the order to which images should be applied on top of each other as \n" \
+                                        "`source-over`.The generated text is place at the top-left\n" \
+                                        " corner of the output.\n" \
+                                        "2. " OPTIONIFY( COMPOSITION_RULE) \
+                                        "=\"from 30deg at .5, .5, mode=source-over\"\n" \
+                                        "Set the order of stacking as source-over rotate the source image by 30deg.\n" \
+                                        "See also: `"  OPTIONIFY( COMPOSITION_RULE) "`.\n"
+
+#define COMPOSITION_IMAGE_MESSAGE       "Set the image to be used for image composition.\n\n" \
+                                        "Usage:\n" \
+                                         OPTIONIFY( COMPOSITION_IMAGE) "=image.png"
+
+#define START(var) ( 
+#define ADD(var)   1 +
+#define END(var)   1)
+#define OPTIONS_COUNT  START()                      \
+                       ADD( LIST_FONTS            ) \
+                       ADD( FONT_PROFILE          ) \
+                       ADD( COLOR_RULE            ) \
+                       ADD( FONT_SIZE             ) \
+                       ADD( DRAWING_CHARACTER     ) \
+                       ADD( AS_IMAGE              ) \
+                       ADD( OUTPUT                ) \
+                       ADD( LIST_EASINGS          ) \
+                       ADD( LIST_COMPOSITION_MODES) \
+                       ADD( COMPOSITION_RULE      ) \
+                       ADD( COMPOSITION_IMAGE     ) \
+                       ADD( DPI                   ) \
+                       ADD( BACKGROUND_COLOR      ) \
+                       ADD( LINE_HEIGHT           ) \
+                       ADD( JUSTIFY               ) \
+                       ADD( STROKE_WIDTH          ) \
+                       ADD( UNINSTALL_FONT        ) \
+                       ADD( INSTALL_FONT          ) \
+                       END( QUALITY_INDEX         )

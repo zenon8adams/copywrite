@@ -145,7 +145,8 @@ enum class Justification
     Center = 02
 };
 
-std::pair<std::vector<std::wstring>, int> expand( std::wstring_view provision, Justification mode);
+template <typename T>
+std::pair<std::vector<std::basic_string<T>>, int> expand( std::basic_string_view<T> provision, Justification mode);
 uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<int> size,
                     Vec2D<int> pos, FT_Vector pen, Vec2D<uint32_t> color_shift, bool is_outline);
 
@@ -529,7 +530,7 @@ struct ApplicationHyperparameters
   Justification           j_mode{ Justification::Left};
   PropertyProxy<uint32_t> background_color{};
   bool 					  as_image{ false};
-  bool                    ease_col{ false};
+  bool                    ease_col{ true};
   int                     image_quality{ 100},
                           dpi{ 120};
   OutputFormat            out_format{ OutputFormat::PNG};

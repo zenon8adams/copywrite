@@ -35,22 +35,11 @@
 #include <cassert>
 #include <cstdint>
 #include <fstream>
+#include <iomanip>
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
 #include "geo_vector.hpp"
 #include "composition_defs.hpp"
-
-#define FPRINTFD( fmt, argument, include) ({ \
-    auto arglength = strlen( argument);\
-    auto count = maxlength - arglength + ALLOWANCE + !include * arglength;\
-    char spacing[ count + 1];\
-    memset( spacing, ' ', count);\
-    spacing[ count] = 0;\
-    if( include) \
-        fprintf( stderr, fmt, argument, spacing);\
-    else \
-        fprintf( stderr, fmt, "", spacing);\
-})
 
 #define ALLOWANCE                      6
 #define MAX(x, y)                      ((x) ^ (((x) ^ (y)) & -((x) < (y))))
@@ -563,15 +552,16 @@ std::wstring toWString( std::string str)
     return wsRep;
 }
 
-std::pair<std::vector<std::wstring>, int> expand( std::wstring_view provision, Justification mode)
+template <typename T>
+std::pair<std::vector<std::basic_string<T>>, int> expand( std::basic_string_view<T> provision, Justification mode)
 {
-    std::vector<std::wstring> parts;
-    int j = 0, max_length = 0, prev = L'\0';
+    std::vector<std::basic_string<T>> parts;
+    int j = 0, max_length = 0, prev = '\0';
     for( size_t i = 0; i < provision.length(); ++i)
     {
-        if( provision[ i] == L'\n')
+        if( provision[ i] == '\n')
         {
-            auto length = i - j - ( prev == L'\r');
+            auto length = i - j - ( prev == '\r');
             auto substring = provision.substr( j, length);
             parts.emplace_back( substring);
             j = i + 1;
@@ -586,8 +576,8 @@ std::pair<std::vector<std::wstring>, int> expand( std::wstring_view provision, J
         int rem  = max_length - line.length(),
                 left  = rem / ENUM_CAST( mode),
                 right = rem - ( left = ( left > 0) * left);
-        line.insert( 0, std::wstring( left, ' '));
-        line.append( std::wstring( right, ' '));
+        line.insert( 0, std::basic_string<T>( left, ' '));
+        line.append( std::basic_string<T>( right, ' '));
     }
     return { parts, max_length};
 }
@@ -1937,8 +1927,9 @@ uint32_t mixColor( const char *&ctx, BKNode *bkroot)
             op = *ctx;
         else
         {
+            auto *before = ctx;
             op ? rcolor = extractColor( ctx, bkroot) : lcolor = extractColor( ctx, bkroot);
-            ctx -= 1;
+            ctx -= 1 - ( before == ctx);
         }
         ++ctx;
     }
@@ -3533,18 +3524,18 @@ int main( int ac, char *av[])
 
     while( --ac > 0 && ( *++av)[ 0] == '-')
     {
-        const char *directive = *av + 2,
+        const char *directive = *av + 1 + ( *( *av + 1) == '-'), // Allow for only one hyphen
                    *index = nullptr,
                    **selection = nullptr;
 
-        if( strcmp( directive, "list-fonts") == 0)
+        if( strcmp( directive, LIST_FONTS) == 0)
         {
             puts( "Available fonts:\n");
             requestFontList();
 
             exit( EXIT_SUCCESS);
         }
-        else if( strcmp( directive, "list-easings") == 0)
+        else if( strcmp( directive, LIST_EASINGS) == 0)
         {
             printf( "Available easing functions:\n");
             printf( "%s\n", FN_IEASEINSINE);
@@ -3578,11 +3569,11 @@ int main( int ac, char *av[])
             printf( "%s\n", FN_IEASEOUTBOUNCE);
             printf( "%s\n", FN_IEASEINOUTBOUNCE);
         }
-        else if( strstr( directive, "font-profile") != nullptr)
+        else if( strstr( directive, FONT_PROFILE) != nullptr)
             selection = &font_profile;
-        else if( strstr( directive, "color-rule") != nullptr)
+        else if( strstr( directive, COLOR_RULE) != nullptr)
             selection = &business_rules.color_rule;
-        else if( strcmp( directive, "output") == 0 && ac > 0)
+        else if( strcmp( directive, OUTPUT) == 0 && ac > 0)
         {
             ac -= 1;
             business_rules.src_filename = *++av;
@@ -3596,36 +3587,40 @@ int main( int ac, char *av[])
 #endif
         }
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
-        else if( strstr( directive, "composition-rule") != nullptr)
+        else if( strcmp( directive, LIST_COMPOSITION_MODES) == 0)
+        {
+
+        }
+        else if( strstr( directive, COMPOSITION_RULE) != nullptr)
 		  selection = &business_rules.composition_rule;
-        else if( strstr( directive, "composition-image") != nullptr)
+        else if( strstr( directive, COMPOSITION_IMAGE) != nullptr)
             selection = &business_rules.dest_filename;
-        else if( strcmp( directive, "as-image") == 0)
+        else if( strcmp( directive, AS_IMAGE) == 0)
             business_rules.as_image = true;
-        else if( strstr( directive, "quality-index") != nullptr)
+        else if( strstr( directive, QUALITY_INDEX) != nullptr)
             selection = &image_quality;
-        else if( strstr( directive, "dpi") != nullptr)
+        else if( strstr( directive, DPI) != nullptr)
             selection = &resolution;
 #endif
-        else if( strstr( directive, "font-size") != nullptr)
+        else if( strstr( directive, FONT_SIZE) != nullptr)
             selection = &font_size;
-        else if( strstr( directive, "background-color") != nullptr)
+        else if( strstr( directive, BACKGROUND_COLOR) != nullptr)
           selection = &background_color;
-        else if( strstr( directive, "drawing-character") != nullptr)
+        else if( strstr( directive, DRAWING_CHARACTER) != nullptr)
             selection = &business_rules.raster_glyph;
-        else if( strstr( directive, "line-height") != nullptr)
+        else if( strstr( directive, LINE_HEIGHT) != nullptr)
             selection = &line_height;
-        else if( strstr( directive, "stroke-width") != nullptr)
+        else if( strstr( directive, STROKE_WIDTH) != nullptr)
             selection = &stroke_width;
-        else if( strstr( directive, "justify") != nullptr)
+        else if( strstr( directive, JUSTIFY) != nullptr)
             selection = &justification;
 #if defined( CUSTOM_FONT_SUPPORTED)
-        else if( strstr( directive, "uninstall-font") != nullptr)
+        else if( strstr( directive, UNINSTALL_FONT) != nullptr)
         {
             custom_font_action = "uninstall";
             selection = &custom_font;
         }
-        else if( strstr( directive, "install-font") != nullptr)
+        else if( strstr( directive, INSTALL_FONT) != nullptr)
         {
             custom_font_action = "install";
             selection = &custom_font;
@@ -3676,48 +3671,64 @@ int main( int ac, char *av[])
         word = *av;
     else
     {
-        const char *start = strrchr( program, '/'),
-                   *name = start != nullptr ? start + 1 : program,
-                   *arguments[] = {
-                        "--list-fonts",
-                        "--font-profile=FILE|Family [Normal|Regular|Bold|Italic]",
-                        "--color-rule=RULE",
-                        "--font-size=NUM",
-                        "--drawing-character=CHAR",
-                        "--as-image",
-                        "--output FILE",
-                    };
-
-        size_t maxlength = 0;
+        std::array<std::string_view, OPTIONS_COUNT> options =
         {
-            size_t idx = 0, length = sizeof( arguments) / sizeof( arguments[ 0]);
-            while( idx < length)
-            {
-                size_t clen = strlen( arguments[ idx++]);
-                maxlength = MAX( clen, maxlength);
-            }
+            OPTIONIFY( LIST_FONTS),
+            OPTIONIFY( FONT_PROFILE),
+            OPTIONIFY( COLOR_RULE),
+            OPTIONIFY( FONT_SIZE),
+            OPTIONIFY( DRAWING_CHARACTER),
+            OPTIONIFY( AS_IMAGE),
+            OPTIONIFY( OUTPUT),
+            OPTIONIFY( LIST_EASINGS),
+            OPTIONIFY( LIST_COMPOSITION_MODES),
+            OPTIONIFY( COMPOSITION_RULE),
+            OPTIONIFY( COMPOSITION_IMAGE),
+            OPTIONIFY( DPI),
+            OPTIONIFY( BACKGROUND_COLOR),
+            OPTIONIFY( LINE_HEIGHT),
+            OPTIONIFY( JUSTIFY),
+            OPTIONIFY( STROKE_WIDTH),
+            OPTIONIFY( UNINSTALL_FONT),
+            OPTIONIFY( INSTALL_FONT),
+            OPTIONIFY( QUALITY_INDEX),
+        };
+        std::array<std::string_view, OPTIONS_COUNT> options_message =
+        {
+            MESSAGE( LIST_FONTS),
+            MESSAGE( FONT_PROFILE),
+            MESSAGE( COLOR_RULE),
+            MESSAGE( FONT_SIZE),
+            MESSAGE( DRAWING_CHARACTER),
+            MESSAGE( AS_IMAGE),
+            MESSAGE( OUTPUT),
+            MESSAGE( LIST_EASINGS),
+            MESSAGE( LIST_COMPOSITION_MODES),
+            MESSAGE( COMPOSITION_RULE),
+            MESSAGE( COMPOSITION_IMAGE),
+            MESSAGE( DPI),
+            MESSAGE( BACKGROUND_COLOR),
+            MESSAGE( LINE_HEIGHT),
+            MESSAGE( JUSTIFY),
+            MESSAGE( STROKE_WIDTH),
+            MESSAGE( UNINSTALL_FONT),
+            MESSAGE( INSTALL_FONT),
+            MESSAGE( QUALITY_INDEX)
+        };
+
+        size_t max_length{};
+        std::for_each( std::cbegin( options), std::cend( options),
+                       [ &max_length]( auto each){ max_length = std::max( max_length, each.size());});
+
+        for( size_t j = 0, options_size = OPTIONS_COUNT; j < options_size; ++j)
+        {
+            auto [ help_lines, max_line] = expand( options_message[ j], Justification::Left);
+            std::cout << std::setw( max_length) << options[ j] << std::string( ALLOWANCE, ' ') << help_lines[ 0];
+            size_t idx = 1, help_lines_size = help_lines.size();
+            while( idx < help_lines_size)
+                std::cout << std::setw( max_line + max_length + ALLOWANCE) << help_lines[ idx++] <<'\n';
         }
 
-        fprintf( stderr, "Usage: %s [%s|%s [%s] [%s] [%s] [%s] [%s]] text\n", name,
-                *arguments, *( arguments + 1), *( arguments + 2), *( arguments + 3),
-                *( arguments + 4), *( arguments + 5), *( arguments + 6));
-
-        fprintf( stderr, "Displays block form of character sequence\n\n");
-        fprintf( stderr, "Arguments:\n");
-        FPRINTF("\t%s%sList location of all installed fonts.\n", *arguments);
-        FPRINTF("\t%s%sSet the font file to be used for display.\n", *(arguments + 1));
-        FPRINTF("\t%s%sPaint image based on the RULE given by: ^(\\[(\\d+)(\\.\\.(\\d+)?)?\\]"
-                "\\{(#|0?x)\\d{6,8}\\})(;\\[(\\d+)(\\.\\.(\\d+)?)?\\]\\{(\\#|0?x)\\d{6,8}\\})*;?$.\n", *(arguments + 2));
-        FPRINTFD( "\t%s%sExample: [1]{#244839};[2]{#456676};[3..4]{#559930};[5..]{#567898};\n", *( arguments + 2), false);
-        FPRINTFD( "\t%s%s  Word: `Hello` ==>  H -> #244839\n", *( arguments + 2), false);
-        FPRINTFD( "\t%s%s  Word: `Hello` ==>  e -> #456676\n", *( arguments + 2), false);
-        FPRINTFD( "\t%s%s  Word: `Hello` ==> ll -> #559930\n", *( arguments + 2), false);
-        FPRINTFD( "\t%s%s  Word: `Hello` ==>  0 -> #567898\n", *( arguments + 2), false);
-        FPRINTFD( "\t%s%sNB! If two rules match a character, the last one takes precedence.\n", *( arguments + 2), false);
-        FPRINTF("\t%s%sSet the font size for display to NUM pixels.\n", *(arguments + 3));
-        FPRINTF("\t%s%sSet the character to output in for each block.\n", *(arguments + 4));
-        FPRINTF("\t%s%sWrite to file as an image. Used with --output flag\n", *(arguments + 5));
-        FPRINTF("\t%s%sWrite the block of characters into the file FILE.\n", *(arguments + 6));
         exit( EXIT_FAILURE);
     }
 
@@ -3771,6 +3782,6 @@ int main( int ac, char *av[])
     }
     else
         render( library.get(), face.get(), toWString( word), business_rules);
-  
+
   return 0;
 }
