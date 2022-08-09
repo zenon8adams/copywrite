@@ -2,54 +2,77 @@
 #cmakedefine PNG_SUPPORTED
 #cmakedefine JPG_SUPPORTED
 #if defined( CUSTOM_FONT_SUPPORTED)
-    #define FONT_ARCHIVE                "copywrite-installed-fonts.zip"
+    #define FONT_ARCHIVE                  "copywrite-installed-fonts.zip"
 #endif
 
-#define __RECORD                        __LINE__
-#define __ADD(v)
+#define SHORT_OPTION_PREFIX               "-"
+#define OPTION_PREFIX                     SHORT_OPTION_PREFIX SHORT_OPTION_PREFIX
 
-#define OPTION_PREFIX                   "-@OPTION_PREFIX@"
-#define LIST_FONTS                      "list-fonts"
-#define FONT_PROFILE                    "font-profile"
-#define COLOR_RULE                      "color-rule"
-#define FONT_SIZE                       "font-size"
-#define DRAWING_CHARACTER               "drawing-character"
-#define AS_IMAGE                        "as-image"
-#define OUTPUT                          "output"
-#define LIST_EASINGS                    "list-easings"
-#define LIST_COMPOSITION_MODES          "list-composition-modes"
-#define COMPOSITION_RULE                "composition-rule"
-#define COMPOSITION_IMAGE               "composition-image"
-#define DPI                             "dpi"
-#define BACKGROUND_COLOR                "background-color"
-#define LINE_HEIGHT                     "line-height"
-#define JUSTIFY                         "justify"
-#define STROKE_WIDTH                    "stroke-width"
-#define UNINSTALL_FONT                  "uninstall-font"
-#define INSTALL_FONT                    "install-font"
-#define QUALITY_INDEX                   "quality-index"
+#define LIST_FONTS                        "list-fonts"
+#define FONT_PROFILE                      "font-profile"
+#define COLOR_RULE                        "color-rule"
+#define FONT_SIZE                         "font-size"
+#define DRAWING_CHARACTER                 "drawing-character"
+#define AS_IMAGE                          "as-image"
+#define OUTPUT                            "output"
+#define LIST_EASINGS                      "list-easings"
+#define LIST_COMPOSITION_MODES            "list-composition-modes"
+#define COMPOSITION_RULE                  "composition-rule"
+#define COMPOSITION_IMAGE                 "composition-image"
+#define DPI                               "dpi"
+#define BACKGROUND_COLOR                  "background-color"
+#define LINE_HEIGHT                       "line-height"
+#define JUSTIFY                           "justify"
+#define STROKE_WIDTH                      "stroke-width"
+#define UNINSTALL_FONT                    "uninstall-font"
+#define INSTALL_FONT                      "install-font"
+#define QUALITY_INDEX                     "quality-index"
+#define HELP_PROMPT                       "help"
 
-#define CONCAT( left, right)            left ## right
-#define OPTIONIFY(value)                OPTION_PREFIX value
+#define LIST_FONTS_SHORT_FORM             "fL"
+#define FONT_PROFILE_SHORT_FORM           "fP"
+#define COLOR_RULE_SHORT_FORM             "rC"
+#define FONT_SIZE_SHORT_FORM              "sF"
+#define DRAWING_CHARACTER_SHORT_FORM      "cD"
+#define AS_IMAGE_SHORT_FORM               "iA"
+#define OUTPUT_SHORT_FORM                 "o"
+#define LIST_EASINGS_SHORT_FORM           "eL"
+#define LIST_COMPOSITION_MODES_SHORT_FORM "cL"
+#define COMPOSITION_RULE_SHORT_FORM       "c"
+#define COMPOSITION_IMAGE_SHORT_FORM      "iC"
+#define DPI_SHORT_FORM                    "iR"
+#define BACKGROUND_COLOR_SHORT_FORM       "bG"
+#define LINE_HEIGHT_SHORT_FORM            "hL"
+#define JUSTIFY_SHORT_FORM                "j"
+#define STROKE_WIDTH_SHORT_FORM           "wS"
+#define UNINSTALL_FONT_SHORT_FORM         "uF"
+#define INSTALL_FONT_SHORT_FORM           "iF"
+#define QUALITY_INDEX_SHORT_FORM          "iQ"
+#define HELP_PROMPT_SHORT_FORM            "h"
+
+#define OPTIONIFY( value)               OPTION_PREFIX value
+#define OPTIONIFY_SHORT( value)         SHORT_OPTION_PREFIX value
+#define STRUCTURE_PREFIX( value)        OPTIONIFY_SHORT( value ## _SHORT_FORM) ", " OPTIONIFY( value)
 #define MESSAGE( option)                option ## _MESSAGE
+#define SHORT( value)                   value ## _SHORT_FORM
 
 #define LIST_FONTS_MESSAGE              "Lists the fonts installed on your @OPERATING_SYSTEM@ system.\n" \
 
-#define FONT_PROFILE_MESSAGE            "Set the font family to use for display.\n\n" \
+#define FONT_PROFILE_MESSAGE            "Set the font family to use for display.\n" \
                                         "See " OPTIONIFY( INSTALL_FONT) "\n"\
                                         "Example:\n" \
                                         OPTIONIFY( FONT_PROFILE) "=\"Noto sans Regular\"\n" \
                                         "If font is already installed, use: " \
                                         OPTIONIFY( FONT_PROFILE) "=\"Noto sans - Regular\"\n"
 
-#define FONT_SIZE_MESSAGE               "Set the default font size used by characters that don't match any\n\n" \
+#define FONT_SIZE_MESSAGE               "Set the default font size used by characters that don't match any\n" \
                                         "rule or with rules not with no explicit font size specified.\n"
 
-#define AS_IMAGE_MESSAGE                "Prepare output mode to export in image format.\n\n" \
+#define AS_IMAGE_MESSAGE                "Prepare output mode to export in image format.\n" \
                                         "This option only works if it is configured with" \
                                         " -DPNG_SUPPORTED=ON or -DJPG_SUPPORTED=ON\n"
 
-#define OUTPUT_MESSAGE                  "Set the filename to write rendering into\n\n" \
+#define OUTPUT_MESSAGE                  "Set the filename to write rendering into\n" \
                                          OPTIONIFY( OUTPUT) " image.png\n" \
                                         "NB! jpeg images are also supported.\n"
 
@@ -59,26 +82,26 @@
 
 #define QUALITY_INDEX_MESSAGE           "Set the quality of the output image.\n" \
 
-#define JUSTIFY_MESSAGE                 "Move multiline text `left`, `right` or `center`.\n\n" \
+#define JUSTIFY_MESSAGE                 "Move multiline text `left`, `right` or `center`.\n" \
                                         "Usage:\n" \
                                          OPTIONIFY( JUSTIFY) "=left\n"
 
-#define STROKE_WIDTH_MESSAGE            "Set the outline thickness for all characters.\n\n" \
+#define STROKE_WIDTH_MESSAGE            "Set the outline thickness for all characters.\n" \
                                         "Usage:\n" \
                                         OPTIONIFY( STROKE_WIDTH) "=12\n"
 
-#define DRAWING_CHARACTER_MESSAGE       OPTIONIFY( DRAWING_CHARACTER) "='#' use this character\n\n" \
-                                        " to display in console mode.\n"
+#define DRAWING_CHARACTER_MESSAGE       "This option can be used to control character used in\n" \
+                                        " drawing glyphs to display in console mode.\n"
 
-#define INSTALL_FONT_MESSAGE            "Add font file to the list to use usable fonts.\n\n" \
+#define INSTALL_FONT_MESSAGE            "Add font file to the list to use usable fonts.\n" \
                                         "This option is only available if source code is \n" \
                                         "compiled with -DCUSTOM_FONT_SUPPORTED=ON\n"
 
-#define UNINSTALL_FONT_MESSAGE          "Removed `font-family - font-face` from the list of installed font.\n\n" \
+#define UNINSTALL_FONT_MESSAGE          "Removed `font-family - font-face` from the list of installed font.\n" \
                                         "This option is only available if source code is\n" \
                                         "compiled with -DCUSTOM_FONT_SUPPORTED=ON\n"
 
-#define BACKGROUND_COLOR_MESSAGE        "Set the background color of the output image to generated.\n\n" \
+#define BACKGROUND_COLOR_MESSAGE        "Set the background color of the output image to generated.\n" \
                                         "This option if only available if source code is compiled with\n" \
                                         "-DPNG_SUPPORTED=ON or -DJPG_SUPPORTED=ON\n"
 
@@ -86,7 +109,7 @@
 
 #define LIST_COMPOSITION_MODES_MESSAGE  "List all composition modes available.\n" \
 
-#define COLOR_RULE_MESSAGE              "Set the color rule to use in generating text.\n\n" \
+#define COLOR_RULE_MESSAGE              "Set the color rule to use in generating text.\n" \
                                         "Usage examples:\n" \
                                         "SINGLE LINE TEXTS:\n" \
                                         "1. "  OPTIONIFY( COLOR_RULE) "=[1]{Red}\n" \
@@ -138,11 +161,11 @@
                                         "    "  OPTIONIFY( COLOR_RULE) "=[(1,1)..(-1,-1)]{Red}\n" \
                                         "3. "  OPTIONIFY( COLOR_RULE) "=[(1,1)..(-1,3)]{Red}\n" \
                                         "    Set all characters that are contained in the bounding box created\n" \
-                                        " by (1, 1) to (3, 3) to red.\n\n" \
+                                        " by (1, 1) to (3, 3) to red.\n" \
                                         "NB! The color rules defined for single line texts also work here as well.\n" \
 
-#define COMPOSITION_RULE_MESSAGE        "Set the method through which the generated text\n\n" \
-                                        " is blended with an image provided by " OPTIONIFY( COMPOSITION_RULE) "\n\n" \
+#define COMPOSITION_RULE_MESSAGE        "Set the method through which the generated text\n" \
+                                        " is blended with an image provided by " OPTIONIFY( COMPOSITION_RULE) "\n" \
                                         "Usage examples:\n" \
                                         "1. "  OPTIONIFY( COMPOSITION_RULE) "=\"mode=source-over\"\n" \
                                         "Set the order to which images should be applied on top of each other as \n" \
@@ -153,9 +176,11 @@
                                         "Set the order of stacking as source-over rotate the source image by 30deg.\n" \
                                         "See also: `"  OPTIONIFY( COMPOSITION_RULE) "`.\n"
 
-#define COMPOSITION_IMAGE_MESSAGE       "Set the image to be used for image composition.\n\n" \
+#define COMPOSITION_IMAGE_MESSAGE       "Set the image to be used for image composition.\n" \
                                         "Usage:\n" \
-                                         OPTIONIFY( COMPOSITION_IMAGE) "=image.png"
+                                         OPTIONIFY( COMPOSITION_IMAGE) "=image.png\n"
+
+#define HELP_PROMPT_MESSAGE             "Show this prompt.\n" \
 
 #define START(var) ( 
 #define ADD(var)   1 +
@@ -179,4 +204,5 @@
                        ADD( STROKE_WIDTH          ) \
                        ADD( UNINSTALL_FONT        ) \
                        ADD( INSTALL_FONT          ) \
-                       END( QUALITY_INDEX         )
+                       ADD( QUALITY_INDEX         ) \
+                       END( HELP_PROMPT           )

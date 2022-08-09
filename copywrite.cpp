@@ -41,7 +41,7 @@
 #include "geo_vector.hpp"
 #include "composition_defs.hpp"
 
-#define ALLOWANCE                      6
+#define ALLOWANCE                      2
 #define MAX(x, y)                      ((x) ^ (((x) ^ (y)) & -((x) < (y))))
 #define MIN(x, y)                      ((x) ^ (((x) ^ (y)) & -((x) > (y))))
 #define FPRINTF( fmt, argument)        FPRINTFD( fmt, argument, true)
@@ -617,15 +617,7 @@ uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<
         auto left   = spread - .2 < 0 ? spread : spread - .2;
         auto right  = spread - .2 < 0 ? spread : spread + .2;
         auto c = smoothstep( left, right, d); // Spread the circle around to form a smooth gradient.
-        auto startcolor = Vec3D( ( float)RED( color_shift.x) / RGB_SCALE,
-                                 ( float)GREEN( color_shift.x) / RGB_SCALE,
-                                 ( float)BLUE( color_shift.x) / RGB_SCALE),
-             endcolor   = Vec3D( ( float)RED( color_shift.y) / RGB_SCALE,
-                                     ( float)GREEN( color_shift.y) / RGB_SCALE,
-                                     ( float)BLUE( color_shift.y) / RGB_SCALE),
-             finalcolor  = startcolor.lerp( endcolor, match->color_easing_fn( c));
-        color = RGBA( finalcolor.x * RGB_SCALE, finalcolor.y * RGB_SCALE,
-                      finalcolor.z * RGB_SCALE, ALPHA( color)); //TODO: Correct alpha value
+        color = colorLerp( color_shift.y, color_shift.x, match->color_easing_fn( c));
     }
     else if( match->gradient->gradient_type == GradientType::Conic)
     {
@@ -1447,9 +1439,12 @@ FrameBuffer<uint8_t> readPNG( std::string_view filename)
    if( fread( magic, 1, BYTES_READ, handle.get()) != BYTES_READ)
      return {};
    
-   if( png_sig_cmp( png_const_bytep ( magic), 0, BYTES_READ)) //TODO report invalid png
-     return {};
-   
+   if( png_sig_cmp( png_const_bytep ( magic), 0, BYTES_READ))
+   {
+       fprintf( stderr, "This is not a png file.\n");
+       return {};
+   }
+
    png_structp png_ptr = png_create_read_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
    if( png_ptr == nullptr)
      return {};
@@ -2016,7 +2011,8 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
 	   ++rule;
 	 else
 	 {
-	   // TODO: Report error of missing parenthesis
+         fprintf( stderr, "Expected `)` after expression: %s\n", rule);
+         exit( EXIT_FAILURE);
 	 }
   
 	 auto stops = partition( gradient_part, R"(\s*,\s*(?=[a-zA-Z#]|0[xX]))");
@@ -3528,14 +3524,16 @@ int main( int ac, char *av[])
                    *index = nullptr,
                    **selection = nullptr;
 
-        if( strcmp( directive, LIST_FONTS) == 0)
+        if( strcmp( directive, HELP_PROMPT) == 0 || strcmp( directive, SHORT( HELP_PROMPT)) == 0)
+            goto help;
+        else if( strcmp( directive, LIST_FONTS) == 0 || strcmp( directive, SHORT( LIST_FONTS)) == 0)
         {
             puts( "Available fonts:\n");
             requestFontList();
 
             exit( EXIT_SUCCESS);
         }
-        else if( strcmp( directive, LIST_EASINGS) == 0)
+        else if( strcmp( directive, LIST_EASINGS) == 0 || strcmp( directive, SHORT( LIST_EASINGS)) == 0)
         {
             printf( "Available easing functions:\n");
             printf( "%s\n", FN_IEASEINSINE);
@@ -3569,11 +3567,11 @@ int main( int ac, char *av[])
             printf( "%s\n", FN_IEASEOUTBOUNCE);
             printf( "%s\n", FN_IEASEINOUTBOUNCE);
         }
-        else if( strstr( directive, FONT_PROFILE) != nullptr)
+        else if( strstr( directive, FONT_PROFILE) != nullptr || strstr( directive, SHORT( FONT_PROFILE)) != nullptr)
             selection = &font_profile;
-        else if( strstr( directive, COLOR_RULE) != nullptr)
+        else if( strstr( directive, COLOR_RULE) != nullptr || strstr( directive, SHORT( COLOR_RULE)) != nullptr)
             selection = &business_rules.color_rule;
-        else if( strcmp( directive, OUTPUT) == 0 && ac > 0)
+        else if( strcmp( directive, OUTPUT) == 0 || strcmp( directive, SHORT( OUTPUT)) == 0 && ac > 0)
         {
             ac -= 1;
             business_rules.src_filename = *++av;
@@ -3587,40 +3585,56 @@ int main( int ac, char *av[])
 #endif
         }
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
-        else if( strcmp( directive, LIST_COMPOSITION_MODES) == 0)
+        else if( strcmp( directive, LIST_COMPOSITION_MODES) == 0
+                 || strcmp( directive, SHORT( LIST_COMPOSITION_MODES)) == 0)
         {
-
+            printf( "Available composition methods:\n");
+            printf( "%s\n", COPY);
+            printf( "%s\n", DESTINATION_ATOP);
+            printf( "%s\n", DESTINATION_IN);
+            printf( "%s\n", DESTINATION_OVER);
+            printf( "%s\n", DESTINATION_OUT);
+            printf( "%s\n", LIGHTER);
+            printf( "%s\n", SOURCE_ATOP);
+            printf( "%s\n", SOURCE_IN);
+            printf( "%s\n", SOURCE_OVER);
+            printf( "%s\n", SOURCE_OUT);
+            printf( "%s\n", XOR);
         }
-        else if( strstr( directive, COMPOSITION_RULE) != nullptr)
+        else if( strstr( directive, COMPOSITION_RULE) != nullptr
+                 || strstr( directive, SHORT( COMPOSITION_RULE)) != nullptr)
 		  selection = &business_rules.composition_rule;
-        else if( strstr( directive, COMPOSITION_IMAGE) != nullptr)
+        else if( strstr( directive, COMPOSITION_IMAGE) != nullptr
+                || strstr( directive, SHORT( COMPOSITION_IMAGE)) != nullptr)
             selection = &business_rules.dest_filename;
-        else if( strcmp( directive, AS_IMAGE) == 0)
+        else if( strcmp( directive, AS_IMAGE) == 0 || strcmp( directive, SHORT( AS_IMAGE)) == 0)
             business_rules.as_image = true;
-        else if( strstr( directive, QUALITY_INDEX) != nullptr)
+        else if( strstr( directive, QUALITY_INDEX) != nullptr || strstr( directive, SHORT( QUALITY_INDEX)) != nullptr)
             selection = &image_quality;
-        else if( strstr( directive, DPI) != nullptr)
+        else if( strstr( directive, DPI) != nullptr || strstr( directive, SHORT( DPI)) != nullptr)
             selection = &resolution;
 #endif
-        else if( strstr( directive, FONT_SIZE) != nullptr)
+        else if( strstr( directive, FONT_SIZE) != nullptr || strstr( directive, SHORT( FONT_SIZE)) != nullptr)
             selection = &font_size;
-        else if( strstr( directive, BACKGROUND_COLOR) != nullptr)
+        else if( strstr( directive, BACKGROUND_COLOR) != nullptr
+                || strstr( directive, SHORT( BACKGROUND_COLOR)) != nullptr)
           selection = &background_color;
-        else if( strstr( directive, DRAWING_CHARACTER) != nullptr)
+        else if( strstr( directive, DRAWING_CHARACTER) != nullptr
+                 || strstr( directive, SHORT( DRAWING_CHARACTER)) != nullptr)
             selection = &business_rules.raster_glyph;
-        else if( strstr( directive, LINE_HEIGHT) != nullptr)
+        else if( strstr( directive, LINE_HEIGHT) != nullptr || strstr( directive, SHORT( LINE_HEIGHT)) != nullptr)
             selection = &line_height;
-        else if( strstr( directive, STROKE_WIDTH) != nullptr)
+        else if( strstr( directive, STROKE_WIDTH) != nullptr || strstr( directive, SHORT( STROKE_WIDTH)) != nullptr)
             selection = &stroke_width;
-        else if( strstr( directive, JUSTIFY) != nullptr)
+        else if( strstr( directive, JUSTIFY) != nullptr || strstr( directive, SHORT( JUSTIFY)) != nullptr)
             selection = &justification;
 #if defined( CUSTOM_FONT_SUPPORTED)
-        else if( strstr( directive, UNINSTALL_FONT) != nullptr)
+        else if( strstr( directive, UNINSTALL_FONT) != nullptr || strstr( directive, SHORT( UNINSTALL_FONT)) != nullptr)
         {
             custom_font_action = "uninstall";
             selection = &custom_font;
         }
-        else if( strstr( directive, INSTALL_FONT) != nullptr)
+        else if( strstr( directive, INSTALL_FONT) != nullptr || strstr( directive, SHORT( INSTALL_FONT)) != nullptr)
         {
             custom_font_action = "install";
             selection = &custom_font;
@@ -3671,27 +3685,29 @@ int main( int ac, char *av[])
         word = *av;
     else
     {
+        help:
         std::array<std::string_view, OPTIONS_COUNT> options =
         {
-            OPTIONIFY( LIST_FONTS),
-            OPTIONIFY( FONT_PROFILE),
-            OPTIONIFY( COLOR_RULE),
-            OPTIONIFY( FONT_SIZE),
-            OPTIONIFY( DRAWING_CHARACTER),
-            OPTIONIFY( AS_IMAGE),
-            OPTIONIFY( OUTPUT),
-            OPTIONIFY( LIST_EASINGS),
-            OPTIONIFY( LIST_COMPOSITION_MODES),
-            OPTIONIFY( COMPOSITION_RULE),
-            OPTIONIFY( COMPOSITION_IMAGE),
-            OPTIONIFY( DPI),
-            OPTIONIFY( BACKGROUND_COLOR),
-            OPTIONIFY( LINE_HEIGHT),
-            OPTIONIFY( JUSTIFY),
-            OPTIONIFY( STROKE_WIDTH),
-            OPTIONIFY( UNINSTALL_FONT),
-            OPTIONIFY( INSTALL_FONT),
-            OPTIONIFY( QUALITY_INDEX),
+            STRUCTURE_PREFIX( LIST_FONTS),
+            STRUCTURE_PREFIX( FONT_PROFILE),
+            STRUCTURE_PREFIX( COLOR_RULE),
+            STRUCTURE_PREFIX( FONT_SIZE),
+            STRUCTURE_PREFIX( DRAWING_CHARACTER),
+            STRUCTURE_PREFIX( AS_IMAGE),
+            STRUCTURE_PREFIX( OUTPUT),
+            STRUCTURE_PREFIX( LIST_EASINGS),
+            STRUCTURE_PREFIX( LIST_COMPOSITION_MODES),
+            STRUCTURE_PREFIX( COMPOSITION_RULE),
+            STRUCTURE_PREFIX( COMPOSITION_IMAGE),
+            STRUCTURE_PREFIX( DPI),
+            STRUCTURE_PREFIX( BACKGROUND_COLOR),
+            STRUCTURE_PREFIX( LINE_HEIGHT),
+            STRUCTURE_PREFIX( JUSTIFY),
+            STRUCTURE_PREFIX( STROKE_WIDTH),
+            STRUCTURE_PREFIX( UNINSTALL_FONT),
+            STRUCTURE_PREFIX( INSTALL_FONT),
+            STRUCTURE_PREFIX( QUALITY_INDEX),
+            STRUCTURE_PREFIX( HELP_PROMPT)
         };
         std::array<std::string_view, OPTIONS_COUNT> options_message =
         {
@@ -3713,20 +3729,27 @@ int main( int ac, char *av[])
             MESSAGE( STROKE_WIDTH),
             MESSAGE( UNINSTALL_FONT),
             MESSAGE( INSTALL_FONT),
-            MESSAGE( QUALITY_INDEX)
+            MESSAGE( QUALITY_INDEX),
+            MESSAGE( HELP_PROMPT)
         };
 
         size_t max_length{};
         std::for_each( std::cbegin( options), std::cend( options),
                        [ &max_length]( auto each){ max_length = std::max( max_length, each.size());});
 
+        auto *prog_ptr = strrchr( program, '/');
+        fprintf( stderr, "Usage: %s [OPTION]... FILE|TEXT\n", prog_ptr == nullptr ? program : ++prog_ptr);
+        fprintf( stderr, "Convert the content of FILE or TEXT into a format defined by OPTIONs\n\n");
+        fprintf( stderr, "The following options can be used to tune the generator:\n");
         for( size_t j = 0, options_size = OPTIONS_COUNT; j < options_size; ++j)
         {
             auto [ help_lines, max_line] = expand( options_message[ j], Justification::Left);
-            std::cout << std::setw( max_length) << options[ j] << std::string( ALLOWANCE, ' ') << help_lines[ 0];
+            auto base_spacing = max_length + max_line + ALLOWANCE;
+            std::cerr << options[ j] << std::setw( base_spacing - options[ j].size())
+                      << help_lines[ 0] <<'\n';
             size_t idx = 1, help_lines_size = help_lines.size();
             while( idx < help_lines_size)
-                std::cout << std::setw( max_line + max_length + ALLOWANCE) << help_lines[ idx++] <<'\n';
+                std::cerr << std::setw( base_spacing) << help_lines[ idx++] <<'\n';
         }
 
         exit( EXIT_FAILURE);
