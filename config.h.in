@@ -1,6 +1,10 @@
 #cmakedefine CUSTOM_FONT_SUPPORTED
 #cmakedefine PNG_SUPPORTED
 #cmakedefine JPG_SUPPORTED
+#cmakedefine IS_LINUX                     1
+#cmakedefine IS_WINDOWS                   1
+#cmakedefine HAVE_SYS_STAT_H              1
+
 #if defined( CUSTOM_FONT_SUPPORTED)
     #define FONT_ARCHIVE                  "copywrite-installed-fonts.zip"
 #endif
@@ -72,7 +76,7 @@
                                         "See " OPTIONIFY( INSTALL_FONT) "\n"\
                                         "Example:\n" \
                                         OPTIONIFY( FONT_PROFILE) "=\"Noto sans Regular\"\n" \
-                                        "If font is already installed, use: " \
+                                        "If font was installed using " OPTIONIFY( INSTALL_FONT) ",\n use: " \
                                         OPTIONIFY( FONT_PROFILE) "=\"Noto sans - Regular\"\n"
 
 #define FONT_SIZE_MESSAGE               "Set the default font size used by characters that don't match any\n" \
@@ -115,7 +119,7 @@
                                         "This option if only available if source code is compiled with\n" \
                                         "-DPNG_SUPPORTED=ON or -DJPG_SUPPORTED=ON\n"
 
-#define LIST_EASINGS_MESSAGE             OPTIONIFY( LIST_EASINGS) " list the easing functions available.\n" \
+#define LIST_EASINGS_MESSAGE            " list the easing functions available.\n" \
 
 #define LIST_COMPOSITION_MODES_MESSAGE  "List all composition modes available.\n" \
 
@@ -162,6 +166,26 @@
                                         "    Set all characters to ease using conical gradient.\n"\
                                         "The conical angle starts at 50deg, blue starts at 180deg\n" \
                                         " and finishes with orange.\n" \
+                                        "13. " OPTIONIFY( COLOR_RULE) "=[1..]{red:3f}\n" \
+                                        "    Set the font color to red with background transparency of 63.\n"\
+                                        "14. " OPTIONIFY( COLOR_RULE) "=[1..]{(red + blue)}\n" \
+                                        "    Set the font color to the result of additive color mixing\n" \
+                                        "of red and blue which is magenta.\n" \
+                                        "15. " OPTIONIFY( COLOR_RULE) "=[1..]{(red:3f + blue:2f)}\n" \
+                                        "    Produces same result as in step `14`.\n" \
+                                        "To set the opacity of the mixed color, use:\n" \
+                                        OPTIONIFY( COLOR_RULE) "=[1..]{(red:3f + blue: 2f):ff}. Where `0xff`\n" \
+                                        " is the opacity override override.\n" \
+                                        "16. " OPTIONIFY( COLOR_RULE) "=[1..]{(cyan - yellow)}\n" \
+                                        "    Set the font color to the result of subtractive mixing of\n" \
+                                        "cyan and yellow which is green.\n" \
+                                        "17. " OPTIONIFY( COLOR_RULE) "=[1..]{(red:ff:30 + blue:ff:70)}\n" \
+                                        "   Set the font color to the result of mixing 30% red with 70%\n" \
+                                        "blue with maximum opacity of 255. If the sum is greater than 100%,\n" \
+                                        "the result is clamped to 100%.\n" \
+                                        "18. " OPTIONIFY( COLOR_RULE) "=[1..]{(red::30 + blue::70):ff}\n" \
+                                        "    Set the color to the sum of red and blue with mixing ratio of\n" \
+                                        "30% red and 70% blue.\n" \
                                         "MULTILINE TEXTS:\n" \
                                         "1. "  OPTIONIFY( COLOR_RULE) "=[(1,1)]{Red}\n" \
                                         "    Set the character at the first row and first column(only) to red.\n" \

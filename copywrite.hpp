@@ -39,6 +39,12 @@
 #include <cmath>
 #include <variant>
 
+#if HAVE_SYS_STAT_H
+    #include <sys/types.h>
+    #include <sys/stat.h>
+    #include <unistd.h>
+#endif
+
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
     #if defined( __GNUC__) || defined( __clang__)
         #define swap32( x) __builtin_bswap32( x)
@@ -541,7 +547,6 @@ struct ApplicationHyperparameters
                           dpi{ 120};
   Padding                 pad{};
   OutputFormat            out_format{ OutputFormat::PNG};
-  CompositionRule		  composition;
 };
 
 void render( FT_Library library, FT_Face face, std::wstring_view text, ApplicationHyperparameters& guide);

@@ -3856,9 +3856,39 @@ int main( int ac, char *av[])
         exit( EXIT_FAILURE);
     }
 
+#if IS_LINUX && HAVE_SYS_STAT_H
+    struct stat statbuf;
+    auto code = stat( word, &statbuf);
+    auto is_plain_text = false;
+    auto is_file = false;
+    std::string mime_type;
+    if( code == 0 && S_ISREG( statbuf.st_mode))
+    {
+        is_file = true;
+        using namespace std::string_literals;
+        PropertyManager<FILE *> stream_handler( popen(( "file --mime-type "s + word).c_str(), "r"), pclose);
+        if( stream_handler.get())
+        {
+            std::string report( statbuf.st_size, '\0');
+            fread( &report[ 0], 1, statbuf.st_size, stream_handler.get());
+            is_plain_text = report.find( "text/plain") != std::string::npos;
+            mime_type = report.substr( report.find( ": ") + 2);
+        }
+    }
+
+    if( is_file && !is_plain_text)
+    {
+        std::cerr << "Invalid file specified: " << word << ".\nExpected: text/plain, got: " << mime_type;
+        exit( EXIT_FAILURE);
+    }
+
+    if( is_plain_text)
+    {
+#else
     auto ext_pos = strrchr( word, '.');
     if( ext_pos != nullptr && strcasecmp( ext_pos + 1, "txt") == 0)
     {
+#endif
         std::wifstream handle( word, std::ios::in | std::ios::ate);
         if( handle.good())
         {
