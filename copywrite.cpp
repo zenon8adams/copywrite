@@ -48,13 +48,14 @@
 #define ZERO( fl)                      ( std::abs( fl) <= EPSILON)
 #define EQUAL( al, bl)                 ZERO( ( al) - ( bl))
 #define UNSET( x)                      (( x) == -1)
-#define RED( color)                    (( color) >> 24u)
-#define GREEN( color)                  ((( color) >> 16u) & 0xFFu)
-#define BLUE( color)                   ((( color) >> 8u) & 0xFFu)
-#define ALPHA( color)                  (( color) & 0xFFu)
-#define RGBA( red, green, blue, alpha) (( ( uint32_t)( red)) << 24u |\
+#define ACCESSIBLE( ptr)               (( ptr) != nullptr)
+#define RED( color)                    (( uint8_t)(( color) >> 24u))
+#define GREEN( color)                  (( uint8_t)((( color) >> 16u) & 0xFFu))
+#define BLUE( color)                   (( uint8_t)((( color) >> 8u) & 0xFFu))
+#define ALPHA( color)                  (( uint8_t)(( color) & 0xFFu))
+#define RGBA( red, green, blue, alpha) ((( uint32_t)( red))  << 24u |\
                                        (( uint32_t)( green)) << 16u |\
-                                       (( uint32_t)( blue)) << 8u | alpha)
+                                       (( uint32_t)( blue))  << 8u | alpha)
 #define RGB( red, green, blue)         RGBA( red, green, blue, 0u)
 #define SCALE_RGB( color, scale)       RGB( RED( color) * ( scale), GREEN( color) * ( scale), BLUE( color) * ( scale))
 #define XYZ_SCALE                      775
@@ -62,7 +63,7 @@
 #define HALF_RGB_SCALE                 128
 #define DEG_SCALE					   180.f / M_PI
 #define ENUM_CAST( idx)					( static_cast<uint8_t>( idx))
-#define MODEL_ENUM( mode)			  CompositionRule::CompositionModel::mode
+#define MODEL_ENUM( mode)			   CompositionRule::CompositionModel::mode
 /*
  * The composition table is made up of 2 bit field
  * per flag for CompositionModel.
@@ -90,9 +91,12 @@
 #define COMPOSITION_TABLE		       0x0064046AU
 #define COMPOSITON_SIZE( idx)          (( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U)) & 1U)
 #define COMPOSITION_SIDE( idx)		   (( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U + 1U)) & 1U)
-#define LOW_BYTE( value)               (( uint32_t)(( value) & 0xFFFFFFFFu))
-#define HIGH_BYTE( value)              (( uint32_t)(( value) >> 32u))
-#define CONCAT_BYTES( high, low)       (( uint64_t)( high) << 32u | low)
+#define LOW_BYTE( value)               (( uint8_t)(( value) & 0xFFu))
+#define HIGH_BYTE( value)              (( uint8_t)(( value) >> 8u))
+#define MAKE_WORD( high, low)          (( uint16_t)( high) << 8u | ( low))
+#define LOW_DWORD( value)              (( uint32_t)(( value) & 0xFFFFFFFFu))
+#define HIGH_DWORD( value)             (( uint32_t)(( value) >> 32u))
+#define MAKE_QWORD( high, low)         (( uint64_t)( high) << 32u | ( low))
 
 #define FOUND_STRING( xpr)             (( xpr) == 0)
 
@@ -414,8 +418,8 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
             continue;
         }
 
-        uint32_t inner_color   = LOW_BYTE( match->scolor),
-                 outline_color = HIGH_BYTE( match->scolor);
+        uint32_t inner_color   = LOW_DWORD( match->scolor),
+                 outline_color = HIGH_DWORD( match->scolor);
         std::unique_ptr<uint64_t[]> row_colors;
         if( match->color_easing_fn && match->gradient->gradient_type == GradientType::Linear)
         {
@@ -428,8 +432,8 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
                                      ? std::max<int>( n_levels - 1, 1) : match->end.y - match->start.y);
              auto fraction = match->color_easing_fn( guide.ease_col ? ( float)start.y
                              / end.y : ( float)start.x / end.x);
-             inner_color   = interpolateColor( LOW_BYTE( match->scolor), LOW_BYTE( match->ecolor), fraction);
-             outline_color = interpolateColor( HIGH_BYTE( match->scolor), HIGH_BYTE( match->ecolor), fraction);
+             inner_color   = interpolateColor( LOW_DWORD( match->scolor), LOW_DWORD( match->ecolor), fraction);
+             outline_color = interpolateColor( HIGH_DWORD( match->scolor), HIGH_DWORD( match->ecolor), fraction);
          }
          else
          {
@@ -439,9 +443,9 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
              for( FT_Int i = 0; i < length; ++i)
              {
                  auto fraction = match->color_easing_fn(( float)( i + acc_dim) / extent);
-                 inner_color   = interpolateColor( LOW_BYTE( match->scolor), LOW_BYTE( match->ecolor), fraction);
-                 outline_color = interpolateColor( HIGH_BYTE( match->scolor), HIGH_BYTE( match->ecolor), fraction);
-                 row_colors.get()[ i] = CONCAT_BYTES( outline_color, inner_color);
+                 inner_color   = interpolateColor( LOW_DWORD( match->scolor), LOW_DWORD( match->ecolor), fraction);
+                 outline_color = interpolateColor( HIGH_DWORD( match->scolor), HIGH_DWORD( match->ecolor), fraction);
+                 row_colors.get()[ i] = MAKE_QWORD( outline_color, inner_color);
              }
              /*
               * Add text advance gap to character to arrive at appropriate color easing value.
@@ -470,11 +474,11 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
                     {
                         // Paint outline
                         if( match->gradient->gradient_type == GradientType::Linear)
-                            dest = match->soak ? HIGH_BYTE( row_colors.get()[ color_index]) : outline_color;
+                            dest = match->soak ? HIGH_DWORD( row_colors.get()[ color_index]) : outline_color;
                         else
                             dest = easeColor( raster, row_detail, Vec2D<int>( n_glyphs / n_levels, n_levels),
                                               { i, height - 1 - j}, pen,
-                                              { HIGH_BYTE( match->scolor), HIGH_BYTE( match->ecolor)}, true);
+                                              { HIGH_DWORD( match->scolor), HIGH_DWORD( match->ecolor)}, true);
                     }
                     else
                         dest = outline_color;
@@ -489,11 +493,11 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
                             if ( match->color_easing_fn)
                             {
                                 if ( match->gradient->gradient_type == GradientType::Linear)
-                                    dest = match->soak ? LOW_BYTE( row_colors.get()[ color_index]) : inner_color;
+                                    dest = match->soak ? LOW_DWORD( row_colors.get()[ color_index]) : inner_color;
                                 else
                                     dest = easeColor( raster, row_detail, Vec2D<int>( n_glyphs / n_levels, n_levels),
                                                       { i, height - 1 - j}, pen,
-                                                      { LOW_BYTE( match->scolor), LOW_BYTE( match->ecolor)}, false);
+                                                      { LOW_DWORD( match->scolor), LOW_DWORD( match->ecolor)}, false);
                             }
                             else
                                 dest = inner_color;
@@ -592,7 +596,7 @@ uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<
     auto& match = raster.match;
     auto glyph_width = raster.bbox.width();
     auto glyph_height = raster.bbox.height();
-    auto color = is_outline ? HIGH_BYTE( match->scolor) : LOW_BYTE( match->scolor);
+    auto color = is_outline ? HIGH_DWORD( match->scolor) : LOW_DWORD( match->scolor);
     auto start = Vec2D<int>( raster.pos.x - match->start.x, raster.pos.y - match->start.y),
          end   = Vec2D<int>( UNSET( match->end.x) ? std::max<int>( size.x - 1, 1) : match->end.x - match->start.x,
                              UNSET( match->end.y) ? std::max<int>( size.y - 1, 1) : match->end.y - match->start.y);
@@ -648,14 +652,14 @@ uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<
             });
             auto cur_stop = stop_match == stops.cend() ? *stops.cbegin() : *stop_match;
             if( ( prev_stop.first & ~0xFFuLL) == ( cur_stop.first & ~0xFFuLL))
-                color = is_outline ? HIGH_BYTE( cur_stop.first) : LOW_BYTE( cur_stop.first);
+                color = is_outline ? HIGH_DWORD( cur_stop.first) : LOW_DWORD( cur_stop.first);
             else
             {
                 auto fraction = ( angle - prev_stop.second) / ( cur_stop.second - prev_stop.second);
                 if( match->color_easing_fn)
                     fraction = match->color_easing_fn( fraction);
-                return is_outline ? colorLerp( HIGH_BYTE( prev_stop.first), HIGH_BYTE( cur_stop.first), fraction)
-                                  : colorLerp( LOW_BYTE( prev_stop.first), LOW_BYTE( cur_stop.first), fraction);
+                return is_outline ? colorLerp( HIGH_DWORD( prev_stop.first), HIGH_DWORD( cur_stop.first), fraction)
+                                  : colorLerp( LOW_DWORD( prev_stop.first), LOW_DWORD( cur_stop.first), fraction);
             }
         }
     }
@@ -1569,160 +1573,322 @@ uint64_t getNumber( const char *&ctx, uint8_t base)
     return weight;
 }
 
-uint32_t decodeColorName( const char *&ctx, BKNode *bkroot)
+std::unordered_map<std::string_view, uint32_t>& colorCodeLookup()
 {
-    static const std::unordered_map<std::string_view, uint32_t> nameLookup =
+    static std::unordered_map<std::string_view, uint32_t> name_lookup =
     {
-            { COLOR_ALICEBLUE,            COLORHEX_ALICEBLUE},
-            { COLOR_ANTIQUEWHITE,         COLORHEX_ANTIQUEWHITE},
-            { COLOR_AQUA,                 COLORHEX_AQUA},
-            { COLOR_AQUAMARINE,           COLORHEX_AQUAMARINE},
-            { COLOR_AZURE,                COLORHEX_AZURE},
-            { COLOR_BEIGE,                COLORHEX_BEIGE},
-            { COLOR_BISQUE,               COLORHEX_BISQUE},
-            { COLOR_BLACK,                COLORHEX_BLACK},
-            { COLOR_BLANCHEDALMOND,       COLORHEX_BLANCHEDALMOND},
-            { COLOR_BLUE,                 COLORHEX_BLUE},
-            { COLOR_BLUEVIOLET,           COLORHEX_BLUEVIOLET},
-            { COLOR_BROWN,                COLORHEX_BROWN},
-            { COLOR_BURLYWOOD,            COLORHEX_BURLYWOOD},
-            { COLOR_CADETBLUE,            COLORHEX_CADETBLUE},
-            { COLOR_CHARTREUSE,           COLORHEX_CHARTREUSE},
-            { COLOR_CHOCOLATE,            COLORHEX_CHOCOLATE},
-            { COLOR_CORAL,                COLORHEX_CORAL},
-            { COLOR_CORNFLOWERBLUE,       COLORHEX_CORNFLOWERBLUE},
-            { COLOR_CORNSILK,             COLORHEX_CORNSILK},
-            { COLOR_CRIMSON,              COLORHEX_CRIMSON},
-            { COLOR_CYAN,                 COLORHEX_CYAN},
-            { COLOR_DARKBLUE,             COLORHEX_DARKBLUE},
-            { COLOR_DARKCYAN,             COLORHEX_DARKCYAN},
-            { COLOR_DARKGOLDENROD,        COLORHEX_DARKGOLDENROD},
-            { COLOR_DARKGRAY,             COLORHEX_DARKGRAY},
-            { COLOR_DARKGREY,             COLORHEX_DARKGREY},
-            { COLOR_DARKGREEN,            COLORHEX_DARKGREEN},
-            { COLOR_DARKKHAKI,            COLORHEX_DARKKHAKI},
-            { COLOR_DARKMAGENTA,          COLORHEX_DARKMAGENTA},
-            { COLOR_DARKOLIVEGREEN,       COLORHEX_DARKOLIVEGREEN},
-            { COLOR_DARKORANGE,           COLORHEX_DARKORANGE},
-            { COLOR_DARKORCHID,           COLORHEX_DARKORCHID},
-            { COLOR_DARKRED,              COLORHEX_DARKRED},
-            { COLOR_DARKSALMON,           COLORHEX_DARKSALMON},
-            { COLOR_DARKSEAGREEN,         COLORHEX_DARKSEAGREEN},
-            { COLOR_DARKSLATEBLUE,        COLORHEX_DARKSLATEBLUE},
-            { COLOR_DARKSLATEGRAY,        COLORHEX_DARKSLATEGRAY},
-            { COLOR_DARKSLATEGREY,        COLORHEX_DARKSLATEGREY},
-            { COLOR_DARKTURQUOISE,        COLORHEX_DARKTURQUOISE},
-            { COLOR_DARKVIOLET,           COLORHEX_DARKVIOLET},
-            { COLOR_DEEPPINK,             COLORHEX_DEEPPINK},
-            { COLOR_DEEPSKYBLUE,          COLORHEX_DEEPSKYBLUE},
-            { COLOR_DIMGRAY,              COLORHEX_DIMGRAY},
-            { COLOR_DIMGREY,              COLORHEX_DIMGREY},
-            { COLOR_DODGERBLUE,           COLORHEX_DODGERBLUE},
-            { COLOR_FIREBRICK,            COLORHEX_FIREBRICK},
-            { COLOR_FLORALWHITE,          COLORHEX_FLORALWHITE},
-            { COLOR_FORESTGREEN,          COLORHEX_FORESTGREEN},
-            { COLOR_FUCHSIA,              COLORHEX_FUCHSIA},
-            { COLOR_GAINSBORO,            COLORHEX_GAINSBORO},
-            { COLOR_GHOSTWHITE,           COLORHEX_GHOSTWHITE},
-            { COLOR_GOLD,                 COLORHEX_GOLD},
-            { COLOR_GOLDENROD,            COLORHEX_GOLDENROD},
-            { COLOR_GRAY,                 COLORHEX_GRAY},
-            { COLOR_GREY,                 COLORHEX_GREY},
-            { COLOR_GREEN,                COLORHEX_GREEN},
-            { COLOR_GREENYELLOW,          COLORHEX_GREENYELLOW},
-            { COLOR_HONEYDEW,             COLORHEX_HONEYDEW},
-            { COLOR_HOTPINK,              COLORHEX_HOTPINK},
-            { COLOR_INDIANRED,            COLORHEX_INDIANRED},
-            { COLOR_INDIGO,               COLORHEX_INDIGO},
-            { COLOR_IVORY,                COLORHEX_IVORY},
-            { COLOR_KHAKI,                COLORHEX_KHAKI},
-            { COLOR_LAVENDER,             COLORHEX_LAVENDER},
-            { COLOR_LAVENDERBLUSH,        COLORHEX_LAVENDERBLUSH},
-            { COLOR_LAWNGREEN,            COLORHEX_LAWNGREEN},
-            { COLOR_LEMONCHIFFON,         COLORHEX_LEMONCHIFFON},
-            { COLOR_LIGHTBLUE,            COLORHEX_LIGHTBLUE},
-            { COLOR_LIGHTCORAL,           COLORHEX_LIGHTCORAL},
-            { COLOR_LIGHTCYAN,            COLORHEX_LIGHTCYAN},
-            { COLOR_LIGHTGOLDENRODYELLOW, COLORHEX_LIGHTGOLDENRODYELLOW},
-            { COLOR_LIGHTGRAY,            COLORHEX_LIGHTGRAY},
-            { COLOR_LIGHTGREY,            COLORHEX_LIGHTGREY},
-            { COLOR_LIGHTGREEN,           COLORHEX_LIGHTGREEN},
-            { COLOR_LIGHTPINK,            COLORHEX_LIGHTPINK},
-            { COLOR_LIGHTSALMON,          COLORHEX_LIGHTSALMON},
-            { COLOR_LIGHTSEAGREEN,        COLORHEX_LIGHTSEAGREEN},
-            { COLOR_LIGHTSKYBLUE,         COLORHEX_LIGHTSKYBLUE},
-            { COLOR_LIGHTSLATEGRAY,       COLORHEX_LIGHTSLATEGRAY},
-            { COLOR_LIGHTSLATEGREY,       COLORHEX_LIGHTSLATEGREY},
-            { COLOR_LIGHTSTEELBLUE,       COLORHEX_LIGHTSTEELBLUE},
-            { COLOR_LIGHTYELLOW,          COLORHEX_LIGHTYELLOW},
-            { COLOR_LIME,                 COLORHEX_LIME},
-            { COLOR_LIMEGREEN,            COLORHEX_LIMEGREEN},
-            { COLOR_LINEN,                COLORHEX_LINEN},
-            { COLOR_MAGENTA,              COLORHEX_MAGENTA},
-            { COLOR_MAROON,               COLORHEX_MAROON},
-            { COLOR_MEDIUMAQUAMARINE,     COLORHEX_MEDIUMAQUAMARINE},
-            { COLOR_MEDIUMBLUE,           COLORHEX_MEDIUMBLUE},
-            { COLOR_MEDIUMORCHID,         COLORHEX_MEDIUMORCHID},
-            { COLOR_MEDIUMPURPLE,         COLORHEX_MEDIUMPURPLE},
-            { COLOR_MEDIUMSEAGREEN,       COLORHEX_MEDIUMSEAGREEN},
-            { COLOR_MEDIUMSLATEBLUE,      COLORHEX_MEDIUMSLATEBLUE},
-            { COLOR_MEDIUMSPRINGGREEN,    COLORHEX_MEDIUMSPRINGGREEN},
-            { COLOR_MEDIUMTURQUOISE,      COLORHEX_MEDIUMTURQUOISE},
-            { COLOR_MEDIUMVIOLETRED,      COLORHEX_MEDIUMVIOLETRED},
-            { COLOR_MIDNIGHTBLUE,         COLORHEX_MIDNIGHTBLUE},
-            { COLOR_MINTCREAM,            COLORHEX_MINTCREAM},
-            { COLOR_MISTYROSE,            COLORHEX_MISTYROSE},
-            { COLOR_MOCCASIN,             COLORHEX_MOCCASIN},
-            { COLOR_NAVAJOWHITE,          COLORHEX_NAVAJOWHITE},
-            { COLOR_NAVY,                 COLORHEX_NAVY},
-            { COLOR_OLDLACE,              COLORHEX_OLDLACE},
-            { COLOR_OLIVE,                COLORHEX_OLIVE},
-            { COLOR_OLIVEDRAB,            COLORHEX_OLIVEDRAB},
-            { COLOR_ORANGE,               COLORHEX_ORANGE},
-            { COLOR_ORANGERED,            COLORHEX_ORANGERED},
-            { COLOR_ORCHID,               COLORHEX_ORCHID},
-            { COLOR_PALEGOLDENROD,        COLORHEX_PALEGOLDENROD},
-            { COLOR_PALEGREEN,            COLORHEX_PALEGREEN},
-            { COLOR_PALETURQUOISE,        COLORHEX_PALETURQUOISE},
-            { COLOR_PALEVIOLETRED,        COLORHEX_PALEVIOLETRED},
-            { COLOR_PAPAYAWHIP,           COLORHEX_PAPAYAWHIP},
-            { COLOR_PEACHPUFF,            COLORHEX_PEACHPUFF},
-            { COLOR_PERU,                 COLORHEX_PERU},
-            { COLOR_PINK,                 COLORHEX_PINK},
-            { COLOR_PLUM,                 COLORHEX_PLUM},
-            { COLOR_POWDERBLUE,           COLORHEX_POWDERBLUE},
-            { COLOR_PURPLE,               COLORHEX_PURPLE},
-            { COLOR_REBECCAPURPLE,        COLORHEX_REBECCAPURPLE},
-            { COLOR_RED,                  COLORHEX_RED},
-            { COLOR_ROSYBROWN,            COLORHEX_ROSYBROWN},
-            { COLOR_ROYALBLUE,            COLORHEX_ROYALBLUE},
-            { COLOR_SADDLEBROWN,          COLORHEX_SADDLEBROWN},
-            { COLOR_SALMON,               COLORHEX_SALMON},
-            { COLOR_SANDYBROWN,           COLORHEX_SANDYBROWN},
-            { COLOR_SEAGREEN,             COLORHEX_SEAGREEN},
-            { COLOR_SEASHELL,             COLORHEX_SEASHELL},
-            { COLOR_SIENNA,               COLORHEX_SIENNA},
-            { COLOR_SILVER,               COLORHEX_SILVER},
-            { COLOR_SKYBLUE,              COLORHEX_SKYBLUE},
-            { COLOR_SLATEBLUE,            COLORHEX_SLATEBLUE},
-            { COLOR_SLATEGRAY,            COLORHEX_SLATEGRAY},
-            { COLOR_SLATEGREY,            COLORHEX_SLATEGREY},
-            { COLOR_SNOW,                 COLORHEX_SNOW},
-            { COLOR_SPRINGGREEN,          COLORHEX_SPRINGGREEN},
-            { COLOR_STEELBLUE,            COLORHEX_STEELBLUE},
-            { COLOR_TAN,                  COLORHEX_TAN},
-            { COLOR_TEAL,                 COLORHEX_TEAL},
-            { COLOR_THISTLE,              COLORHEX_THISTLE},
-            { COLOR_TOMATO,               COLORHEX_TOMATO},
-            { COLOR_TURQUOISE,            COLORHEX_TURQUOISE},
-            { COLOR_VIOLET,               COLORHEX_VIOLET},
-            { COLOR_WHEAT,                COLORHEX_WHEAT},
-            { COLOR_WHITE,                COLORHEX_WHITE},
-            { COLOR_WHITESMOKE,           COLORHEX_WHITESMOKE},
-            { COLOR_YELLOW,               COLORHEX_YELLOW},
-            { COLOR_YELLOWGREEN,          COLORHEX_YELLOWGREEN},
+        { COLOR_ALICEBLUE,            COLORHEX_ALICEBLUE},
+        { COLOR_ANTIQUEWHITE,         COLORHEX_ANTIQUEWHITE},
+        { COLOR_AQUA,                 COLORHEX_AQUA},
+        { COLOR_AQUAMARINE,           COLORHEX_AQUAMARINE},
+        { COLOR_AZURE,                COLORHEX_AZURE},
+        { COLOR_BEIGE,                COLORHEX_BEIGE},
+        { COLOR_BISQUE,               COLORHEX_BISQUE},
+        { COLOR_BLACK,                COLORHEX_BLACK},
+        { COLOR_BLANCHEDALMOND,       COLORHEX_BLANCHEDALMOND},
+        { COLOR_BLUE,                 COLORHEX_BLUE},
+        { COLOR_BLUEVIOLET,           COLORHEX_BLUEVIOLET},
+        { COLOR_BROWN,                COLORHEX_BROWN},
+        { COLOR_BURLYWOOD,            COLORHEX_BURLYWOOD},
+        { COLOR_CADETBLUE,            COLORHEX_CADETBLUE},
+        { COLOR_CHARTREUSE,           COLORHEX_CHARTREUSE},
+        { COLOR_CHOCOLATE,            COLORHEX_CHOCOLATE},
+        { COLOR_CORAL,                COLORHEX_CORAL},
+        { COLOR_CORNFLOWERBLUE,       COLORHEX_CORNFLOWERBLUE},
+        { COLOR_CORNSILK,             COLORHEX_CORNSILK},
+        { COLOR_CRIMSON,              COLORHEX_CRIMSON},
+        { COLOR_CYAN,                 COLORHEX_CYAN},
+        { COLOR_DARKBLUE,             COLORHEX_DARKBLUE},
+        { COLOR_DARKCYAN,             COLORHEX_DARKCYAN},
+        { COLOR_DARKGOLDENROD,        COLORHEX_DARKGOLDENROD},
+        { COLOR_DARKGRAY,             COLORHEX_DARKGRAY},
+        { COLOR_DARKGREY,             COLORHEX_DARKGREY},
+        { COLOR_DARKGREEN,            COLORHEX_DARKGREEN},
+        { COLOR_DARKKHAKI,            COLORHEX_DARKKHAKI},
+        { COLOR_DARKMAGENTA,          COLORHEX_DARKMAGENTA},
+        { COLOR_DARKOLIVEGREEN,       COLORHEX_DARKOLIVEGREEN},
+        { COLOR_DARKORANGE,           COLORHEX_DARKORANGE},
+        { COLOR_DARKORCHID,           COLORHEX_DARKORCHID},
+        { COLOR_DARKRED,              COLORHEX_DARKRED},
+        { COLOR_DARKSALMON,           COLORHEX_DARKSALMON},
+        { COLOR_DARKSEAGREEN,         COLORHEX_DARKSEAGREEN},
+        { COLOR_DARKSLATEBLUE,        COLORHEX_DARKSLATEBLUE},
+        { COLOR_DARKSLATEGRAY,        COLORHEX_DARKSLATEGRAY},
+        { COLOR_DARKSLATEGREY,        COLORHEX_DARKSLATEGREY},
+        { COLOR_DARKTURQUOISE,        COLORHEX_DARKTURQUOISE},
+        { COLOR_DARKVIOLET,           COLORHEX_DARKVIOLET},
+        { COLOR_DEEPPINK,             COLORHEX_DEEPPINK},
+        { COLOR_DEEPSKYBLUE,          COLORHEX_DEEPSKYBLUE},
+        { COLOR_DIMGRAY,              COLORHEX_DIMGRAY},
+        { COLOR_DIMGREY,              COLORHEX_DIMGREY},
+        { COLOR_DODGERBLUE,           COLORHEX_DODGERBLUE},
+        { COLOR_FIREBRICK,            COLORHEX_FIREBRICK},
+        { COLOR_FLORALWHITE,          COLORHEX_FLORALWHITE},
+        { COLOR_FORESTGREEN,          COLORHEX_FORESTGREEN},
+        { COLOR_FUCHSIA,              COLORHEX_FUCHSIA},
+        { COLOR_GAINSBORO,            COLORHEX_GAINSBORO},
+        { COLOR_GHOSTWHITE,           COLORHEX_GHOSTWHITE},
+        { COLOR_GOLD,                 COLORHEX_GOLD},
+        { COLOR_GOLDENROD,            COLORHEX_GOLDENROD},
+        { COLOR_GRAY,                 COLORHEX_GRAY},
+        { COLOR_GREY,                 COLORHEX_GREY},
+        { COLOR_GREEN,                COLORHEX_GREEN},
+        { COLOR_GREENYELLOW,          COLORHEX_GREENYELLOW},
+        { COLOR_HONEYDEW,             COLORHEX_HONEYDEW},
+        { COLOR_HOTPINK,              COLORHEX_HOTPINK},
+        { COLOR_INDIANRED,            COLORHEX_INDIANRED},
+        { COLOR_INDIGO,               COLORHEX_INDIGO},
+        { COLOR_IVORY,                COLORHEX_IVORY},
+        { COLOR_KHAKI,                COLORHEX_KHAKI},
+        { COLOR_LAVENDER,             COLORHEX_LAVENDER},
+        { COLOR_LAVENDERBLUSH,        COLORHEX_LAVENDERBLUSH},
+        { COLOR_LAWNGREEN,            COLORHEX_LAWNGREEN},
+        { COLOR_LEMONCHIFFON,         COLORHEX_LEMONCHIFFON},
+        { COLOR_LIGHTBLUE,            COLORHEX_LIGHTBLUE},
+        { COLOR_LIGHTCORAL,           COLORHEX_LIGHTCORAL},
+        { COLOR_LIGHTCYAN,            COLORHEX_LIGHTCYAN},
+        { COLOR_LIGHTGOLDENRODYELLOW, COLORHEX_LIGHTGOLDENRODYELLOW},
+        { COLOR_LIGHTGRAY,            COLORHEX_LIGHTGRAY},
+        { COLOR_LIGHTGREY,            COLORHEX_LIGHTGREY},
+        { COLOR_LIGHTGREEN,           COLORHEX_LIGHTGREEN},
+        { COLOR_LIGHTPINK,            COLORHEX_LIGHTPINK},
+        { COLOR_LIGHTSALMON,          COLORHEX_LIGHTSALMON},
+        { COLOR_LIGHTSEAGREEN,        COLORHEX_LIGHTSEAGREEN},
+        { COLOR_LIGHTSKYBLUE,         COLORHEX_LIGHTSKYBLUE},
+        { COLOR_LIGHTSLATEGRAY,       COLORHEX_LIGHTSLATEGRAY},
+        { COLOR_LIGHTSLATEGREY,       COLORHEX_LIGHTSLATEGREY},
+        { COLOR_LIGHTSTEELBLUE,       COLORHEX_LIGHTSTEELBLUE},
+        { COLOR_LIGHTYELLOW,          COLORHEX_LIGHTYELLOW},
+        { COLOR_LIME,                 COLORHEX_LIME},
+        { COLOR_LIMEGREEN,            COLORHEX_LIMEGREEN},
+        { COLOR_LINEN,                COLORHEX_LINEN},
+        { COLOR_MAGENTA,              COLORHEX_MAGENTA},
+        { COLOR_MAROON,               COLORHEX_MAROON},
+        { COLOR_MEDIUMAQUAMARINE,     COLORHEX_MEDIUMAQUAMARINE},
+        { COLOR_MEDIUMBLUE,           COLORHEX_MEDIUMBLUE},
+        { COLOR_MEDIUMORCHID,         COLORHEX_MEDIUMORCHID},
+        { COLOR_MEDIUMPURPLE,         COLORHEX_MEDIUMPURPLE},
+        { COLOR_MEDIUMSEAGREEN,       COLORHEX_MEDIUMSEAGREEN},
+        { COLOR_MEDIUMSLATEBLUE,      COLORHEX_MEDIUMSLATEBLUE},
+        { COLOR_MEDIUMSPRINGGREEN,    COLORHEX_MEDIUMSPRINGGREEN},
+        { COLOR_MEDIUMTURQUOISE,      COLORHEX_MEDIUMTURQUOISE},
+        { COLOR_MEDIUMVIOLETRED,      COLORHEX_MEDIUMVIOLETRED},
+        { COLOR_MIDNIGHTBLUE,         COLORHEX_MIDNIGHTBLUE},
+        { COLOR_MINTCREAM,            COLORHEX_MINTCREAM},
+        { COLOR_MISTYROSE,            COLORHEX_MISTYROSE},
+        { COLOR_MOCCASIN,             COLORHEX_MOCCASIN},
+        { COLOR_NAVAJOWHITE,          COLORHEX_NAVAJOWHITE},
+        { COLOR_NAVY,                 COLORHEX_NAVY},
+        { COLOR_OLDLACE,              COLORHEX_OLDLACE},
+        { COLOR_OLIVE,                COLORHEX_OLIVE},
+        { COLOR_OLIVEDRAB,            COLORHEX_OLIVEDRAB},
+        { COLOR_ORANGE,               COLORHEX_ORANGE},
+        { COLOR_ORANGERED,            COLORHEX_ORANGERED},
+        { COLOR_ORCHID,               COLORHEX_ORCHID},
+        { COLOR_PALEGOLDENROD,        COLORHEX_PALEGOLDENROD},
+        { COLOR_PALEGREEN,            COLORHEX_PALEGREEN},
+        { COLOR_PALETURQUOISE,        COLORHEX_PALETURQUOISE},
+        { COLOR_PALEVIOLETRED,        COLORHEX_PALEVIOLETRED},
+        { COLOR_PAPAYAWHIP,           COLORHEX_PAPAYAWHIP},
+        { COLOR_PEACHPUFF,            COLORHEX_PEACHPUFF},
+        { COLOR_PERU,                 COLORHEX_PERU},
+        { COLOR_PINK,                 COLORHEX_PINK},
+        { COLOR_PLUM,                 COLORHEX_PLUM},
+        { COLOR_POWDERBLUE,           COLORHEX_POWDERBLUE},
+        { COLOR_PURPLE,               COLORHEX_PURPLE},
+        { COLOR_REBECCAPURPLE,        COLORHEX_REBECCAPURPLE},
+        { COLOR_RED,                  COLORHEX_RED},
+        { COLOR_ROSYBROWN,            COLORHEX_ROSYBROWN},
+        { COLOR_ROYALBLUE,            COLORHEX_ROYALBLUE},
+        { COLOR_SADDLEBROWN,          COLORHEX_SADDLEBROWN},
+        { COLOR_SALMON,               COLORHEX_SALMON},
+        { COLOR_SANDYBROWN,           COLORHEX_SANDYBROWN},
+        { COLOR_SEAGREEN,             COLORHEX_SEAGREEN},
+        { COLOR_SEASHELL,             COLORHEX_SEASHELL},
+        { COLOR_SIENNA,               COLORHEX_SIENNA},
+        { COLOR_SILVER,               COLORHEX_SILVER},
+        { COLOR_SKYBLUE,              COLORHEX_SKYBLUE},
+        { COLOR_SLATEBLUE,            COLORHEX_SLATEBLUE},
+        { COLOR_SLATEGRAY,            COLORHEX_SLATEGRAY},
+        { COLOR_SLATEGREY,            COLORHEX_SLATEGREY},
+        { COLOR_SNOW,                 COLORHEX_SNOW},
+        { COLOR_SPRINGGREEN,          COLORHEX_SPRINGGREEN},
+        { COLOR_STEELBLUE,            COLORHEX_STEELBLUE},
+        { COLOR_TAN,                  COLORHEX_TAN},
+        { COLOR_TEAL,                 COLORHEX_TEAL},
+        { COLOR_THISTLE,              COLORHEX_THISTLE},
+        { COLOR_TOMATO,               COLORHEX_TOMATO},
+        { COLOR_TURQUOISE,            COLORHEX_TURQUOISE},
+        { COLOR_VIOLET,               COLORHEX_VIOLET},
+        { COLOR_WHEAT,                COLORHEX_WHEAT},
+        { COLOR_WHITE,                COLORHEX_WHITE},
+        { COLOR_WHITESMOKE,           COLORHEX_WHITESMOKE},
+        { COLOR_YELLOW,               COLORHEX_YELLOW},
+        { COLOR_YELLOWGREEN,          COLORHEX_YELLOWGREEN},
+    };
+    return name_lookup;
+}
+
+std::string_view getColorNameAt( size_t pos)
+{
+    assert(( int)pos > 0 && pos < NUMBER_OF_COLORS);
+    static std::array<std::string_view, NUMBER_OF_COLORS> color_names =
+    {
+        ICOLOR_ALICEBLUE,
+        ICOLOR_ANTIQUEWHITE,
+        ICOLOR_AQUA,
+        ICOLOR_AQUAMARINE,
+        ICOLOR_AZURE,
+        ICOLOR_BEIGE,
+        ICOLOR_BISQUE,
+        ICOLOR_BLACK,
+        ICOLOR_BLANCHEDALMOND,
+        ICOLOR_BLUE,
+        ICOLOR_BLUEVIOLET,
+        ICOLOR_BROWN,
+        ICOLOR_BURLYWOOD,
+        ICOLOR_CADETBLUE,
+        ICOLOR_CHARTREUSE,
+        ICOLOR_CHOCOLATE,
+        ICOLOR_CORAL,
+        ICOLOR_CORNFLOWERBLUE,
+        ICOLOR_CORNSILK,
+        ICOLOR_CRIMSON,
+        ICOLOR_CYAN,
+        ICOLOR_DARKBLUE,
+        ICOLOR_DARKCYAN,
+        ICOLOR_DARKGOLDENROD,
+        ICOLOR_DARKGRAY,
+        ICOLOR_DARKGREY,
+        ICOLOR_DARKGREEN,
+        ICOLOR_DARKKHAKI,
+        ICOLOR_DARKMAGENTA,
+        ICOLOR_DARKOLIVEGREEN,
+        ICOLOR_DARKORANGE,
+        ICOLOR_DARKORCHID,
+        ICOLOR_DARKRED,
+        ICOLOR_DARKSALMON,
+        ICOLOR_DARKSEAGREEN,
+        ICOLOR_DARKSLATEBLUE,
+        ICOLOR_DARKSLATEGRAY,
+        ICOLOR_DARKSLATEGREY,
+        ICOLOR_DARKTURQUOISE,
+        ICOLOR_DARKVIOLET,
+        ICOLOR_DEEPPINK,
+        ICOLOR_DEEPSKYBLUE,
+        ICOLOR_DIMGRAY,
+        ICOLOR_DIMGREY,
+        ICOLOR_DODGERBLUE,
+        ICOLOR_FIREBRICK,
+        ICOLOR_FLORALWHITE,
+        ICOLOR_FORESTGREEN,
+        ICOLOR_FUCHSIA,
+        ICOLOR_GAINSBORO,
+        ICOLOR_GHOSTWHITE,
+        ICOLOR_GOLD,
+        ICOLOR_GOLDENROD,
+        ICOLOR_GRAY,
+        ICOLOR_GREY,
+        ICOLOR_GREEN,
+        ICOLOR_GREENYELLOW,
+        ICOLOR_HONEYDEW,
+        ICOLOR_HOTPINK,
+        ICOLOR_INDIANRED,
+        ICOLOR_INDIGO,
+        ICOLOR_IVORY,
+        ICOLOR_KHAKI,
+        ICOLOR_LAVENDER,
+        ICOLOR_LAVENDERBLUSH,
+        ICOLOR_LAWNGREEN,
+        ICOLOR_LEMONCHIFFON,
+        ICOLOR_LIGHTBLUE,
+        ICOLOR_LIGHTCORAL,
+        ICOLOR_LIGHTCYAN,
+        ICOLOR_LIGHTGOLDENRODYELLOW,
+        ICOLOR_LIGHTGRAY,
+        ICOLOR_LIGHTGREY,
+        ICOLOR_LIGHTGREEN,
+        ICOLOR_LIGHTPINK,
+        ICOLOR_LIGHTSALMON,
+        ICOLOR_LIGHTSEAGREEN,
+        ICOLOR_LIGHTSKYBLUE,
+        ICOLOR_LIGHTSLATEGRAY,
+        ICOLOR_LIGHTSLATEGREY,
+        ICOLOR_LIGHTSTEELBLUE,
+        ICOLOR_LIGHTYELLOW,
+        ICOLOR_LIME,
+        ICOLOR_LIMEGREEN,
+        ICOLOR_LINEN,
+        ICOLOR_MAGENTA,
+        ICOLOR_MAROON,
+        ICOLOR_MEDIUMAQUAMARINE,
+        ICOLOR_MEDIUMBLUE,
+        ICOLOR_MEDIUMORCHID,
+        ICOLOR_MEDIUMPURPLE,
+        ICOLOR_MEDIUMSEAGREEN,
+        ICOLOR_MEDIUMSLATEBLUE,
+        ICOLOR_MEDIUMSPRINGGREEN,
+        ICOLOR_MEDIUMTURQUOISE,
+        ICOLOR_MEDIUMVIOLETRED,
+        ICOLOR_MIDNIGHTBLUE,
+        ICOLOR_MINTCREAM,
+        ICOLOR_MISTYROSE,
+        ICOLOR_MOCCASIN,
+        ICOLOR_NAVAJOWHITE,
+        ICOLOR_NAVY,
+        ICOLOR_OLDLACE,
+        ICOLOR_OLIVE,
+        ICOLOR_OLIVEDRAB,
+        ICOLOR_ORANGE,
+        ICOLOR_ORANGERED,
+        ICOLOR_ORCHID,
+        ICOLOR_PALEGOLDENROD,
+        ICOLOR_PALEGREEN,
+        ICOLOR_PALETURQUOISE,
+        ICOLOR_PALEVIOLETRED,
+        ICOLOR_PAPAYAWHIP,
+        ICOLOR_PEACHPUFF,
+        ICOLOR_PERU,
+        ICOLOR_PINK,
+        ICOLOR_PLUM,
+        ICOLOR_POWDERBLUE,
+        ICOLOR_PURPLE,
+        ICOLOR_REBECCAPURPLE,
+        ICOLOR_RED,
+        ICOLOR_ROSYBROWN,
+        ICOLOR_ROYALBLUE,
+        ICOLOR_SADDLEBROWN,
+        ICOLOR_SALMON,
+        ICOLOR_SANDYBROWN,
+        ICOLOR_SEAGREEN,
+        ICOLOR_SEASHELL,
+        ICOLOR_SIENNA,
+        ICOLOR_SILVER,
+        ICOLOR_SKYBLUE,
+        ICOLOR_SLATEBLUE,
+        ICOLOR_SLATEGRAY,
+        ICOLOR_SLATEGREY,
+        ICOLOR_SNOW,
+        ICOLOR_SPRINGGREEN,
+        ICOLOR_STEELBLUE,
+        ICOLOR_TAN,
+        ICOLOR_TEAL,
+        ICOLOR_THISTLE,
+        ICOLOR_TOMATO,
+        ICOLOR_TURQUOISE,
+        ICOLOR_VIOLET,
+        ICOLOR_WHEAT,
+        ICOLOR_WHITE,
+        ICOLOR_WHITESMOKE,
+        ICOLOR_YELLOW,
+        ICOLOR_YELLOWGREEN
     };
 
+    return color_names[ pos];
+}
+
+uint32_t decodeColorName( const char *&ctx, BKNode *bkroot)
+{
     std::string name;
     do
     {
@@ -1730,8 +1896,9 @@ uint32_t decodeColorName( const char *&ctx, BKNode *bkroot)
     }
     while( isalpha( *++ctx));
 
-    auto pos = nameLookup.find( name);
-    if( pos != nameLookup.cend())
+    auto& code_lookup = colorCodeLookup();
+    auto pos = code_lookup.find( name);
+    if( pos != code_lookup.cend())
         return pos->second;
     else
     {
@@ -1797,13 +1964,13 @@ uint64_t extractColor( const char *&rule, BKNode *bkroot)
             }
 
             if( ltrim( rule) && *rule == '/')
-                return CONCAT_BYTES( extractColor( ++rule, bkroot), color_name);
+                return MAKE_QWORD( extractColor( ++rule, bkroot), color_name);
 
             return color_name;
         }
 
         if( ltrim( rule) && *rule == '/')
-            return CONCAT_BYTES( extractColor( ++rule, bkroot), color_name | 0xFFu);
+            return MAKE_QWORD( extractColor( ++rule, bkroot), color_name | 0xFFu);
 
         return ( color_name | 0xFFu) << shift;
     }
@@ -1838,7 +2005,7 @@ uint64_t extractColor( const char *&rule, BKNode *bkroot)
         }
 
         if( ltrim( rule) && *rule == '/')
-            return CONCAT_BYTES( extractColor( ++rule, bkroot), ccolor);
+            return MAKE_QWORD( extractColor( ++rule, bkroot), ccolor);
     }
     else
     {
@@ -1915,19 +2082,24 @@ uint32_t subMix( uint32_t lcolor, uint32_t rcolor)
     return RGB( r, g, b);
 }
 
-uint32_t mixColor( const char *&ctx, BKNode *bkroot)
+uint64_t mixColor( const char *&ctx, BKNode *bkroot)
 {
     uint64_t lcolor{}, rcolor{};
     uint8_t alpha = 0xFFu;
-    char op = '\0';
+    uint16_t ops{};
     while( ltrim( ctx) && *ctx != ')')
     {
-        if( *ctx == '+' || *ctx == '-')
-            op = *ctx;
+        if( *ctx && ctx[ 1] == '/')
+        {
+            ops = MAKE_WORD( ctx[ 2], *ctx);
+            ctx += 2;
+        }
+        else if( compareOr<std::equal_to<char>>( *ctx, '+', '-'))
+            ops = *ctx;
         else
         {
             auto *before = ctx;
-            op ? rcolor = extractColor( ctx, bkroot) : lcolor = extractColor( ctx, bkroot);
+            ops ? rcolor = extractColor( ctx, bkroot) : lcolor = extractColor( ctx, bkroot);
             ctx -= 1 - ( before == ctx);
         }
         ++ctx;
@@ -1938,18 +2110,11 @@ uint32_t mixColor( const char *&ctx, BKNode *bkroot)
     if( ltrim( ctx) && *ctx == ':')
         alpha = getNumber( ++ctx, 16);
 
-    if( op == '+') // Additive color mixing
-    {
-        return CONCAT_BYTES( sumMix( HIGH_BYTE( lcolor), HIGH_BYTE( rcolor)) | alpha,
-                             sumMix( LOW_BYTE( lcolor), LOW_BYTE( rcolor)) | alpha);
-    }
-    else if( op == '-')
-    {
-        return CONCAT_BYTES( subMix( HIGH_BYTE( lcolor), HIGH_BYTE( rcolor)) | alpha,
-                             subMix( LOW_BYTE( lcolor), LOW_BYTE( rcolor)) | alpha);
-    }
-
-    return lcolor;
+    return compareOr<std::equal_to<char>>( ops, '+', '-') ?
+           MAKE_QWORD( HIGH_BYTE( ops) == '+' ? sumMix( HIGH_DWORD( lcolor), HIGH_DWORD( rcolor)) | alpha :
+                                                subMix( HIGH_DWORD( lcolor), HIGH_DWORD( rcolor)) | alpha,
+                       LOW_BYTE( ops) == '+' ?  sumMix( LOW_DWORD( lcolor), LOW_DWORD( rcolor)) | alpha :
+                                                subMix( LOW_DWORD( lcolor), LOW_DWORD( rcolor)) | alpha) : lcolor;
 }
 
 template <size_t count>
@@ -2351,6 +2516,363 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
     }
 
     return rules;
+}
+
+void testColor( const char *rule, BKNode *bkroot)
+{
+    std::shared_ptr<KDNode> kdroot;
+    {
+        insert( kdroot, { RED( COLORHEX_ALICEBLUE), GREEN( COLORHEX_ALICEBLUE),
+                          BLUE( COLORHEX_ALICEBLUE)}, 0);
+        insert( kdroot, { RED( COLORHEX_ANTIQUEWHITE), GREEN( COLORHEX_ANTIQUEWHITE),
+                          BLUE( COLORHEX_ANTIQUEWHITE)}, 1);
+        insert( kdroot, { RED( COLORHEX_AQUA), GREEN( COLORHEX_AQUA),
+                          BLUE( COLORHEX_AQUA)}, 2);
+        insert( kdroot, { RED( COLORHEX_AQUAMARINE), GREEN( COLORHEX_AQUAMARINE),
+                          BLUE( COLORHEX_AQUAMARINE)}, 3);
+        insert( kdroot, { RED( COLORHEX_AZURE), GREEN( COLORHEX_AZURE),
+                          BLUE( COLORHEX_AZURE)}, 4);
+        insert( kdroot, { RED( COLORHEX_BEIGE), GREEN( COLORHEX_BEIGE),
+                          BLUE( COLORHEX_BEIGE)}, 5);
+        insert( kdroot, { RED( COLORHEX_BISQUE), GREEN( COLORHEX_BISQUE),
+                          BLUE( COLORHEX_BISQUE)}, 6);
+        insert( kdroot, { RED( COLORHEX_BLACK), GREEN( COLORHEX_BLACK),
+                          BLUE( COLORHEX_BLACK)}, 7);
+        insert( kdroot, { RED( COLORHEX_BLANCHEDALMOND), GREEN( COLORHEX_BLANCHEDALMOND),
+                          BLUE( COLORHEX_BLANCHEDALMOND)}, 8);
+        insert( kdroot, { RED( COLORHEX_BLUE), GREEN( COLORHEX_BLUE),
+                          BLUE( COLORHEX_BLUE)}, 9);
+        insert( kdroot, { RED( COLORHEX_BLUEVIOLET), GREEN( COLORHEX_BLUEVIOLET),
+                          BLUE( COLORHEX_BLUEVIOLET)}, 10);
+        insert( kdroot, { RED( COLORHEX_BROWN), GREEN( COLORHEX_BROWN),
+                          BLUE( COLORHEX_BROWN)}, 11);
+        insert( kdroot, { RED( COLORHEX_BURLYWOOD), GREEN( COLORHEX_BURLYWOOD),
+                          BLUE( COLORHEX_BURLYWOOD)}, 12);
+        insert( kdroot, { RED( COLORHEX_CADETBLUE), GREEN( COLORHEX_CADETBLUE),
+                          BLUE( COLORHEX_CADETBLUE)}, 13);
+        insert( kdroot, { RED( COLORHEX_CHARTREUSE), GREEN( COLORHEX_CHARTREUSE),
+                          BLUE( COLORHEX_CHARTREUSE)}, 14);
+        insert( kdroot, { RED( COLORHEX_CHOCOLATE), GREEN( COLORHEX_CHOCOLATE),
+                          BLUE( COLORHEX_CHOCOLATE)}, 15);
+        insert( kdroot, { RED( COLORHEX_CORAL), GREEN( COLORHEX_CORAL),
+                          BLUE( COLORHEX_CORAL)}, 16);
+        insert( kdroot, { RED( COLORHEX_CORNFLOWERBLUE), GREEN( COLORHEX_CORNFLOWERBLUE),
+                          BLUE( COLORHEX_CORNFLOWERBLUE)}, 17);
+        insert( kdroot, { RED( COLORHEX_CORNSILK), GREEN( COLORHEX_CORNSILK),
+                          BLUE( COLORHEX_CORNSILK)}, 18);
+        insert( kdroot, { RED( COLORHEX_CRIMSON), GREEN( COLORHEX_CRIMSON),
+                          BLUE( COLORHEX_CRIMSON)}, 19);
+        insert( kdroot, { RED( COLORHEX_CYAN), GREEN( COLORHEX_CYAN),
+                          BLUE( COLORHEX_CYAN)}, 20);
+        insert( kdroot, { RED( COLORHEX_DARKBLUE), GREEN( COLORHEX_DARKBLUE),
+                          BLUE( COLORHEX_DARKBLUE)}, 21);
+        insert( kdroot, { RED( COLORHEX_DARKCYAN), GREEN( COLORHEX_DARKCYAN),
+                          BLUE( COLORHEX_DARKCYAN)}, 22);
+        insert( kdroot, { RED( COLORHEX_DARKGOLDENROD), GREEN( COLORHEX_DARKGOLDENROD),
+                          BLUE( COLORHEX_DARKGOLDENROD)}, 23);
+        insert( kdroot, { RED( COLORHEX_DARKGRAY), GREEN( COLORHEX_DARKGRAY),
+                          BLUE( COLORHEX_DARKGRAY)}, 24);
+        insert( kdroot, { RED( COLORHEX_DARKGREY), GREEN( COLORHEX_DARKGREY),
+                          BLUE( COLORHEX_DARKGREY)}, 25);
+        insert( kdroot, { RED( COLORHEX_DARKGREEN), GREEN( COLORHEX_DARKGREEN),
+                          BLUE( COLORHEX_DARKGREEN)}, 26);
+        insert( kdroot, { RED( COLORHEX_DARKKHAKI), GREEN( COLORHEX_DARKKHAKI),
+                          BLUE( COLORHEX_DARKKHAKI)}, 27);
+        insert( kdroot, { RED( COLORHEX_DARKMAGENTA), GREEN( COLORHEX_DARKMAGENTA),
+                          BLUE( COLORHEX_DARKMAGENTA)}, 28);
+        insert( kdroot, { RED( COLORHEX_DARKOLIVEGREEN), GREEN( COLORHEX_DARKOLIVEGREEN),
+                          BLUE( COLORHEX_DARKOLIVEGREEN)}, 29);
+        insert( kdroot, { RED( COLORHEX_DARKORANGE), GREEN( COLORHEX_DARKORANGE),
+                          BLUE( COLORHEX_DARKORANGE)}, 30);
+        insert( kdroot, { RED( COLORHEX_DARKORCHID), GREEN( COLORHEX_DARKORCHID),
+                          BLUE( COLORHEX_DARKORCHID)}, 31);
+        insert( kdroot, { RED( COLORHEX_DARKRED), GREEN( COLORHEX_DARKRED),
+                          BLUE( COLORHEX_DARKRED)}, 32);
+        insert( kdroot, { RED( COLORHEX_DARKSALMON), GREEN( COLORHEX_DARKSALMON),
+                          BLUE( COLORHEX_DARKSALMON)}, 33);
+        insert( kdroot, { RED( COLORHEX_DARKSEAGREEN), GREEN( COLORHEX_DARKSEAGREEN),
+                          BLUE( COLORHEX_DARKSEAGREEN)}, 34);
+        insert( kdroot, { RED( COLORHEX_DARKSLATEBLUE), GREEN( COLORHEX_DARKSLATEBLUE),
+                          BLUE( COLORHEX_DARKSLATEBLUE)}, 35);
+        insert( kdroot, { RED( COLORHEX_DARKSLATEGRAY), GREEN( COLORHEX_DARKSLATEGRAY),
+                          BLUE( COLORHEX_DARKSLATEGRAY)}, 36);
+        insert( kdroot, { RED( COLORHEX_DARKSLATEGREY), GREEN( COLORHEX_DARKSLATEGREY),
+                          BLUE( COLORHEX_DARKSLATEGREY)}, 37);
+        insert( kdroot, { RED( COLORHEX_DARKTURQUOISE), GREEN( COLORHEX_DARKTURQUOISE),
+                          BLUE( COLORHEX_DARKTURQUOISE)}, 38);
+        insert( kdroot, { RED( COLORHEX_DARKVIOLET), GREEN( COLORHEX_DARKVIOLET),
+                          BLUE( COLORHEX_DARKVIOLET)}, 39);
+        insert( kdroot, { RED( COLORHEX_DEEPPINK), GREEN( COLORHEX_DEEPPINK),
+                          BLUE( COLORHEX_DEEPPINK)}, 40);
+        insert( kdroot, { RED( COLORHEX_DEEPSKYBLUE), GREEN( COLORHEX_DEEPSKYBLUE),
+                          BLUE( COLORHEX_DEEPSKYBLUE)}, 41);
+        insert( kdroot, { RED( COLORHEX_DIMGRAY), GREEN( COLORHEX_DIMGRAY),
+                          BLUE( COLORHEX_DIMGRAY)}, 42);
+        insert( kdroot, { RED( COLORHEX_DIMGREY), GREEN( COLORHEX_DIMGREY),
+                          BLUE( COLORHEX_DIMGREY)}, 43);
+        insert( kdroot, { RED( COLORHEX_DODGERBLUE), GREEN( COLORHEX_DODGERBLUE),
+                          BLUE( COLORHEX_DODGERBLUE)}, 44);
+        insert( kdroot, { RED( COLORHEX_FIREBRICK), GREEN( COLORHEX_FIREBRICK),
+                          BLUE( COLORHEX_FIREBRICK)}, 45);
+        insert( kdroot, { RED( COLORHEX_FLORALWHITE), GREEN( COLORHEX_FLORALWHITE),
+                          BLUE( COLORHEX_FLORALWHITE)}, 46);
+        insert( kdroot, { RED( COLORHEX_FORESTGREEN), GREEN( COLORHEX_FORESTGREEN),
+                          BLUE( COLORHEX_FORESTGREEN)}, 47);
+        insert( kdroot, { RED( COLORHEX_FUCHSIA), GREEN( COLORHEX_FUCHSIA),
+                          BLUE( COLORHEX_FUCHSIA)}, 48);
+        insert( kdroot, { RED( COLORHEX_GAINSBORO), GREEN( COLORHEX_GAINSBORO),
+                          BLUE( COLORHEX_GAINSBORO)}, 49);
+        insert( kdroot, { RED( COLORHEX_GHOSTWHITE), GREEN( COLORHEX_GHOSTWHITE),
+                          BLUE( COLORHEX_GHOSTWHITE)}, 50);
+        insert( kdroot, { RED( COLORHEX_GOLD), GREEN( COLORHEX_GOLD),
+                          BLUE( COLORHEX_GOLD)}, 51);
+        insert( kdroot, { RED( COLORHEX_GOLDENROD), GREEN( COLORHEX_GOLDENROD),
+                          BLUE( COLORHEX_GOLDENROD)}, 52);
+        insert( kdroot, { RED( COLORHEX_GRAY), GREEN( COLORHEX_GRAY),
+                          BLUE( COLORHEX_GRAY)}, 53);
+        insert( kdroot, { RED( COLORHEX_GREY), GREEN( COLORHEX_GREY),
+                          BLUE( COLORHEX_GREY)}, 54);
+        insert( kdroot, { RED( COLORHEX_GREEN), GREEN( COLORHEX_GREEN),
+                          BLUE( COLORHEX_GREEN)}, 55);
+        insert( kdroot, { RED( COLORHEX_GREENYELLOW), GREEN( COLORHEX_GREENYELLOW),
+                          BLUE( COLORHEX_GREENYELLOW)}, 56);
+        insert( kdroot, { RED( COLORHEX_HONEYDEW), GREEN( COLORHEX_HONEYDEW),
+                          BLUE( COLORHEX_HONEYDEW)}, 57);
+        insert( kdroot, { RED( COLORHEX_HOTPINK), GREEN( COLORHEX_HOTPINK),
+                          BLUE( COLORHEX_HOTPINK)}, 58);
+        insert( kdroot, { RED( COLORHEX_INDIANRED), GREEN( COLORHEX_INDIANRED),
+                          BLUE( COLORHEX_INDIANRED)}, 59);
+        insert( kdroot, { RED( COLORHEX_INDIGO), GREEN( COLORHEX_INDIGO),
+                          BLUE( COLORHEX_INDIGO)}, 60);
+        insert( kdroot, { RED( COLORHEX_IVORY), GREEN( COLORHEX_IVORY),
+                          BLUE( COLORHEX_IVORY)}, 61);
+        insert( kdroot, { RED( COLORHEX_KHAKI), GREEN( COLORHEX_KHAKI),
+                          BLUE( COLORHEX_KHAKI)}, 62);
+        insert( kdroot, { RED( COLORHEX_LAVENDER), GREEN( COLORHEX_LAVENDER),
+                          BLUE( COLORHEX_LAVENDER)}, 63);
+        insert( kdroot, { RED( COLORHEX_LAVENDERBLUSH), GREEN( COLORHEX_LAVENDERBLUSH),
+                          BLUE( COLORHEX_LAVENDERBLUSH)}, 64);
+        insert( kdroot, { RED( COLORHEX_LAWNGREEN), GREEN( COLORHEX_LAWNGREEN),
+                          BLUE( COLORHEX_LAWNGREEN)}, 65);
+        insert( kdroot, { RED( COLORHEX_LEMONCHIFFON), GREEN( COLORHEX_LEMONCHIFFON),
+                          BLUE( COLORHEX_LEMONCHIFFON)}, 66);
+        insert( kdroot, { RED( COLORHEX_LIGHTBLUE), GREEN( COLORHEX_LIGHTBLUE),
+                          BLUE( COLORHEX_LIGHTBLUE)}, 67);
+        insert( kdroot, { RED( COLORHEX_LIGHTCORAL), GREEN( COLORHEX_LIGHTCORAL),
+                          BLUE( COLORHEX_LIGHTCORAL)}, 68);
+        insert( kdroot, { RED( COLORHEX_LIGHTCYAN), GREEN( COLORHEX_LIGHTCYAN),
+                          BLUE( COLORHEX_LIGHTCYAN)}, 69);
+        insert( kdroot, { RED( COLORHEX_LIGHTGOLDENRODYELLOW), GREEN( COLORHEX_LIGHTGOLDENRODYELLOW),
+                          BLUE( COLORHEX_LIGHTGOLDENRODYELLOW)}, 70);
+        insert( kdroot, { RED( COLORHEX_LIGHTGRAY), GREEN( COLORHEX_LIGHTGRAY),
+                          BLUE( COLORHEX_LIGHTGRAY)}, 71);
+        insert( kdroot, { RED( COLORHEX_LIGHTGREY), GREEN( COLORHEX_LIGHTGREY),
+                          BLUE( COLORHEX_LIGHTGREY)}, 72);
+        insert( kdroot, { RED( COLORHEX_LIGHTGREEN), GREEN( COLORHEX_LIGHTGREEN),
+                          BLUE( COLORHEX_LIGHTGREEN)}, 73);
+        insert( kdroot, { RED( COLORHEX_LIGHTPINK), GREEN( COLORHEX_LIGHTPINK),
+                          BLUE( COLORHEX_LIGHTPINK)}, 74);
+        insert( kdroot, { RED( COLORHEX_LIGHTSALMON), GREEN( COLORHEX_LIGHTSALMON),
+                          BLUE( COLORHEX_LIGHTSALMON)}, 75);
+        insert( kdroot, { RED( COLORHEX_LIGHTSEAGREEN), GREEN( COLORHEX_LIGHTSEAGREEN),
+                          BLUE( COLORHEX_LIGHTSEAGREEN)}, 76);
+        insert( kdroot, { RED( COLORHEX_LIGHTSKYBLUE), GREEN( COLORHEX_LIGHTSKYBLUE),
+                          BLUE( COLORHEX_LIGHTSKYBLUE)}, 77);
+        insert( kdroot, { RED( COLORHEX_LIGHTSLATEGRAY), GREEN( COLORHEX_LIGHTSLATEGRAY),
+                          BLUE( COLORHEX_LIGHTSLATEGRAY)}, 78);
+        insert( kdroot, { RED( COLORHEX_LIGHTSLATEGREY), GREEN( COLORHEX_LIGHTSLATEGREY),
+                          BLUE( COLORHEX_LIGHTSLATEGREY)}, 79);
+        insert( kdroot, { RED( COLORHEX_LIGHTSTEELBLUE), GREEN( COLORHEX_LIGHTSTEELBLUE),
+                          BLUE( COLORHEX_LIGHTSTEELBLUE)}, 80);
+        insert( kdroot, { RED( COLORHEX_LIGHTYELLOW), GREEN( COLORHEX_LIGHTYELLOW),
+                          BLUE( COLORHEX_LIGHTYELLOW)}, 81);
+        insert( kdroot, { RED( COLORHEX_LIME), GREEN( COLORHEX_LIME),
+                          BLUE( COLORHEX_LIME)}, 82);
+        insert( kdroot, { RED( COLORHEX_LIMEGREEN), GREEN( COLORHEX_LIMEGREEN),
+                          BLUE( COLORHEX_LIMEGREEN)}, 83);
+        insert( kdroot, { RED( COLORHEX_LINEN), GREEN( COLORHEX_LINEN),
+                          BLUE( COLORHEX_LINEN)}, 84);
+        insert( kdroot, { RED( COLORHEX_MAGENTA), GREEN( COLORHEX_MAGENTA),
+                          BLUE( COLORHEX_MAGENTA)}, 85);
+        insert( kdroot, { RED( COLORHEX_MAROON), GREEN( COLORHEX_MAROON),
+                          BLUE( COLORHEX_MAROON)}, 86);
+        insert( kdroot, { RED( COLORHEX_MEDIUMAQUAMARINE), GREEN( COLORHEX_MEDIUMAQUAMARINE),
+                          BLUE( COLORHEX_MEDIUMAQUAMARINE)}, 87);
+        insert( kdroot, { RED( COLORHEX_MEDIUMBLUE), GREEN( COLORHEX_MEDIUMBLUE),
+                          BLUE( COLORHEX_MEDIUMBLUE)}, 88);
+        insert( kdroot, { RED( COLORHEX_MEDIUMORCHID), GREEN( COLORHEX_MEDIUMORCHID),
+                          BLUE( COLORHEX_MEDIUMORCHID)}, 89);
+        insert( kdroot, { RED( COLORHEX_MEDIUMPURPLE), GREEN( COLORHEX_MEDIUMPURPLE),
+                          BLUE( COLORHEX_MEDIUMPURPLE)}, 90);
+        insert( kdroot, { RED( COLORHEX_MEDIUMSEAGREEN), GREEN( COLORHEX_MEDIUMSEAGREEN),
+                          BLUE( COLORHEX_MEDIUMSEAGREEN)}, 91);
+        insert( kdroot, { RED( COLORHEX_MEDIUMSLATEBLUE), GREEN( COLORHEX_MEDIUMSLATEBLUE),
+                          BLUE( COLORHEX_MEDIUMSLATEBLUE)}, 92);
+        insert( kdroot, { RED( COLORHEX_MEDIUMSPRINGGREEN), GREEN( COLORHEX_MEDIUMSPRINGGREEN),
+                          BLUE( COLORHEX_MEDIUMSPRINGGREEN)}, 93);
+        insert( kdroot, { RED( COLORHEX_MEDIUMTURQUOISE), GREEN( COLORHEX_MEDIUMTURQUOISE),
+                          BLUE( COLORHEX_MEDIUMTURQUOISE)}, 94);
+        insert( kdroot, { RED( COLORHEX_MEDIUMVIOLETRED), GREEN( COLORHEX_MEDIUMVIOLETRED),
+                          BLUE( COLORHEX_MEDIUMVIOLETRED)}, 95);
+        insert( kdroot, { RED( COLORHEX_MIDNIGHTBLUE), GREEN( COLORHEX_MIDNIGHTBLUE),
+                          BLUE( COLORHEX_MIDNIGHTBLUE)}, 96);
+        insert( kdroot, { RED( COLORHEX_MINTCREAM), GREEN( COLORHEX_MINTCREAM),
+                          BLUE( COLORHEX_MINTCREAM)}, 97);
+        insert( kdroot, { RED( COLORHEX_MISTYROSE), GREEN( COLORHEX_MISTYROSE),
+                          BLUE( COLORHEX_MISTYROSE)}, 98);
+        insert( kdroot, { RED( COLORHEX_MOCCASIN), GREEN( COLORHEX_MOCCASIN),
+                          BLUE( COLORHEX_MOCCASIN)}, 99);
+        insert( kdroot, { RED( COLORHEX_NAVAJOWHITE), GREEN( COLORHEX_NAVAJOWHITE),
+                          BLUE( COLORHEX_NAVAJOWHITE)}, 100);
+        insert( kdroot, { RED( COLORHEX_NAVY), GREEN( COLORHEX_NAVY),
+                          BLUE( COLORHEX_NAVY)}, 101);
+        insert( kdroot, { RED( COLORHEX_OLDLACE), GREEN( COLORHEX_OLDLACE),
+                          BLUE( COLORHEX_OLDLACE)}, 102);
+        insert( kdroot, { RED( COLORHEX_OLIVE), GREEN( COLORHEX_OLIVE),
+                          BLUE( COLORHEX_OLIVE)}, 103);
+        insert( kdroot, { RED( COLORHEX_OLIVEDRAB), GREEN( COLORHEX_OLIVEDRAB),
+                          BLUE( COLORHEX_OLIVEDRAB)}, 104);
+        insert( kdroot, { RED( COLORHEX_ORANGE), GREEN( COLORHEX_ORANGE),
+                          BLUE( COLORHEX_ORANGE)}, 105);
+        insert( kdroot, { RED( COLORHEX_ORANGERED), GREEN( COLORHEX_ORANGERED),
+                          BLUE( COLORHEX_ORANGERED)}, 106);
+        insert( kdroot, { RED( COLORHEX_ORCHID), GREEN( COLORHEX_ORCHID),
+                          BLUE( COLORHEX_ORCHID)}, 107);
+        insert( kdroot, { RED( COLORHEX_PALEGOLDENROD), GREEN( COLORHEX_PALEGOLDENROD),
+                          BLUE( COLORHEX_PALEGOLDENROD)}, 108);
+        insert( kdroot, { RED( COLORHEX_PALEGREEN), GREEN( COLORHEX_PALEGREEN),
+                          BLUE( COLORHEX_PALEGREEN)}, 109);
+        insert( kdroot, { RED( COLORHEX_PALETURQUOISE), GREEN( COLORHEX_PALETURQUOISE),
+                          BLUE( COLORHEX_PALETURQUOISE)}, 110);
+        insert( kdroot, { RED( COLORHEX_PALEVIOLETRED), GREEN( COLORHEX_PALEVIOLETRED),
+                          BLUE( COLORHEX_PALEVIOLETRED)}, 111);
+        insert( kdroot, { RED( COLORHEX_PAPAYAWHIP), GREEN( COLORHEX_PAPAYAWHIP),
+                          BLUE( COLORHEX_PAPAYAWHIP)}, 112);
+        insert( kdroot, { RED( COLORHEX_PEACHPUFF), GREEN( COLORHEX_PEACHPUFF),
+                          BLUE( COLORHEX_PEACHPUFF)}, 113);
+        insert( kdroot, { RED( COLORHEX_PERU), GREEN( COLORHEX_PERU),
+                          BLUE( COLORHEX_PERU)}, 114);
+        insert( kdroot, { RED( COLORHEX_PINK), GREEN( COLORHEX_PINK),
+                          BLUE( COLORHEX_PINK)}, 115);
+        insert( kdroot, { RED( COLORHEX_PLUM), GREEN( COLORHEX_PLUM),
+                          BLUE( COLORHEX_PLUM)}, 116);
+        insert( kdroot, { RED( COLORHEX_POWDERBLUE), GREEN( COLORHEX_POWDERBLUE),
+                          BLUE( COLORHEX_POWDERBLUE)}, 117);
+        insert( kdroot, { RED( COLORHEX_PURPLE), GREEN( COLORHEX_PURPLE),
+                          BLUE( COLORHEX_PURPLE)}, 118);
+        insert( kdroot, { RED( COLORHEX_REBECCAPURPLE), GREEN( COLORHEX_REBECCAPURPLE),
+                          BLUE( COLORHEX_REBECCAPURPLE)}, 119);
+        insert( kdroot, { RED( COLORHEX_RED), GREEN( COLORHEX_RED),
+                          BLUE( COLORHEX_RED)}, 120);
+        insert( kdroot, { RED( COLORHEX_ROSYBROWN), GREEN( COLORHEX_ROSYBROWN),
+                          BLUE( COLORHEX_ROSYBROWN)}, 121);
+        insert( kdroot, { RED( COLORHEX_ROYALBLUE), GREEN( COLORHEX_ROYALBLUE),
+                          BLUE( COLORHEX_ROYALBLUE)}, 122);
+        insert( kdroot, { RED( COLORHEX_SADDLEBROWN), GREEN( COLORHEX_SADDLEBROWN),
+                          BLUE( COLORHEX_SADDLEBROWN)}, 123);
+        insert( kdroot, { RED( COLORHEX_SALMON), GREEN( COLORHEX_SALMON),
+                          BLUE( COLORHEX_SALMON)}, 124);
+        insert( kdroot, { RED( COLORHEX_SANDYBROWN), GREEN( COLORHEX_SANDYBROWN),
+                          BLUE( COLORHEX_SANDYBROWN)}, 125);
+        insert( kdroot, { RED( COLORHEX_SEAGREEN), GREEN( COLORHEX_SEAGREEN),
+                          BLUE( COLORHEX_SEAGREEN)}, 126);
+        insert( kdroot, { RED( COLORHEX_SEASHELL), GREEN( COLORHEX_SEASHELL),
+                          BLUE( COLORHEX_SEASHELL)}, 127);
+        insert( kdroot, { RED( COLORHEX_SIENNA), GREEN( COLORHEX_SIENNA),
+                          BLUE( COLORHEX_SIENNA)}, 128);
+        insert( kdroot, { RED( COLORHEX_SILVER), GREEN( COLORHEX_SILVER),
+                          BLUE( COLORHEX_SILVER)}, 129);
+        insert( kdroot, { RED( COLORHEX_SKYBLUE), GREEN( COLORHEX_SKYBLUE),
+                          BLUE( COLORHEX_SKYBLUE)}, 130);
+        insert( kdroot, { RED( COLORHEX_SLATEBLUE), GREEN( COLORHEX_SLATEBLUE),
+                          BLUE( COLORHEX_SLATEBLUE)}, 131);
+        insert( kdroot, { RED( COLORHEX_SLATEGRAY), GREEN( COLORHEX_SLATEGRAY),
+                          BLUE( COLORHEX_SLATEGRAY)}, 132);
+        insert( kdroot, { RED( COLORHEX_SLATEGREY), GREEN( COLORHEX_SLATEGREY),
+                          BLUE( COLORHEX_SLATEGREY)}, 133);
+        insert( kdroot, { RED( COLORHEX_SNOW), GREEN( COLORHEX_SNOW),
+                          BLUE( COLORHEX_SNOW)}, 134);
+        insert( kdroot, { RED( COLORHEX_SPRINGGREEN), GREEN( COLORHEX_SPRINGGREEN),
+                          BLUE( COLORHEX_SPRINGGREEN)}, 135);
+        insert( kdroot, { RED( COLORHEX_STEELBLUE), GREEN( COLORHEX_STEELBLUE),
+                          BLUE( COLORHEX_STEELBLUE)}, 136);
+        insert( kdroot, { RED( COLORHEX_TAN), GREEN( COLORHEX_TAN),
+                          BLUE( COLORHEX_TAN)}, 137);
+        insert( kdroot, { RED( COLORHEX_TEAL), GREEN( COLORHEX_TEAL),
+                          BLUE( COLORHEX_TEAL)}, 138);
+        insert( kdroot, { RED( COLORHEX_THISTLE), GREEN( COLORHEX_THISTLE),
+                          BLUE( COLORHEX_THISTLE)}, 139);
+        insert( kdroot, { RED( COLORHEX_TOMATO), GREEN( COLORHEX_TOMATO),
+                          BLUE( COLORHEX_TOMATO)}, 140);
+        insert( kdroot, { RED( COLORHEX_TURQUOISE), GREEN( COLORHEX_TURQUOISE),
+                          BLUE( COLORHEX_TURQUOISE)}, 141);
+        insert( kdroot, { RED( COLORHEX_VIOLET), GREEN( COLORHEX_VIOLET),
+                          BLUE( COLORHEX_VIOLET)}, 142);
+        insert( kdroot, { RED( COLORHEX_WHEAT), GREEN( COLORHEX_WHEAT),
+                          BLUE( COLORHEX_WHEAT)}, 143);
+        insert( kdroot, { RED( COLORHEX_WHITE), GREEN( COLORHEX_WHITE),
+                          BLUE( COLORHEX_WHITE)}, 144);
+        insert( kdroot, { RED( COLORHEX_WHITESMOKE), GREEN( COLORHEX_WHITESMOKE),
+                          BLUE( COLORHEX_WHITESMOKE)}, 145);
+        insert( kdroot, { RED( COLORHEX_YELLOW), GREEN( COLORHEX_YELLOW),
+                          BLUE( COLORHEX_YELLOW)}, 146);
+        insert( kdroot, { RED( COLORHEX_YELLOWGREEN), GREEN( COLORHEX_YELLOWGREEN),
+                          BLUE( COLORHEX_YELLOWGREEN)}, 147);
+    }
+
+    auto getName = [ &kdroot]( uint32_t color)
+    {
+        double initial = INFINITY;
+        return getColorNameAt(
+                approximate( kdroot.get(), Color{ RED( color), GREEN( color), BLUE( color)}, initial)->index).data();
+    };
+
+    auto *given_rule = rule;
+    uint64_t first_color{}, second_color{}, color_sum{};
+    if( ltrim( rule) && *rule == '(')
+        first_color = extractColor( ++rule, bkroot);
+    else if( *rule != 0)
+        first_color = extractColor( rule, bkroot);
+    uint16_t ops{};
+    if( ltrim( rule) && *rule && rule[ 1] == '/')
+    {
+        ops = MAKE_WORD( rule[ 2], *rule);
+        rule += 3;
+    }
+    else if( compareOr<std::equal_to<char>>( *rule, '+', '-'))
+        ops = *rule++;
+    if( ops != 0)
+    {
+        second_color = extractColor( rule, bkroot);
+        uint8_t alpha{ 0xff};
+        if( ltrim( rule) && *rule == ':')
+            alpha = getNumber( ++rule, 16);
+        color_sum = MAKE_QWORD( HIGH_BYTE( ops) == '+' ?
+                                sumMix( HIGH_DWORD( first_color), HIGH_DWORD( second_color)) | alpha :
+                                subMix( HIGH_DWORD( first_color), HIGH_DWORD( second_color)) | alpha,
+                                LOW_BYTE( ops) == '+' ?
+                                sumMix( LOW_DWORD( first_color), LOW_DWORD( second_color)) | alpha :
+                                subMix( LOW_DWORD( first_color), LOW_DWORD( second_color)) | alpha);
+        if( compareOr<std::equal_to<char>>( LOW_BYTE( ops), '+', '-'))
+            printf( "The result of the rule `%s` is thus:\n"
+                    "Background colors: #%x(%s) %c #%x(%s) = #%x(%s)\n", given_rule,
+                    LOW_DWORD( first_color), getName( LOW_DWORD( first_color)),
+                    LOW_BYTE( ops), LOW_DWORD( second_color), getName( LOW_DWORD( second_color)),
+                    LOW_DWORD( color_sum), getName( LOW_DWORD( color_sum)));
+        if( compareOr<std::equal_to<char>>( HIGH_BYTE( ops), '+', '-'))
+            printf( "Foreground colors: #%x(%s) %c #%x(%s) = #%x(%s)\n",
+                    HIGH_DWORD( first_color), getName( HIGH_DWORD( first_color)),
+                    HIGH_BYTE( ops), HIGH_DWORD( second_color), getName( HIGH_DWORD( second_color)),
+                    HIGH_DWORD( color_sum), getName( HIGH_DWORD( color_sum)));
+    }
+    else
+    {
+        printf( "The result of the rule `%s` is thus:\n"
+                "Background color: #%x(%s)\n", given_rule,
+                LOW_DWORD( first_color), getName( LOW_DWORD( first_color)));
+        printf( "Foreground color: #%x(%s)\n",
+                HIGH_DWORD( first_color), getName( HIGH_DWORD( first_color)));
+    }
 }
 
 uint32_t editDistance( std::string_view main, std::string_view ref)
@@ -2886,7 +3408,7 @@ void installFont( std::string_view font_file)
     zip_error_init( &zip_error);
     PropertyManager<zip_error_t *>( &zip_error, zip_error_fini);
     PropertyManager<zip_t *> zipper( zip_open( FONT_ARCHIVE, ZIP_CREATE | ZIP_CHECKCONS, &code),
-                                     []( auto *zipper) { if( zipper != nullptr) zip_close( zipper);});
+                                     []( auto *zipper) { if( ACCESSIBLE(  zipper)) zip_close( zipper);});
     if( code == -1)
         return;
     auto [ font_family, font_style] = requestFontInfo( font_file);
@@ -2916,11 +3438,11 @@ void installFont( std::string_view font_file)
     if( strcasestr( font_filename, font_style.c_str()) == nullptr)
     {
         auto *p_ext = strrchr( font_filename, '.');
-        if( p_ext != nullptr)
+        if( ACCESSIBLE(  p_ext))
             modified_font_filename.append( font_family);
         modified_font_filename.append( "-");
         modified_font_filename.append( font_style);
-        if( p_ext != nullptr)
+        if( ACCESSIBLE(  p_ext))
             modified_font_filename.append( p_ext);
     }
     else
@@ -2954,7 +3476,7 @@ void executeActionOnFont( std::string_view font_name, FontActivity mode, std::fu
     zip_error_init( &zip_error);
     PropertyManager<zip_error_t *>( &zip_error, zip_error_fini);
     PropertyManager<zip_t *> zipper( zip_open( FONT_ARCHIVE, ZIP_CREATE | ZIP_CHECKCONS, &code),
-                                     []( auto *zipper) { if( zipper != nullptr) zip_close( zipper);});
+                                     []( auto *zipper) { if( ACCESSIBLE(  zipper)) zip_close( zipper);});
     if( code == -1)
         return;
 
@@ -3519,10 +4041,11 @@ int main( int ac, char *av[])
              *padding_right{ nullptr},
              *padding_top{ nullptr},
              *padding_bottom{ nullptr},
+             *test_rule{nullptr},
              *stroke_width{ nullptr},
              *line_height{ nullptr},
              *easing_direction{ nullptr},
-             *font_size{ "10"},
+             *font_size{ nullptr},
              *background_color{ nullptr},
              *word,
              *program{ *av};
@@ -3679,30 +4202,33 @@ int main( int ac, char *av[])
         else if( FOUND_STRING( strncmp( directive, PADDING_BOTTOM, count))
                  || FOUND_STRING( strncmp( directive, SHORT( PADDING_BOTTOM), count)))
             selection = &padding_bottom;
+        else if( FOUND_STRING( strncmp( directive, TEST_COLOR, count))
+                 || FOUND_STRING( strncmp( directive, SHORT( TEST_COLOR), count)))
+            selection = &test_rule;
 #endif
         if( selection != nullptr && ( index = strchr( directive, '=')) != nullptr)
             *selection = index + 1;
-        else if( selection != nullptr)
+        else if( ACCESSIBLE(  selection))
         {
             ac = -1;
             break;
         }
     }
 
-    if( line_height != nullptr)
+    if( ACCESSIBLE(  line_height))
         business_rules.line_height = strtof( line_height, nullptr);
-    if( stroke_width != nullptr)
+    if( ACCESSIBLE(  stroke_width))
         business_rules.thickness = strtoul( stroke_width, nullptr, 10);
-    if( padding_left != nullptr)
+    if( ACCESSIBLE(  padding_left))
         business_rules.pad.left = strtol( padding_left, nullptr, 10);
-    if( padding_right != nullptr)
+    if( ACCESSIBLE(  padding_right))
         business_rules.pad.right = strtol( padding_right, nullptr, 10);
-    if( padding_top != nullptr)
+    if( ACCESSIBLE(  padding_top))
         business_rules.pad.top = strtol( padding_top, nullptr, 10);
-    if( padding_bottom != nullptr)
+    if( ACCESSIBLE(  padding_bottom))
         business_rules.pad.bottom = strtol( padding_bottom, nullptr, 10);
 
-    if( justification != nullptr)
+    if( ACCESSIBLE(  justification))
     {
         if( std::cmatch cm; std::regex_match( justification, justification + strlen( justification), cm,
             std::regex( R"(^(left)|(right)|(center)$)")), std::regex_constants::icase)
@@ -3713,23 +4239,24 @@ int main( int ac, char *av[])
     }
 
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
-    if( resolution != nullptr)
+    if( ACCESSIBLE(  resolution))
         business_rules.dpi = strtoul( resolution, nullptr, 10);
 
-    if( image_quality != nullptr)
+    if( ACCESSIBLE(  image_quality))
         business_rules.image_quality = strtol( image_quality, nullptr, 10);
 #endif
-    if( background_color)
-      business_rules.background_color = extractColor( background_color, business_rules.bkroot.get());
+    if( ACCESSIBLE(  background_color))
+        business_rules.background_color = extractColor( background_color, business_rules.bkroot.get());
 
-    business_rules.font_size = strtol( font_size, nullptr, 10);
+    if( ACCESSIBLE(  font_size))
+        business_rules.font_size = strtol( font_size, nullptr, 10);
 
 #if defined( CUSTOM_FONT_SUPPORTED)
-    if( custom_font != nullptr)
+    if( ACCESSIBLE(  custom_font))
         ( FOUND_STRING( strcmp( custom_font_action, "install")) ? installFont : uninstallFont)( custom_font);
 #endif
 
-    if( easing_direction != nullptr)
+    if( ACCESSIBLE(  easing_direction))
     {
         std::regex rule( R"(^(row)|(col)$)", std::regex_constants::icase);
         std::cmatch cm;
@@ -3737,9 +4264,12 @@ int main( int ac, char *av[])
             business_rules.ease_col = cm[ 2].matched;
     }
 
+    if( ACCESSIBLE(  test_rule))
+        testColor( test_rule, bkroot.get());
+
     if( ac == 1)
         word = *av;
-    else
+    else if( test_rule == nullptr)
     {
         help:
         std::array<std::string_view, OPTIONS_COUNT> options =
@@ -3768,6 +4298,7 @@ int main( int ac, char *av[])
             STRUCTURE_PREFIX( PADDING_RIGHT),
             STRUCTURE_PREFIX( PADDING_TOP),
             STRUCTURE_PREFIX( PADDING_BOTTOM),
+            STRUCTURE_PREFIX( TEST_COLOR),
             STRUCTURE_PREFIX( HELP_PROMPT)
         };
         std::array<std::string_view, OPTIONS_COUNT> options_message =
@@ -3796,6 +4327,7 @@ int main( int ac, char *av[])
             MESSAGE( PADDING_RIGHT),
             MESSAGE( PADDING_TOP),
             MESSAGE( PADDING_BOTTOM),
+            MESSAGE( TEST_COLOR),
             MESSAGE( HELP_PROMPT)
         };
 
@@ -3817,9 +4349,12 @@ int main( int ac, char *av[])
             while( idx < help_lines_size)
                 std::cerr << std::setw( base_spacing) << help_lines[ idx++] <<'\n';
         }
-
+        fprintf( stderr, "NB! The color names available are compliant with those defined\n"
+                         "by CSS standard(https://www.w3.org/TR/css-color-3/)\n");
         exit( EXIT_FAILURE);
     }
+    else
+        exit( EXIT_SUCCESS);
 
     error = FT_Init_FreeType( &library.get());
 

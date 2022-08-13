@@ -32,10 +32,11 @@
 #define INSTALL_FONT                      "install-font"
 #define QUALITY_INDEX                     "quality-index"
 #define EASING_DIRECTION                  "easing-direction"
-#define  PADDING_LEFT                     "padding-left"
-#define  PADDING_RIGHT                    "padding-right"
-#define  PADDING_TOP                      "padding-top"
-#define  PADDING_BOTTOM                   "padding-bottom"
+#define PADDING_LEFT                      "padding-left"
+#define PADDING_RIGHT                     "padding-right"
+#define PADDING_TOP                       "padding-top"
+#define PADDING_BOTTOM                    "padding-bottom"
+#define TEST_COLOR                        "test-color"
 #define HELP_PROMPT                       "help"
 
 #define LIST_FONTS_SHORT_FORM             "lF"
@@ -62,6 +63,7 @@
 #define PADDING_RIGHT_SHORT_FORM          "pR"
 #define PADDING_TOP_SHORT_FORM            "pT"
 #define PADDING_BOTTOM_SHORT_FORM         "pB"
+#define TEST_COLOR_SHORT_FORM             "cT"
 #define HELP_PROMPT_SHORT_FORM            "h"
 
 #define OPTIONIFY( value)               OPTION_PREFIX value
@@ -235,6 +237,10 @@
                                         "Usage:\n" \
                                         OPTIONIFY( PADDING_BOTTOM) "=10\n"
 
+#define TEST_COLOR_MESSAGE              "Inquire about the result of mixing colors.\n" \
+                                        "Usage:\n" \
+                                        OPTIONIFY( TEST_COLOR) "=(red::30 + blue)\n" \
+
 #define HELP_PROMPT_MESSAGE             "Show this prompt.\n" \
 
 #define START(var) ( 
@@ -265,4 +271,5 @@
                        ADD( PADDING_RIGHT         ) \
                        ADD( PADDING_TOP           ) \
                        ADD( PADDING_BOTTOM        ) \
+                       ADD( TEST_COLOR            ) \
                        END( HELP_PROMPT           )

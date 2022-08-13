@@ -31,6 +31,8 @@
  * Case-sensitive color names
  */
 
+#define NUMBER_OF_COLORS          148
+
 #define COLOR_ALICEBLUE            "aliceblue"
 #define COLOR_ANTIQUEWHITE         "antiquewhite"
 #define COLOR_AQUA                 "aqua"

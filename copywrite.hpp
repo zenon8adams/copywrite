@@ -450,9 +450,11 @@ ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_r
 
 std::vector<ColorRule> parseColorRule(const char *rule, BKNode *bkroot);
 
+void testColor( const char *rule, BKNode *bkroot);
+
 uint64_t extractColor(const char *&rule, BKNode *bkroot);
 
-uint32_t mixColor( const char *&ctx, BKNode *bkroot);
+uint64_t mixColor( const char *&ctx, BKNode *bkroot);
 
 uint32_t sumMix(uint32_t lcolor, uint32_t rcolor);
 
@@ -490,6 +492,10 @@ std::vector<std::string> findWordMatch( BKNode *node, std::string_view word, BKN
 bool ltrim( const char*& p);
 
 uint64_t getNumber(const char *&ctx, uint8_t base = 10);
+
+std::unordered_map<std::string_view, uint32_t>& colorCodeLookup();
+
+std::string_view getColorNameAt( size_t pos);
 
 struct CompositionRule
 {
