@@ -38,6 +38,7 @@
 #include <iomanip>
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
+#include "blend_defs.hpp"
 #include "geo_vector.hpp"
 #include "composition_defs.hpp"
 
@@ -57,6 +58,13 @@
                                        (( uint32_t)( green)) << 16u |\
                                        (( uint32_t)( blue))  << 8u | alpha)
 #define RGB( red, green, blue)         RGBA( red, green, blue, 0u)
+#define LUMIN( color)                  (( uint8_t)(( color) >> 8u) & 0x7u)
+#define SAT( color)                    (( uint8_t)(( color) >> 15u) & 0x7u)
+#define HUE( color)                    (( uint16_t)(( color) >> 22u))
+#define HSLA( hue, sat, lum, alpha)    ((( uint32_t)( hue)) << 22u |\
+                                       (( uint32_t)( sat))  << 15u |\
+                                       (( uint32_t)( lum))  << 8u | alpha)
+#define HSL( hue, sat, lum)            HSLA( hue, sat, lum, 0u)
 #define SCALE_RGB( color, scale)       RGB( RED( color) * ( scale), GREEN( color) * ( scale), BLUE( color) * ( scale))
 #define XYZ_SCALE                      775
 #define RGB_SCALE                      255
@@ -64,6 +72,7 @@
 #define DEG_SCALE					   180.f / M_PI
 #define ENUM_CAST( idx)					( static_cast<uint8_t>( idx))
 #define MODEL_ENUM( mode)			   CompositionRule::CompositionModel::mode
+#define BLEND_ENUM( mode)              CompositionRule::BlendModel::mode
 /*
  * The composition table is made up of 2 bit field
  * per flag for CompositionModel.
@@ -100,7 +109,7 @@
 
 #define FOUND_STRING( xpr)             (( xpr) == 0)
 
-void spansCallback( int y, int count, const FT_Span *spans, void *user)
+void spansCallback(int y, int count, const FT_Span *spans, void *user)
 {
     auto *sptr = (Spans *)user;
     for (int i = 0; i < count; ++i)
@@ -902,7 +911,7 @@ void applyFilter( FrameBuffer<uint32_t> &frame, uint8_t filter)
 																    1/256., 4/256., 6/256., 4/256., 1/256.}
    };
  
-  if( filter >= FilterMode::B_FILTER_SENTINEL && filter >= FilterMode::E_FILTER_SENTINEL)
+  if( filter >= FilterMode::E_FILTER_SENTINEL)
 	return;
   
   const auto k_width = filter < FilterMode::B_FILTER_SENTINEL ? 3 : 5;
@@ -942,10 +951,75 @@ void applyFilter( FrameBuffer<uint32_t> &frame, uint8_t filter)
 
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
 
+std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel blend)
+{
+    std::function<uint32_t( uint32_t, uint32_t)> selector[ NUMBER_OF_BLEND_MODES] =
+    {
+        [ ENUM_CAST( BLEND_ENUM( Dissolve))]    = []( auto top, auto base)
+        {
+            auto value = ( rand() % ( 0x100 - ALPHA( top)));
+            return value >= 0 && value <= 10 ? top | 0xff : base;
+        },
+        [ ENUM_CAST( BLEND_ENUM( Darken))]      = []( auto top, auto base)
+        {
+            int t_rgb_min = std::min( std::min( RED( top), GREEN( top)), BLUE( top)),
+                b_rgb_min = std::min( std::min( RED( base), GREEN( base)), BLUE( base)),
+                t_rgb_max = std::max( std::max( RED( top), GREEN( top)), BLUE( top)),
+                b_rgb_max = std::max( std::max( RED( base), GREEN( base)), BLUE( base));
+            return ( t_rgb_max + t_rgb_min) < ( b_rgb_max + b_rgb_min) ? top : base;
+        },
+        [ ENUM_CAST( BLEND_ENUM( Multiply))]    = []( auto top, auto base)
+        {
+            uint8_t red   = (( float)RED( top) / RGB_SCALE   * ( float)RED( base) / RGB_SCALE) * RGB_SCALE,
+                    green = (( float)GREEN( top) / RGB_SCALE * ( float)GREEN( base) / RGB_SCALE) * RGB_SCALE,
+                    blue  = (( float)BLUE( top) / RGB_SCALE  * ( float)BLUE( base) / RGB_SCALE) * RGB_SCALE,
+                    alpha = (( float)ALPHA( top) / RGB_SCALE * ( float)ALPHA( base) / RGB_SCALE) * RGB_SCALE;
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( ColorBurn))]   = []( auto top, auto base)
+        {
+            uint8_t red   = RED( top) == 0 ? 0 :
+                            clamp( ( 1.f - (( RGB_SCALE - RED( base)) / RED( top))) * RGB_SCALE, 0, RGB_SCALE),
+                    green = GREEN( top) == 0 ? 0 :
+                            clamp( ( 1.f - (( RGB_SCALE - GREEN( base)) / GREEN( top))) * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = BLUE( top) == 0 ? 0 :
+                            clamp( ( 1.f - (( RGB_SCALE - BLUE( base)) / BLUE( top))) * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = ALPHA( top) == 0 ? 0 :
+                            clamp( ( 1.f - (( RGB_SCALE - ALPHA( base)) / ALPHA( top))) * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( LinearBurn))]  = []( auto top, auto base)
+        {
+            uint8_t red_sum   = clamp(( int16_t)RED( base) + RED( top) - 1, 0, RGB_SCALE),
+                    green_sum = clamp(( int16_t)GREEN( base) + GREEN( top) - 1, 0, RGB_SCALE),
+                    blue_sum  = clamp(( int16_t)BLUE( base) + BLUE( top) - 1, 0, RGB_SCALE),
+                    alpha_sum = clamp(( int16_t)ALPHA( base) + ALPHA( top) - 1, 0, RGB_SCALE);
+
+            return RGBA( red_sum, green_sum, blue_sum, alpha_sum);
+        },
+        [ ENUM_CAST( BLEND_ENUM( DarkerColor))] = [ =]( auto top, auto base)
+        {
+            constexpr auto factor = .6f;
+            auto top_rescaled  = RGBA( RED( top) * factor, GREEN( top) * factor, BLUE( top) * factor, ALPHA( top)),
+                 base_rescaled = RGBA( RED( base) * factor, GREEN( base) * factor, BLUE( base) * factor, ALPHA( base));
+
+            return selector[ ENUM_CAST( BLEND_ENUM( Darken))]( top_rescaled, base_rescaled);
+        },
+        [ ENUM_CAST( BLEND_ENUM( Lighten))]     = [ =]( auto top, auto base)
+        {
+            return selector[ ENUM_CAST( CompositionRule::BlendModel::Darken)]( top, base) == top ? base : top;
+        }
+    };
+
+    return selector[ ENUM_CAST( blend)];
+}
+
 void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame)
 {
    auto c_rule = parseCompositionRule( guide.composition_rule);
-   if( c_rule.model == MODEL_ENUM( NotApplicable))
+   if( c_rule.c_model == MODEL_ENUM( NotApplicable))
      return;
 
 #if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
@@ -1021,7 +1095,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
    int   final_width,
    		 final_height;
    
-   if( COMPOSITON_SIZE( c_rule.model))
+   if( COMPOSITON_SIZE( c_rule.c_model))
    { // The final canvas size is the maximum of the width and height of both canvas
      auto bottom_edge = Vec2D<float>( std::max( origin.x + width  - 1.f,  dwidth  - 1.f),
      	                              std::max( origin.y + height - 1.f, dheight  - 1.f));
@@ -1030,7 +1104,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
      final_width      = bottom_edge.x - origin.x + 1;
      final_height     = bottom_edge.y - origin.y + 1;
    }
-   else if( COMPOSITION_SIDE( c_rule.model))
+   else if( COMPOSITION_SIDE( c_rule.c_model))
    { // The final canvas size is the size of the bounding box of the source canvas
      final_width  = width;
      final_height = height;
@@ -1051,6 +1125,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
   
   auto s_frame_dimension = s_frame.width * s_frame.height;
   bool source_over = false;
+  auto blendFn = selectBlendFn( c_rule.b_model);
   std::array<std::function<void( std::variant<Default, Top, Bottom>)>,
              ENUM_CAST( MODEL_ENUM( Xor)) + 1> models = {
 	  [&]( auto part) // Copy
@@ -1268,14 +1343,29 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 			auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
 			if( intersects( corners, point))
 			{
-			  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+			  int index = (int)s_coord.y * s_frame.width + (int)s_coord.x;
 			  if( index > 0 && index < s_frame_dimension)
               {
-			      if( ALPHA( s_buffer[ index]) < 180 && intersects( big_corners, point))
+                  if( c_rule.b_model == CompositionRule::BlendModel::Normal)
+                  {
+                      if( ALPHA( s_buffer[ index]) < 180 && intersects( big_corners, point))
+                      {
+                          auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                          image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+                                                                           d_buffer[ d_index + 2],
+                                                                           d_buffer[ d_index + 3]);
+                      }
+                      else
+                          image.buffer.get()[ j * final_width + i] = s_buffer[ index];
+                  }
+                  else if( intersects( big_corners, point))
                   {
                       auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-                      image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
-                                                                       d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
+                      image.buffer.get()[ j * final_width + i] = blendFn( s_buffer[ index],
+                                                                             RGBA( d_buffer[ d_index],
+                                                                                   d_buffer[ d_index + 1],
+                                                                                   d_buffer[ d_index + 2],
+                                                                                   d_buffer[ d_index + 3]));
                   }
                   else
                       image.buffer.get()[ j * final_width + i] = s_buffer[ index];
@@ -1300,7 +1390,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 	  }
    };
   
-  models[ ENUM_CAST( c_rule.model)]( Default());
+  models[ ENUM_CAST( c_rule.c_model)]( Default());
 
 #if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
     ( guide.out_format == OutputFormat::JPEG ? writeJPEG : writePNG)( guide.src_filename, image, guide.image_quality);
@@ -1311,7 +1401,6 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 #endif
 
 }
-
 #endif
 
 #if defined( JPG_SUPPORTED)
@@ -1966,7 +2055,7 @@ uint64_t extractColor( const char *&rule, BKNode *bkroot)
             if( ltrim( rule) && *rule == '/')
                 return MAKE_QWORD( extractColor( ++rule, bkroot), color_name);
 
-            return color_name;
+            return color_name << shift;
         }
 
         if( ltrim( rule) && *rule == '/')
@@ -3243,6 +3332,52 @@ CompositionRule::CompositionModel selectCompositionModel( std::string_view given
    return index->second;
 }
 
+CompositionRule::BlendModel selectBlendModel( std::string_view given)
+{
+    size_t view_size = given.size();
+    if( !view_size)
+        return CompositionRule::BlendModel::Normal;
+
+    static const std::unordered_map<std::string_view, CompositionRule::BlendModel> possibilities
+    {
+        { BM_NORMAL,        CompositionRule::BlendModel::Normal},
+        { BM_DISSOLVE,      CompositionRule::BlendModel::Dissolve},
+        { BM_DARKEN,        CompositionRule::BlendModel::Darken},
+        { BM_MULTIPLY,      CompositionRule::BlendModel::Multiply},
+        { BM_COLOR_BURN,    CompositionRule::BlendModel::ColorBurn},
+        { BM_LINEAR_BURN,   CompositionRule::BlendModel::LinearBurn},
+        { BM_DARKER_COLOR,  CompositionRule::BlendModel::DarkerColor},
+        { BM_LIGHTEN,       CompositionRule::BlendModel::Lighten},
+        { BM_SCREEN,        CompositionRule::BlendModel::Screen},
+        { BM_COLOR_DODGE,   CompositionRule::BlendModel::ColorDodge},
+        { BM_LINEAR_DODGE,  CompositionRule::BlendModel::LinearDodge},
+        { BM_LIGHTER_COLOR, CompositionRule::BlendModel::LighterColor},
+        { BM_OVERLAY,       CompositionRule::BlendModel::Overlay},
+        { BM_SOFT_LIGHT,    CompositionRule::BlendModel::SoftLight},
+        { BM_HARD_LIGHT,    CompositionRule::BlendModel::HardLight},
+        { BM_VIVID_LIGHT,   CompositionRule::BlendModel::VividLight},
+        { BM_LINEAR_LIGHT,  CompositionRule::BlendModel::LinearLight},
+        { BM_PIN_LIGHT,     CompositionRule::BlendModel::PinLight},
+        { BM_HARD_MIX,      CompositionRule::BlendModel::HardMix},
+        { BM_DIFFERENCE,    CompositionRule::BlendModel::Difference},
+        { BM_EXCLUSION,     CompositionRule::BlendModel::Exclusion},
+        { BM_SUBTRACT,      CompositionRule::BlendModel::Subtract},
+        { BM_DIVIDE,        CompositionRule::BlendModel::Divide},
+        { BM_HUE,           CompositionRule::BlendModel::Hue},
+        { BM_SATURATION,    CompositionRule::BlendModel::Saturation},
+        { BM_COLOR,         CompositionRule::BlendModel::Color},
+        { BM_LUMINOSITY,    CompositionRule::BlendModel::Luminosity},
+    };
+
+    std::string clone( view_size, 0);
+    std::transform( given.cbegin(), given.cend(), clone.begin(), tolower);
+    auto index = possibilities.find( clone);
+    if( index == possibilities.cend())
+        return CompositionRule::BlendModel::Normal;
+
+    return index->second;
+}
+
 CompositionRule parseCompositionRule( std::string_view rule)
 {
   std::cmatch match_results;
@@ -3250,16 +3385,19 @@ CompositionRule parseCompositionRule( std::string_view rule)
   //1. from 30deg, mode=source-over
   //2. from 30deg, at .5, 0.45, mode=source-over
   //3. mode=source-over or mode=lighter
+  //4. blend=dissolve or blend
   std::regex matcher( R"(^(?:from\s+([+-]?\d{1,3})deg(?:\s+at\s+)"
 					  R"(([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?),\s*([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))?,\s*)?)"
-                      R"(mode=([a-zA-Z]+(?:-[a-zA-Z]+)?)$)");
+                      R"(mode=([a-zA-Z]+(?:-[a-z]+)?)(?:,\s*blend=([a-z]+(?:-[a-z]+)?))?$)",
+                      std::regex_constants::icase);
   if( std::regex_match( rule.cbegin(), rule.cend(), match_results, matcher))
   {
     auto x_origin = match_results[ 2].str(),
          y_origin = match_results[ 3].str(),
          angle    = match_results[ 1].str();
 	return {
-		.model = selectCompositionModel( match_results[ 4].str()),
+		.c_model = selectCompositionModel( match_results[ 4].str()),
+        .b_model = selectBlendModel( match_results[ 5].str()),
 		.position = Vec2D(x_origin.size() ? std::stof(x_origin, nullptr) : 0.f,
 						 y_origin.size() ? std::stof( y_origin, nullptr) : 0.f),
 		.angle = angle.size() ? std::stoi( angle, nullptr, 10) : 0
@@ -4053,16 +4191,14 @@ int main( int ac, char *av[])
     while( --ac > 0 && ( *++av)[ 0] == '-')
     {
         const char *directive = *av + 1 + ( *( *av + 1) == '-'), // Allow for only one hyphen
-                   *end = strrchr( directive, '='),
+                   *end = strchr( directive, '='),
                    *index = nullptr,
                    **selection = nullptr;
         size_t count = end == nullptr ? strlen( directive) : end - directive;
 
-        if( FOUND_STRING( strcmp( directive, HELP_PROMPT))
-            || FOUND_STRING( strcmp( directive, SHORT( HELP_PROMPT))))
+        if( FOUND_STRING( strcmp( directive, HELP_PROMPT)) || FOUND_STRING( strcmp( directive, SHORT( HELP_PROMPT))))
             goto help;
-        else if( FOUND_STRING( strcmp( directive, LIST_FONTS))
-                 || FOUND_STRING( strcmp( directive, SHORT( LIST_FONTS))))
+        else if( FOUND_STRING( strcmp( directive, LIST_FONTS)) || FOUND_STRING( strcmp( directive, SHORT( LIST_FONTS))))
         {
             puts( "Available fonts:\n");
             requestFontList();
@@ -4070,7 +4206,7 @@ int main( int ac, char *av[])
             exit( EXIT_SUCCESS);
         }
         else if( FOUND_STRING( strcmp( directive, LIST_EASINGS))
-                 || FOUND_STRING( strcmp( directive, SHORT( LIST_EASINGS))))
+         || FOUND_STRING( strcmp( directive, SHORT( LIST_EASINGS))))
         {
             printf( "Available easing functions:\n");
             printf( "%s\n", FN_IEASEINSINE);
@@ -4104,14 +4240,15 @@ int main( int ac, char *av[])
             printf( "%s\n", FN_IEASEOUTBOUNCE);
             printf( "%s\n", FN_IEASEINOUTBOUNCE);
         }
-        else if( FOUND_STRING( strncmp( directive, FONT_PROFILE, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( FONT_PROFILE), count)))
+        else if( ( strlen( FONT_PROFILE) == count && FOUND_STRING( strncmp( directive, FONT_PROFILE, count)))
+         || ( strlen( SHORT( FONT_PROFILE)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( FONT_PROFILE), count))))
             selection = &font_profile;
-        else if( FOUND_STRING( strncmp( directive, COLOR_RULE, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( COLOR_RULE), count)))
+        else if( ( strlen( COLOR_RULE) == count && FOUND_STRING( strncmp( directive, COLOR_RULE, count)))
+         || ( strlen( SHORT( COLOR_RULE)) == count && FOUND_STRING( strncmp( directive, SHORT( COLOR_RULE), count))))
             selection = &business_rules.color_rule;
         else if( FOUND_STRING( strcmp( directive, OUTPUT))
-                 || FOUND_STRING( strcmp( directive, SHORT( OUTPUT))) && ac > 0)
+         || FOUND_STRING( strcmp( directive, SHORT( OUTPUT))) && ac > 0)
         {
             ac -= 1;
             business_rules.src_filename = *++av;
@@ -4126,7 +4263,7 @@ int main( int ac, char *av[])
         }
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
         else if( FOUND_STRING( strcmp( directive, LIST_COMPOSITION_MODES))
-                 || FOUND_STRING( strcmp( directive, SHORT( LIST_COMPOSITION_MODES))))
+         || FOUND_STRING( strcmp( directive, SHORT( LIST_COMPOSITION_MODES))))
         {
             printf( "Available composition methods:\n");
             printf( "%s\n", COPY);
@@ -4141,69 +4278,82 @@ int main( int ac, char *av[])
             printf( "%s\n", SOURCE_OUT);
             printf( "%s\n", XOR);
         }
-        else if( FOUND_STRING( strncmp( directive, COMPOSITION_RULE, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( COMPOSITION_RULE), count)))
+        else if( ( strlen( COMPOSITION_RULE) == count && FOUND_STRING( strncmp( directive, COMPOSITION_RULE, count)))
+         || ( strlen( SHORT( COMPOSITION_RULE)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( COMPOSITION_RULE), count))))
 		  selection = &business_rules.composition_rule;
-        else if( FOUND_STRING( strncmp( directive, COMPOSITION_IMAGE, count))
-                || FOUND_STRING( strncmp( directive, SHORT( COMPOSITION_IMAGE), count)))
+        else if( ( strlen( COMPOSITION_IMAGE) == count && FOUND_STRING( strncmp( directive, COMPOSITION_IMAGE, count)))
+         || ( strlen( SHORT( COMPOSITION_IMAGE)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( COMPOSITION_IMAGE), count))))
             selection = &business_rules.dest_filename;
         else if( FOUND_STRING( strcmp( directive, AS_IMAGE)) || FOUND_STRING( strcmp( directive, SHORT( AS_IMAGE))))
             business_rules.as_image = true;
-        else if( FOUND_STRING( strncmp( directive, QUALITY_INDEX, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( QUALITY_INDEX), count)))
+        else if( ( strlen( QUALITY_INDEX) == count && FOUND_STRING( strncmp( directive, QUALITY_INDEX, count)))
+         || ( strlen( SHORT( QUALITY_INDEX)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( QUALITY_INDEX), count))))
             selection = &image_quality;
-        else if( FOUND_STRING( strncmp( directive, DPI, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( DPI), count)))
+        else if( ( strlen( DPI) == count && FOUND_STRING( strncmp( directive, DPI, count)))
+         || ( strlen( SHORT( DPI)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( DPI), count))))
             selection = &resolution;
-        else if( FOUND_STRING( strncmp( directive, EASING_DIRECTION, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( EASING_DIRECTION), count)))
+        else if( ( strlen( EASING_DIRECTION) == count && FOUND_STRING( strncmp( directive, EASING_DIRECTION, count)))
+         || ( strlen( SHORT( EASING_DIRECTION)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( EASING_DIRECTION), count))))
             selection = &easing_direction;
 #endif
-        else if( FOUND_STRING( strncmp( directive, FONT_SIZE, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( FONT_SIZE), count)))
+        else if( ( strlen( FONT_SIZE) == count && FOUND_STRING( strncmp( directive, FONT_SIZE, count)))
+         || ( strlen( SHORT( FONT_SIZE)) == count && FOUND_STRING( strncmp( directive, SHORT( FONT_SIZE), count))))
             selection = &font_size;
-        else if( FOUND_STRING( strncmp( directive, BACKGROUND_COLOR, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( BACKGROUND_COLOR), count)))
+        else if( ( strlen( BACKGROUND_COLOR) == count && FOUND_STRING( strncmp( directive, BACKGROUND_COLOR, count)))
+         || ( strlen( SHORT( BACKGROUND_COLOR)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( BACKGROUND_COLOR), count))))
           selection = &background_color;
-        else if( FOUND_STRING( strncmp( directive, DRAWING_CHARACTER, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( DRAWING_CHARACTER), count)))
+        else if( ( strlen( DRAWING_CHARACTER) == count && FOUND_STRING( strncmp( directive, DRAWING_CHARACTER, count)))
+         || ( strlen( SHORT( DRAWING_CHARACTER)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( DRAWING_CHARACTER), count))))
             selection = &business_rules.raster_glyph;
-        else if( FOUND_STRING( strncmp( directive, LINE_HEIGHT, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( LINE_HEIGHT), count)))
+        else if( ( strlen( LINE_HEIGHT) == count && FOUND_STRING( strncmp( directive, LINE_HEIGHT, count)))
+         || ( strlen( SHORT( LINE_HEIGHT)) == count && FOUND_STRING( strncmp( directive, SHORT( LINE_HEIGHT), count))))
             selection = &line_height;
-        else if( FOUND_STRING( strncmp( directive, STROKE_WIDTH, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( STROKE_WIDTH), count)))
+        else if( ( strlen( STROKE_WIDTH) == count && FOUND_STRING( strncmp( directive, STROKE_WIDTH, count)))
+         || ( strlen( SHORT( STROKE_WIDTH)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( STROKE_WIDTH), count))))
             selection = &stroke_width;
-        else if( FOUND_STRING( strncmp( directive, JUSTIFY, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( JUSTIFY), count)))
+        else if( ( strlen( JUSTIFY) == count && FOUND_STRING( strncmp( directive, JUSTIFY, count)))
+         || ( strlen( SHORT( JUSTIFY)) == count && FOUND_STRING( strncmp( directive, SHORT( JUSTIFY), count))))
             selection = &justification;
 #if defined( CUSTOM_FONT_SUPPORTED)
-        else if( FOUND_STRING( strncmp( directive, UNINSTALL_FONT, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( UNINSTALL_FONT), count)))
+        else if( ( strlen( UNINSTALL_FONT) == count && FOUND_STRING( strncmp( directive, UNINSTALL_FONT, count)))
+         || ( strlen( SHORT( UNINSTALL_FONT)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( UNINSTALL_FONT), count))))
         {
             custom_font_action = "uninstall";
             selection = &custom_font;
         }
-        else if( FOUND_STRING( strncmp( directive, INSTALL_FONT, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( INSTALL_FONT), count)))
+        else if( ( strlen( INSTALL_FONT) == count && FOUND_STRING( strncmp( directive, INSTALL_FONT, count)))
+         || ( strlen( SHORT( INSTALL_FONT)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( INSTALL_FONT), count))))
         {
             custom_font_action = "install";
             selection = &custom_font;
         }
-        else if( FOUND_STRING( strncmp( directive, PADDING_LEFT, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( PADDING_LEFT), count)))
+        else if( ( strlen( PADDING_LEFT) == count && FOUND_STRING( strncmp( directive, PADDING_LEFT, count)))
+         || ( strlen( SHORT( PADDING_LEFT)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( PADDING_LEFT), count))))
             selection = &padding_left;
-        else if( FOUND_STRING( strncmp( directive, PADDING_RIGHT, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( PADDING_RIGHT), count)))
+        else if( ( strlen( PADDING_RIGHT) == count && FOUND_STRING( strncmp( directive, PADDING_RIGHT, count)))
+         || ( strlen( SHORT( PADDING_RIGHT)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( PADDING_RIGHT), count))))
             selection = &padding_right;
-        else if( FOUND_STRING( strncmp( directive, PADDING_TOP, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( PADDING_TOP), count)))
+        else if( ( strlen( PADDING_TOP) == count && FOUND_STRING( strncmp( directive, PADDING_TOP, count)))
+         || ( strlen( SHORT( PADDING_TOP)) == count && FOUND_STRING( strncmp( directive, SHORT( PADDING_TOP), count))))
             selection = &padding_top;
-        else if( FOUND_STRING( strncmp( directive, PADDING_BOTTOM, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( PADDING_BOTTOM), count)))
+        else if( ( strlen( PADDING_BOTTOM) == count && FOUND_STRING( strncmp( directive, PADDING_BOTTOM, count)))
+         || ( strlen( SHORT( PADDING_BOTTOM)) == count
+         && FOUND_STRING( strncmp( directive, SHORT( PADDING_BOTTOM), count))))
             selection = &padding_bottom;
-        else if( FOUND_STRING( strncmp( directive, TEST_COLOR, count))
-                 || FOUND_STRING( strncmp( directive, SHORT( TEST_COLOR), count)))
+        else if( ( strlen( TEST_COLOR) == count && FOUND_STRING( strncmp( directive, TEST_COLOR, count)))
+         || ( strlen( SHORT( TEST_COLOR)) == count && FOUND_STRING( strncmp( directive, SHORT( TEST_COLOR), count))))
             selection = &test_rule;
 #endif
         if( selection != nullptr && ( index = strchr( directive, '=')) != nullptr)

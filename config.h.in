@@ -188,6 +188,10 @@
                                         "18. " OPTIONIFY( COLOR_RULE) "=[1..]{(red::30 + blue::70):ff}\n" \
                                         "    Set the color to the sum of red and blue with mixing ratio of\n" \
                                         "30% red and 70% blue.\n" \
+                                        "19. " OPTIONIFY( COLOR_RULE) "=[1..]{(red/blue +/- green/yellow)}\n" \
+                                        "    Set the outline color to the result of subtractive color mixing of\n" \
+                                        "blue and yellow (black). Also set the font color to the result of\n"\
+                                        "additive mixture of red and green(yellow).\n" \
                                         "MULTILINE TEXTS:\n" \
                                         "1. "  OPTIONIFY( COLOR_RULE) "=[(1,1)]{Red}\n" \
                                         "    Set the character at the first row and first column(only) to red.\n" \

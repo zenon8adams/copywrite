@@ -1,8 +1,8 @@
 /***************************************************************************/
 /*                                                                         */
-/*  geo_vector.cpp                                                         */
+/*  blend_defs.cpp                                                         */
 /*                                                                         */
-/*    Vec3D class                    					                   */
+/*    List of image blending modes					                       */
 /*                                                                         */
 /*  Copyright 2022 by Adesina Meekness                                     */
 /*                                                                         */
@@ -24,26 +24,37 @@
 /*                                                                         */
 /***************************************************************************/
 
-#include <cstdint>
-#include <iostream>
-#include "geo_vector.hpp"
+#ifndef COPYWRITE_BLEND_DEFS_HPP
+#define COPYWRITE_BLEND_DEFS_HPP
 
-Vec3D::Vec3D( float x, float y, float z)
-    : x( x), y( y), z( z)
-{
-}
-Vec3D Vec3D::operator*( float right) const
-{
-  return { x * right, y * right, z * right};
-}
+#define BM_NORMAL        "normal"
+#define BM_DISSOLVE      "dissolve"
+#define BM_DARKEN        "darken"
+#define BM_MULTIPLY      "multiply"
+#define BM_COLOR_BURN    "color-burn"
+#define BM_LINEAR_BURN   "linear-burn"
+#define BM_DARKER_COLOR  "darker-color"
+#define BM_LIGHTEN       "lighten"
+#define BM_SCREEN        "screen"
+#define BM_COLOR_DODGE   "color-dodge"
+#define BM_LINEAR_DODGE  "linear-dodge"
+#define BM_LIGHTER_COLOR "lighter-color"
+#define BM_OVERLAY       "overlay"
+#define BM_SOFT_LIGHT    "soft-light"
+#define BM_HARD_LIGHT    "hard-light"
+#define BM_VIVID_LIGHT   "vivid-light"
+#define BM_LINEAR_LIGHT  "linear-light"
+#define BM_PIN_LIGHT     "pin-light"
+#define BM_HARD_MIX      "hard-mix"
+#define BM_DIFFERENCE    "difference"
+#define BM_EXCLUSION     "exclusion"
+#define BM_SUBTRACT      "subtract"
+#define BM_DIVIDE        "divide"
+#define BM_HUE           "hue"
+#define BM_SATURATION    "saturation"
+#define BM_COLOR         "color"
+#define BM_LUMINOSITY    "luminosity"
 
-Vec3D operator*( float left, Vec3D right)
-{
-  return right * left;
-}
+#define  NUMBER_OF_BLEND_MODES  27
 
-Vec3D Vec3D::operator+( Vec3D right) const
-{
-  return { x + right.x, y + right.y, z + right.z};
-}
-
+#endif //COPYWRITE_BLEND_DEFS_HPP

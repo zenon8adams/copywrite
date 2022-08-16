@@ -444,11 +444,11 @@ std::wstring toWString( std::string str);
 template <size_t count>
 std::array<float, count> parseFloats( const char *&rule);
 
-std::vector<std::string> partition(std::string_view provision, std::string_view regexpr);
+std::vector<std::string> partition( std::string_view provision, std::string_view regexpr);
 
 ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_rule, BKNode *bkroot);
 
-std::vector<ColorRule> parseColorRule(const char *rule, BKNode *bkroot);
+std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot);
 
 void testColor( const char *rule, BKNode *bkroot);
 
@@ -462,15 +462,15 @@ uint32_t subMix( uint32_t lcolor, uint32_t rcolor);
 
 void fillEasingMode( std::function<float(float)> &function, const char *&rule, BKNode *bkroot, char eoc);
 
-uint32_t interpolateColor(uint32_t scolor, uint32_t ecolor, float progress);
+uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, float progress);
 
-uint32_t decodeColorName(const char *&ctx, BKNode *bkroot);
+uint32_t decodeColorName( const char *&ctx, BKNode *bkroot);
 
 uint32_t rgbaToHsva( uint32_t rgb);
 
 uint32_t hsvaToRgba( uint32_t hsv);
 
-uint32_t colorLerp(uint32_t lcolor, uint32_t rcolor, float progress);
+uint32_t colorLerp( uint32_t lcolor, uint32_t rcolor, float progress);
 
 XyZColor xyzFromRgb( uint32_t color);
 
@@ -491,7 +491,7 @@ std::vector<std::string> findWordMatch( BKNode *node, std::string_view word, BKN
 
 bool ltrim( const char*& p);
 
-uint64_t getNumber(const char *&ctx, uint8_t base = 10);
+uint64_t getNumber( const char *&ctx, uint8_t base = 10);
 
 std::unordered_map<std::string_view, uint32_t>& colorCodeLookup();
 
@@ -513,12 +513,45 @@ struct CompositionRule
 	SourceOver,
 	SourceOut,
 	Xor
-  }			   model{ CompositionModel::NotApplicable};
+  }			   c_model{ CompositionModel::NotApplicable};
+  enum class BlendModel
+  {
+    Normal = 0,
+    Dissolve,
+    Darken,
+    Multiply,
+    ColorBurn,
+    LinearBurn,
+    DarkerColor,
+    Lighten,
+    Screen,
+    ColorDodge,
+    LinearDodge,
+    LighterColor,
+    Overlay,
+    SoftLight,
+    HardLight,
+    VividLight,
+    LinearLight,
+    PinLight,
+    HardMix,
+    Difference,
+    Exclusion,
+    Subtract,
+    Divide,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity
+  }            b_model{ BlendModel::Normal};
   Vec2D<float> position{};
   int 	   	   angle{};
 };
 
 CompositionRule::CompositionModel selectCompositionModel( std::string_view given);
+
+CompositionRule::BlendModel selectBlendModel( std::string_view given);
+
 CompositionRule parseCompositionRule( std::string_view rule);
 
 enum class OutputFormat

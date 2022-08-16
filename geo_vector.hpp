@@ -126,7 +126,6 @@ struct Vec3D
 
   Vec3D operator+( Vec3D right) const;
 
-  Vec3D lerp( Vec3D end, float rate);
 };
 
 #endif //COPYWRITE__GEO_VECTOR_HPP_
