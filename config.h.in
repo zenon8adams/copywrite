@@ -21,6 +21,7 @@
 #define OUTPUT                            "output"
 #define LIST_EASINGS                      "list-easings"
 #define LIST_COMPOSITION_MODES            "list-composition-modes"
+#define LIST_BLEND_MODES                  "list-blend-modes"
 #define COMPOSITION_RULE                  "composition-rule"
 #define COMPOSITION_IMAGE                 "composition-image"
 #define DPI                               "dpi"
@@ -48,6 +49,7 @@
 #define OUTPUT_SHORT_FORM                 "o"
 #define LIST_EASINGS_SHORT_FORM           "eL"
 #define LIST_COMPOSITION_MODES_SHORT_FORM "cL"
+#define LIST_BLEND_MODES_SHORT_FORM       "bL"
 #define COMPOSITION_RULE_SHORT_FORM       "c"
 #define COMPOSITION_IMAGE_SHORT_FORM      "iC"
 #define DPI_SHORT_FORM                    "iR"
@@ -124,6 +126,8 @@
 #define LIST_EASINGS_MESSAGE            " list the easing functions available.\n" \
 
 #define LIST_COMPOSITION_MODES_MESSAGE  "List all composition modes available.\n" \
+
+#define LIST_BLEND_MODES_MESSAGE        "List all blend modes available.\n" \
 
 #define COLOR_RULE_MESSAGE              "Set the color rule to use in generating text.\n" \
                                         "Usage examples:\n" \
@@ -260,6 +264,7 @@
                        ADD( OUTPUT                ) \
                        ADD( LIST_EASINGS          ) \
                        ADD( LIST_COMPOSITION_MODES) \
+                       ADD( LIST_BLEND_MODES      ) \
                        ADD( COMPOSITION_RULE      ) \
                        ADD( COMPOSITION_IMAGE     ) \
                        ADD( DPI                   ) \

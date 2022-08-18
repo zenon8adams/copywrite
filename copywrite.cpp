@@ -4594,6 +4594,45 @@ int main( int ac, char *av[])
             printf( "%s\n", SOURCE_OUT);
             printf( "%s\n", XOR);
         }
+        else if( FOUND_STRING( strcmp( directive, LIST_BLEND_MODES))
+                 || FOUND_STRING( strcmp( directive, SHORT( LIST_BLEND_MODES))))
+        {
+            printf( "Available blend modes:\n");
+            printf( "    Normal Group:\n");
+            printf( "%s\n",  BM_NORMAL);
+            printf( "%s\n",  BM_DISSOLVE);
+            printf( "    Darken Group:\n");
+            printf( "%s\n",  BM_DARKEN);
+            printf( "%s\n",  BM_MULTIPLY);
+            printf( "%s\n",  BM_COLOR_BURN);
+            printf( "%s\n",  BM_LINEAR_BURN);
+            printf( "%s\n",  BM_DARKER_COLOR);
+            printf( "    Lighten Group:\n");
+            printf( "%s\n",  BM_LIGHTEN);
+            printf( "%s\n",  BM_SCREEN);
+            printf( "%s\n",  BM_COLOR_DODGE);
+            printf( "%s\n",  BM_LINEAR_DODGE);
+            printf( "%s\n",  BM_LIGHTER_COLOR);
+            printf( "    Contrast Group:\n");
+            printf( "%s\n",  BM_OVERLAY);
+            printf( "%s\n",  BM_SOFT_LIGHT);
+            printf( "%s\n",  BM_HARD_LIGHT);
+            printf( "%s\n",  BM_VIVID_LIGHT);
+            printf( "%s\n",  BM_LINEAR_LIGHT);
+            printf( "%s\n",  BM_PIN_LIGHT);
+            printf( "%s\n",  BM_HARD_MIX);
+            printf( "    Inversion Group:\n");
+            printf( "%s\n",  BM_DIFFERENCE);
+            printf( "%s\n",  BM_EXCLUSION);
+            printf( "    Cancelation Group:\n");
+            printf( "%s\n",  BM_SUBTRACT);
+            printf( "%s\n",  BM_DIVIDE);
+            printf( "    Component Group:\n");
+            printf( "%s\n",  BM_HUE);
+            printf( "%s\n",  BM_SATURATION);
+            printf( "%s\n",  BM_COLOR);
+            printf( "%s\n\n", BM_LUMINOSITY);
+        }
         else if( ( strlen( COMPOSITION_RULE) == count && FOUND_STRING( strncmp( directive, COMPOSITION_RULE, count)))
          || ( strlen( SHORT( COMPOSITION_RULE)) == count
          && FOUND_STRING( strncmp( directive, SHORT( COMPOSITION_RULE), count))))
@@ -4749,6 +4788,7 @@ int main( int ac, char *av[])
             STRUCTURE_PREFIX( OUTPUT),
             STRUCTURE_PREFIX( LIST_EASINGS),
             STRUCTURE_PREFIX( LIST_COMPOSITION_MODES),
+            STRUCTURE_PREFIX( LIST_BLEND_MODES),
             STRUCTURE_PREFIX( COMPOSITION_RULE),
             STRUCTURE_PREFIX( COMPOSITION_IMAGE),
             STRUCTURE_PREFIX( DPI),
@@ -4778,6 +4818,7 @@ int main( int ac, char *av[])
             MESSAGE( OUTPUT),
             MESSAGE( LIST_EASINGS),
             MESSAGE( LIST_COMPOSITION_MODES),
+            MESSAGE( LIST_BLEND_MODES),
             MESSAGE( COMPOSITION_RULE),
             MESSAGE( COMPOSITION_IMAGE),
             MESSAGE( DPI),
