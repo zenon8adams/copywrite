@@ -54,12 +54,12 @@
 #define GREEN( color)                  (( uint8_t)((( color) >> 16u) & 0xFFu))
 #define BLUE( color)                   (( uint8_t)((( color) >> 8u) & 0xFFu))
 #define ALPHA( color)                  (( uint8_t)(( color) & 0xFFu))
-#define RGBA( red, green, blue, alpha) ((( uint32_t)( red))  << 24u |\
-                                       (( uint32_t)( green)) << 16u |\
-                                       (( uint32_t)( blue))  << 8u | alpha)
+#define RGBA( red, green, blue, alpha) (((( uint32_t)( red))  << 24u) |\
+                                       ((( uint32_t)( green)) << 16u) |\
+                                       ((( uint32_t)( blue))  << 8u) | ( alpha))
 #define RGB( red, green, blue)         RGBA( red, green, blue, 0u)
-#define LUMIN( color)                  (( uint8_t)(( color) >> 8u) & 0x7u)
-#define SAT( color)                    (( uint8_t)(( color) >> 15u) & 0x7u)
+#define LUMIN( color)                  (( uint8_t)(( color) >> 8u)  & 0x7Fu)
+#define SAT( color)                    (( uint8_t)(( color) >> 15u) & 0x7Fu)
 #define HUE( color)                    (( uint16_t)(( color) >> 22u))
 #define HSLA( hue, sat, lum, alpha)    ((( uint32_t)( hue)) << 22u |\
                                        (( uint32_t)( sat))  << 15u |\
@@ -951,16 +951,81 @@ void applyFilter( FrameBuffer<uint32_t> &frame, uint8_t filter)
 
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
 
+uint32_t rgbaToHsla( uint32_t rgba)
+{
+    auto red   = RED( rgba),
+         green = GREEN( rgba),
+         blue  = BLUE( rgba);
+    auto c_max = std::max( std::max( red, green), blue),
+         c_min = std::min( std::min( red, green), blue),
+         delta = ( uint8_t)( c_max - c_min);
+
+    float hue {}, lum = ( float)( c_max + c_min) / ( 2 * RGB_SCALE),
+                  sat = delta == 0 ? 0 : delta / (( 1 - std::abs( 2 * lum - 1)) * RGB_SCALE);
+    if( c_max == red)
+    {
+        auto segment = ( float)( green - blue) / delta,
+             shift   = 0.0f;
+             if( segment < 0)
+                 shift = 360.f / 60.f;
+             hue = segment + shift;
+    }
+    else if( c_max == green)
+    {
+        auto segment = ( float)( blue - red) / delta,
+             shift = 120.f / 60.f;
+        hue = segment + shift;
+    }
+    else if( c_max == blue)
+    {
+        auto segment = ( float)( red - green) / delta,
+             shift = 240.f / 60.f;
+        hue = segment + shift;
+    }
+
+    return HSLA( hue * 60, sat * 100, lum * 100, ALPHA( rgba));
+}
+
+float hueToSpace( float p, float q, float t)
+{
+    if( t < 0)
+        t += 1;
+    if( t > 1)
+        t -= 1;
+    if( t < 1. / 6)
+        return p + ( q - p) * 6 * t;
+    if( t < 1. / 2)
+        return q;
+    if( t < 2. / 3)
+        return p + ( q - p) * ( 2. / 3 - t) * 6;
+
+    return p;
+}
+
+uint32_t hslaToRgba( uint32_t hsla)
+{
+    float h = HUE( hsla) / 360.f,
+          s = SAT( hsla) / 100.f,
+          l = LUMIN( hsla) / 100.f;
+    if( s == 0)
+        return RGBA( 0, 0, 0, ALPHA( hsla));
+
+    float q = l < .5f ? l * ( 1 + s) : l + s - l * s;
+    float p =  2 * l - q;
+    return RGBA( hueToSpace( p, q, h + 1./3) * RGB_SCALE, hueToSpace( p, q, h) * RGB_SCALE,
+                 hueToSpace( p, q, h - 1./3) * RGB_SCALE, ALPHA( hsla));
+}
+
 std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel blend)
 {
     std::function<uint32_t( uint32_t, uint32_t)> selector[ NUMBER_OF_BLEND_MODES] =
     {
-        [ ENUM_CAST( BLEND_ENUM( Dissolve))]    = []( auto top, auto base)
+        [ ENUM_CAST( BLEND_ENUM( Dissolve))]     = []( auto top, auto base)
         {
             auto value = ( rand() % ( 0x100 - ALPHA( top)));
             return value >= 0 && value <= 10 ? top | 0xff : base;
         },
-        [ ENUM_CAST( BLEND_ENUM( Darken))]      = []( auto top, auto base)
+        [ ENUM_CAST( BLEND_ENUM( Darken))]       = []( auto top, auto base)
         {
             int t_rgb_min = std::min( std::min( RED( top), GREEN( top)), BLUE( top)),
                 b_rgb_min = std::min( std::min( RED( base), GREEN( base)), BLUE( base)),
@@ -968,7 +1033,7 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
                 b_rgb_max = std::max( std::max( RED( base), GREEN( base)), BLUE( base));
             return ( t_rgb_max + t_rgb_min) < ( b_rgb_max + b_rgb_min) ? top : base;
         },
-        [ ENUM_CAST( BLEND_ENUM( Multiply))]    = []( auto top, auto base)
+        [ ENUM_CAST( BLEND_ENUM( Multiply))]     = []( auto top, auto base)
         {
             uint8_t red   = (( float)RED( top) / RGB_SCALE   * ( float)RED( base) / RGB_SCALE) * RGB_SCALE,
                     green = (( float)GREEN( top) / RGB_SCALE * ( float)GREEN( base) / RGB_SCALE) * RGB_SCALE,
@@ -977,7 +1042,7 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
 
             return RGBA( red, green, blue, alpha);
         },
-        [ ENUM_CAST( BLEND_ENUM( ColorBurn))]   = []( auto top, auto base)
+        [ ENUM_CAST( BLEND_ENUM( ColorBurn))]    = []( auto top, auto base)
         {
             uint8_t red   = RED( top) == 0 ? 0 :
                             clamp( ( 1.f - (( RGB_SCALE - RED( base)) / RED( top))) * RGB_SCALE, 0, RGB_SCALE),
@@ -990,26 +1055,277 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
 
             return RGBA( red, green, blue, alpha);
         },
-        [ ENUM_CAST( BLEND_ENUM( LinearBurn))]  = []( auto top, auto base)
+        [ ENUM_CAST( BLEND_ENUM( LinearBurn))]   = []( auto top, auto base)
         {
-            uint8_t red_sum   = clamp(( int16_t)RED( base) + RED( top) - 1, 0, RGB_SCALE),
-                    green_sum = clamp(( int16_t)GREEN( base) + GREEN( top) - 1, 0, RGB_SCALE),
-                    blue_sum  = clamp(( int16_t)BLUE( base) + BLUE( top) - 1, 0, RGB_SCALE),
-                    alpha_sum = clamp(( int16_t)ALPHA( base) + ALPHA( top) - 1, 0, RGB_SCALE);
+            uint8_t red_sum   = clamp(( int16_t)RED( base) + RED( top) - RGB_SCALE, 0, RGB_SCALE),
+                    green_sum = clamp(( int16_t)GREEN( base) + GREEN( top) - RGB_SCALE, 0, RGB_SCALE),
+                    blue_sum  = clamp(( int16_t)BLUE( base) + BLUE( top) - RGB_SCALE, 0, RGB_SCALE),
+                    alpha_sum = clamp(( int16_t)ALPHA( base) + ALPHA( top) - RGB_SCALE, 0, RGB_SCALE);
 
             return RGBA( red_sum, green_sum, blue_sum, alpha_sum);
         },
-        [ ENUM_CAST( BLEND_ENUM( DarkerColor))] = [ =]( auto top, auto base)
+        [ ENUM_CAST( BLEND_ENUM( DarkerColor))]  = [ =]( auto top, auto base)
         {
-            constexpr auto factor = .6f;
-            auto top_rescaled  = RGBA( RED( top) * factor, GREEN( top) * factor, BLUE( top) * factor, ALPHA( top)),
-                 base_rescaled = RGBA( RED( base) * factor, GREEN( base) * factor, BLUE( base) * factor, ALPHA( base));
-
-            return selector[ ENUM_CAST( BLEND_ENUM( Darken))]( top_rescaled, base_rescaled);
+            constexpr auto factor = .5f;
+            return ALPHA( top) > 180 ?
+                   RGBA( clamp( RED( top) * factor, 0, RGB_SCALE), clamp( GREEN( top) * factor, 0, RGB_SCALE),
+                         clamp( BLUE( top) * factor, 0, RGB_SCALE), ALPHA( top))
+                   : RGBA( clamp( RED( base) * factor, 0, RGB_SCALE), clamp( GREEN( base) * factor, 0, RGB_SCALE),
+                           clamp( BLUE( base) * factor, 0, RGB_SCALE), ALPHA( base));
         },
-        [ ENUM_CAST( BLEND_ENUM( Lighten))]     = [ =]( auto top, auto base)
+        [ ENUM_CAST( BLEND_ENUM( Lighten))]      = [ =]( auto top, auto base)
         {
             return selector[ ENUM_CAST( CompositionRule::BlendModel::Darken)]( top, base) == top ? base : top;
+        },
+        [ ENUM_CAST( BLEND_ENUM( Screen))]       = []( auto top, auto base)
+        {
+            constexpr auto factor = 0.00001538f;
+            uint8_t red   = ( 1 - factor * (( RGB_SCALE - RED( base)) * ( RGB_SCALE - RED( top)))) * RGB_SCALE,
+                    green = ( 1 - factor * (( RGB_SCALE - GREEN( base)) * ( RGB_SCALE - GREEN( top)))) * RGB_SCALE,
+                    blue  = ( 1 - factor * (( RGB_SCALE - BLUE( base)) * ( RGB_SCALE - BLUE( top)))) * RGB_SCALE,
+                    alpha = ( 1 - factor * (( RGB_SCALE - ALPHA( base)) * ( RGB_SCALE - ALPHA( top)))) * RGB_SCALE;
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( ColorDodge))]   = []( auto top, auto base)
+        {
+            uint8_t red   = ( float)RED( base) * RGB_SCALE / ( RGB_SCALE - RED( top)),
+                    green = ( float)GREEN( base) * RGB_SCALE / ( RGB_SCALE - GREEN( top)),
+                    blue  = ( float)BLUE( base) * RGB_SCALE / ( RGB_SCALE - BLUE( top)),
+                    alpha = ( float)ALPHA( base) * RGB_SCALE / ( RGB_SCALE - ALPHA( top));
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( LinearDodge))]  = []( auto top, auto base)
+        {
+            uint8_t red_sum   = clamp(( int16_t)RED( base) + RED( top), 0, RGB_SCALE),
+                    green_sum = clamp(( int16_t)GREEN( base) + GREEN( top), 0, RGB_SCALE),
+                    blue_sum  = clamp(( int16_t)BLUE( base) + BLUE( top), 0, RGB_SCALE),
+                    alpha_sum = clamp(( int16_t)ALPHA( base) + ALPHA( top), 0, RGB_SCALE);
+
+            return RGBA( red_sum, green_sum, blue_sum, alpha_sum);
+        },
+        [ ENUM_CAST( BLEND_ENUM( LighterColor))] = []( auto top, auto base)
+        {
+            constexpr auto factor = 2.f;
+            return ALPHA( top) > 180 ?
+                   RGBA( clamp( RED( top) * factor, 0, RGB_SCALE), clamp( GREEN( top) * factor, 0, RGB_SCALE),
+                         clamp( BLUE( top) * factor, 0, RGB_SCALE), ALPHA( top))
+                   : RGBA( clamp( RED( base) * factor, 0, RGB_SCALE), clamp( GREEN( base) * factor, 0, RGB_SCALE),
+                           clamp( BLUE( base) * factor, 0, RGB_SCALE), ALPHA( base));
+        },
+        [ ENUM_CAST( BLEND_ENUM( Overlay))]      = []( auto top, auto base)
+        {
+            uint8_t red   = clamp((( RED( base) > 127.5) * ( 1 - ( 1 - 2 * ( ( float)RED( base) / RGB_SCALE - .5f))
+                            * ( 1 - ( float)RED( top) / RGB_SCALE)) + ( RED( base) <= 127.5f)
+                            * (( 2 * ( float)RED( base) / RGB_SCALE) * RED( top))) * RGB_SCALE, 0, RGB_SCALE),
+                    green = clamp((( GREEN( base) > 127.5) * ( 1 - ( 1 - 2 * (( float)GREEN( base) / RGB_SCALE - .5))
+                            * ( 1 - ( float)GREEN( top) / RGB_SCALE)) + ( GREEN( base) <= 127.5f)
+                            * (( 2 * ( float)GREEN( base) / RGB_SCALE) * GREEN( top))) * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = clamp((( BLUE( base) > 127.5) * ( 1 - ( 1 - 2 * (( float)BLUE( base) / RGB_SCALE - .5))
+                            * ( 1 - ( float)BLUE( top) / RGB_SCALE)) + ( BLUE( base) <= 127.5f)
+                            * (( 2 * ( float)BLUE( base) / RGB_SCALE) * BLUE( top))) * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = clamp((( ALPHA( base) > 127.5) * ( 1 - ( 1 - 2 * (( float)ALPHA( base) / RGB_SCALE - .5))
+                            * ( 1 - ( float)ALPHA( top) / RGB_SCALE)) + ( ALPHA( base) <= 127.5f)
+                            * (( 2 * ( float)ALPHA( base) / RGB_SCALE) * ALPHA( top))) * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, ALPHA( top) < 180 ? ALPHA( base) : ALPHA( top));
+        },
+        [ ENUM_CAST( BLEND_ENUM( SoftLight))]    = []( auto top, auto base)
+        {
+            uint8_t red   = clamp((( RED( top) > 127.5) * ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE)
+                            * ( 1 - (( float)RED( top) / RGB_SCALE - .5f))) + ( RED( top) <= 127.5)
+                            * (( float)RED( base) / RGB_SCALE * (( float)RED( top) / RGB_SCALE + .5f)))
+                            * RGB_SCALE, 0, RGB_SCALE),
+                    green = clamp((( GREEN( top) > 127.5) * ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE)
+                            * ( 1 - (( float)GREEN( top) / RGB_SCALE - .5f))) + ( GREEN( top) <= 127.5)
+                            * ( ( float)GREEN( base) / RGB_SCALE * (( float)GREEN( top) / RGB_SCALE + .5f)))
+                            * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = clamp((( BLUE( top) > 127.5) * ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE)
+                            * ( 1 - (( float)BLUE( top) / RGB_SCALE - .5f))) + ( BLUE( top) <= 127.5)
+                            * (( float)BLUE( base) / RGB_SCALE * (( float)BLUE( top) / RGB_SCALE + .5)))
+                            * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = clamp((( ALPHA( top) > 127.5) * ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE)
+                            * ( 1 - (( float)ALPHA( top) / RGB_SCALE - .5f))) + ( ALPHA( top) <= 127.5)
+                            * (( float)ALPHA( base) / RGB_SCALE * (( float)ALPHA( top) / RGB_SCALE + .5f)))
+                            * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( HardLight))]    = []( auto top, auto base)
+        {
+            uint8_t red   = clamp((( RED( top) > 127.5) * ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE)
+                            * ( 1 - 2 * (( float)RED( top) / RGB_SCALE - .5f)))
+                            + ( RED( top) <= 127.5) * (( float)RED( base) * ( 2 * ( float)RED( top) / RGB_SCALE)))
+                            * RGB_SCALE, 0, RGB_SCALE),
+                    green = clamp((( GREEN( top) > 127.5) * ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE)
+                            * ( 1 - 2 * (( float)GREEN( top) / RGB_SCALE - .5f)))
+                            + ( GREEN( top) <= 127.5) * (( float)GREEN( base)
+                            * ( 2 * ( float)GREEN( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = clamp((( BLUE( top) > 127.5) * ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE)
+                            * ( 1 - 2 * (( float)BLUE( top) / RGB_SCALE - .5f)))
+                            + ( BLUE( top) <= 127.5) * (( float)BLUE( base) * ( 2 * ( float)BLUE( top) / RGB_SCALE)))
+                            * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = clamp((( ALPHA( top) > 127.5) * ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE)
+                            * ( 1 - 2 * (( float)ALPHA( top) / RGB_SCALE - .5f)))
+                            + ( ALPHA( top) <= 127.5) * (( float)ALPHA( base)
+                            * ( 2 * ( float)ALPHA( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( VividLight))]   = []( auto top, auto base)
+        {
+            auto red_f_base = ( 1 - 2 * (( float)RED( top) / RGB_SCALE - .5f)),
+                 red_e_base = ( 2 * ( float)RED( top) / RGB_SCALE),
+                 green_f_base = ( 1 - 2 * (( float)GREEN( top) / RGB_SCALE - .5f)),
+                 green_e_base = ( 2 * ( float)GREEN( top) / RGB_SCALE),
+                 blue_f_base = ( 1 - 2 * (( float)BLUE( top) / RGB_SCALE - .5f)),
+                 blue_e_base = ( 2 * ( float)BLUE( top) / RGB_SCALE),
+                 alpha_f_base = ( 1 - 2 * (( float)ALPHA( top) / RGB_SCALE - .5f)),
+                 alpha_e_base = ( 2 * ( float)ALPHA( top) / RGB_SCALE);
+            uint8_t red   = clamp(((( RED( top) > 127.5) * ( ZERO( red_f_base) ? 1 :
+                            ((( float)RED( base) / RGB_SCALE) / red_f_base))) + (( RED( top) <= 127.5)
+                            * ( ZERO( red_e_base) ? 0 : ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE) / red_e_base))))
+                            * RGB_SCALE, 0, RGB_SCALE),
+                    green = clamp(((( GREEN( top) > 127.5) * ( ZERO( green_f_base) ? 1 :
+                            ((( float)GREEN( base) / RGB_SCALE) / green_f_base))) + (( RED( top) <= 127.5)
+                            * ( ZERO( green_e_base) ? 0 :
+                            ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE) / green_e_base)))) * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = clamp(((( BLUE( top) > 127.5) * ( ZERO( blue_f_base) ? 1 :
+                            ((( float)BLUE( base) / RGB_SCALE) / blue_f_base))) + (( BLUE( top) <= 127.5)
+                            * ( ZERO( blue_e_base) ? 0 : ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE) / blue_e_base))))
+                            * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = clamp(((( ALPHA( top) > 127.5) * ( ZERO( alpha_f_base) ? 1 :
+                            ((( float)ALPHA( base) / RGB_SCALE) / alpha_f_base))) + (( ALPHA( top) <= 127.5)
+                            * ( ZERO( alpha_e_base) ? 0 :
+                            ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE) / alpha_e_base)))) * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( LinearLight))]  = []( auto top, auto base)
+        {
+            uint8_t red  = clamp((( RED( top) > 127.5) * (( float)RED( base) / RGB_SCALE + 2
+                           * (( float)RED( top) / RGB_SCALE - .5f)) + ( RED( top) <= 127.5)
+                           * (( float)RED( base) / RGB_SCALE + 2 * (( float)RED( top) / RGB_SCALE) - 1))
+                           * RGB_SCALE, 0, RGB_SCALE),
+                   green = clamp((( GREEN( top) > 127.5) * (( float)GREEN( base) / RGB_SCALE + 2
+                           * (( float)GREEN( top) / RGB_SCALE - .5f)) + ( GREEN( top) <= 127.5)
+                           * (( float)GREEN( base) / RGB_SCALE + 2 * (( float)GREEN( top) / RGB_SCALE) - 1))
+                           * RGB_SCALE, 0, RGB_SCALE),
+                   blue  = clamp((( BLUE( top) > 127.5) * (( float)BLUE( base) / RGB_SCALE + 2
+                          * (( float)BLUE( top) / RGB_SCALE - .5f)) + ( BLUE( top) <= 127.5)
+                          * (( float)BLUE( base) / RGB_SCALE + 2 * (( float)BLUE( top) / RGB_SCALE) - 1))
+                          * RGB_SCALE, 0, RGB_SCALE),
+                   alpha = clamp((( ALPHA( top) > 127.5) * (( float)ALPHA( base) / RGB_SCALE + 2
+                          * (( float)ALPHA( top) / RGB_SCALE - .5f)) + ( ALPHA( top) <= 127.5)
+                          * (( float)ALPHA( base) / RGB_SCALE + 2 * (( float)ALPHA( top) / RGB_SCALE) - 1))
+                          * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( PinLight))]     = []( auto top, auto base)
+        {
+            uint8_t red   = clamp((( RED( top) > 127.5) * ( std::max<float>(( float)RED( base) / RGB_SCALE,
+                            2 * (( float)RED( top) / RGB_SCALE - .5f))) + ( RED( top) <= 127.5)
+                            * ( std::min<float>(( float)RED( base) / RGB_SCALE, 2 * ( float)RED( top) / RGB_SCALE)))
+                            * RGB_SCALE, 0, RGB_SCALE),
+                    green = clamp((( GREEN( top) > 127.5) * ( std::max<float>(( float)GREEN( base) / RGB_SCALE,
+                            2 * (( float)GREEN( top) / RGB_SCALE - .5f))) + ( GREEN( top) <= 127.5)
+                            * ( std::min<float>(( float)GREEN( base) / RGB_SCALE, 2 * ( float)GREEN( top) / RGB_SCALE)))
+                            * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = clamp((( BLUE( top) > 127.5) * ( std::max<float>(( float)BLUE( base) / RGB_SCALE,
+                            2 * (( float)BLUE( top) / RGB_SCALE - .5f))) + ( BLUE( top) <= 127.5)
+                            * ( std::min<float>(( float)BLUE( base) / RGB_SCALE, 2 * ( float)BLUE( top) / RGB_SCALE)))
+                            * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = clamp((( ALPHA( top) > 127.5) * ( std::max<float>(( float)ALPHA( base) / RGB_SCALE,
+                            2 * (( float)ALPHA( top) / RGB_SCALE - .5f))) + ( ALPHA( top) <= 127.5)
+                            * ( std::min<float>(( float)ALPHA( base) / RGB_SCALE, 2 * ( float)ALPHA( top) / RGB_SCALE)))
+                            * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( HardMix))]      = [ =]( auto top, auto base)
+        {
+            auto mix = selector[ ENUM_CAST( BLEND_ENUM( LinearDodge))]( top, base);
+
+            return RGBA( RED( mix) < RGB_SCALE ? 0 : RGB_SCALE, GREEN( mix) < RGB_SCALE ? 0 : RGB_SCALE,
+                         BLUE( mix) < RGB_SCALE ? 0 : RGB_SCALE, ALPHA( mix) < RGB_SCALE ? 0 : RGB_SCALE);
+        },
+        [ ENUM_CAST( BLEND_ENUM( Difference))]   = []( auto top, auto base)
+        {
+            uint8_t red   = std::abs(( int16_t)RED( base) - ( int8_t)RED( top)),
+                    green = std::abs(( int16_t)GREEN( base) - ( int8_t)GREEN( top)),
+                    blue  = std::abs(( int16_t)BLUE( base) - ( int8_t)BLUE( top)),
+                    alpha = clamp(( uint16_t)ALPHA( base) + ALPHA( top), 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( Exclusion))]    = []( auto top, auto base)
+        {
+            uint8_t red   = clamp(( .5f - 2 * (( float)RED( base) / RGB_SCALE - .5f)
+                            * (( float)RED( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE),
+                    green = clamp(( .5f - 2 * (( float)GREEN( base) / RGB_SCALE - .5f)
+                            * (( float)GREEN( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = clamp(( .5f - 2 * (( float)BLUE( base) / RGB_SCALE - .5f)
+                            * (( float)BLUE( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = clamp(( .5f - 2 * (( float)ALPHA( base) / RGB_SCALE - .5f)
+                            * (( float)ALPHA( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( Subtract))]     = []( auto top, auto base)
+        {
+            uint8_t red   = RED( top) > RED( base) ? RED( top) - RED( base) : RED( top),
+                    green = GREEN( top) > GREEN( base) ? GREEN( top) - GREEN( base) : GREEN( top),
+                    blue  = BLUE( top) > BLUE( base) ? BLUE( top) - BLUE( base) : BLUE( top),
+                    alpha = ALPHA( top) > ALPHA( base) ? ALPHA( top) - ALPHA( base) : ALPHA( top);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( Divide))]       = []( auto top, auto base)
+        {
+            uint8_t red   = RED( base) == 0 ? RGB_SCALE : clamp(( float)RED( top) * RGB_SCALE / RED( base),
+                                                                0, RGB_SCALE),
+                    green = GREEN( base) == 0 ? RGB_SCALE : clamp(( float)GREEN( top) * RGB_SCALE / GREEN( base),
+                                                                0, RGB_SCALE),
+                    blue  = BLUE( base) == 0 ? RGB_SCALE : clamp(( float)BLUE( top) * RGB_SCALE / BLUE( base),
+                                                                0, RGB_SCALE),
+                    alpha = ALPHA( base) == 0 ? RGB_SCALE : clamp(( float)ALPHA( top) * RGB_SCALE / ALPHA( base),
+                                                                0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        [ ENUM_CAST( BLEND_ENUM( Hue))]          = []( auto top, auto base)
+        {
+            auto top_hsla   = rgbaToHsla( top),
+                 base_hsla  = rgbaToHsla( base),
+                 lum_change = HSLA( HUE( top_hsla), SAT( base_hsla), LUMIN( base_hsla), ALPHA( base_hsla));
+
+            return hslaToRgba( lum_change);
+        },
+        [ ENUM_CAST( BLEND_ENUM( Saturation))]   = []( auto top, auto base)
+        {
+            auto top_hsla   = rgbaToHsla( top),
+                 base_hsla  = rgbaToHsla( base),
+                 lum_change = HSLA( HUE( base_hsla), SAT( top_hsla), LUMIN( base_hsla), ALPHA( base_hsla));
+
+            return hslaToRgba( lum_change);
+        },
+        [ ENUM_CAST( BLEND_ENUM( Color))]        = []( auto top, auto base)
+        {
+            auto top_hsla   = rgbaToHsla( top),
+                 base_hsla  = rgbaToHsla( base),
+                 lum_change = HSLA( HUE( top_hsla), SAT( top_hsla), LUMIN( base_hsla), ALPHA( base_hsla));
+
+            return hslaToRgba( lum_change);
+        },
+        [ ENUM_CAST( BLEND_ENUM( Luminosity))]   = []( auto top, auto base)
+        {
+            auto top_hsla   = rgbaToHsla( top),
+                 base_hsla  = rgbaToHsla( base),
+                 lum_change = HSLA( HUE( base_hsla), SAT( base_hsla), LUMIN( top_hsla), ALPHA( base_hsla));
+
+            return hslaToRgba( lum_change);
         }
     };
 
