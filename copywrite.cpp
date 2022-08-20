@@ -36,6 +36,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
+#include <numeric>
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
 #include "blend_defs.hpp"
@@ -130,9 +131,10 @@ void renderSpans( FT_Library library, FT_Outline *outline, Spans *spans)
 void render( FT_Library library, FT_Face face, std::wstring_view text, ApplicationHyperparameters& guide)
 {
     auto& color_rule = guide.color_rule;
-    auto map = []( auto color_rule, auto bkroot)
+    auto map = [ &guide]( auto color_rule, auto bkroot)
     {
         auto rules = parseColorRule( color_rule, bkroot);
+
         std::vector<std::shared_ptr<ColorRule>> new_rules( rules.size());
         std::transform( rules.cbegin(), rules.cend(), new_rules.begin(),
                         []( auto rule) { return std::make_shared<ColorRule>( rule);});
@@ -157,7 +159,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
         FT_Vector max_row_box{ 0, 0}, adjustment;
         auto &baseline = row_details[ j].baseline,
              &max_descent = row_details[ j].max_descent;
-        auto line_height = 0;
+        auto line_height = 0, max_shadow_y = 0;
         for( size_t i = 0, t_len = text_rows[ i].length(); i < t_len; ++i)
         {
             auto c_char = text_rows[ j][ i];
@@ -252,8 +254,8 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
                 main = { .buffer = std::move( buffer),
                         .left   = slot->bitmap_left,
                         .top    = slot->bitmap_top,
-                        .width  = (int) slot->bitmap.width,
-                        .height = (int) slot->bitmap.rows};
+                        .width  = ( int)slot->bitmap.width,
+                        .height = ( int)slot->bitmap.rows};
                 if( !outline.empty())
                 {
                     rect = { outline.front().x,
@@ -293,8 +295,9 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
                  * Set the spacing of the glyphs to ensure no extra space occurs
                  * at the far end.
                  */
-                max_row_box.x += ( i + 1 == t_len ? rect.width() : raster.advance.x);
+                max_row_box.x += ( i + 1 == t_len ? rect.width() : raster.advance.x) + best->shadow.x;
                 max_row_box.y = std::max<long>( max_row_box.y, height);
+                max_shadow_y  = std::max<long>( max_shadow_y, best->shadow.y);
                 raster.bbox = rect;
                 bearing_y = ( slot->metrics.horiBearingY >> 6) + guide.thickness * 2;
                 max_ascent  = std::max( max_ascent, bearing_y);
@@ -317,7 +320,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
                 best->gradient->width = std::max( max_row_box.x, box_size.x);
                 best->gradient->height = box_size.y + ( max_row_box.y == 0 ? ( face->glyph->metrics.vertAdvance >> 6)
                                          + guide.thickness * 2
-                                         : max_ascent + max_descent) + line_height * ( j + 1 != t_row);
+                                         : max_ascent + max_descent + max_shadow_y) + line_height * ( j + 1 != t_row);
             }
 
             FT_Done_Glyph( o_glyph);
@@ -341,14 +344,15 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
             }
             max_ascent = (int)default_height;
         }
-        max_row_box.y = max_ascent + max_descent;
-        row_details[ j].width = (int)max_row_box.x;
+        max_row_box.y = max_ascent + max_descent + max_shadow_y;
+        row_details[ j].width = (int)max_row_box.x - max_shadow_y;
+        row_details[ j].max_shadow_y = max_shadow_y;
         if( max_row_box.y <= 0)
             continue;
         box_size.x = std::max( max_row_box.x, box_size.x); // The width of the largest row
         auto row_line_height = line_height * ( j + 1 != t_row); // The spacing between glyphs
         box_size.y += max_row_box.y + row_line_height;
-        row_details[ j].v_disp += box_size.y - row_line_height; // Offset at which each row should start
+        row_details[ j].v_disp += box_size.y - row_line_height - max_shadow_y; // Offset at which each row should start
     }
 
     box_size.x += guide.pad.left + guide.pad.right;
@@ -358,6 +362,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
     std::fill_n( pixel.get(), box_size.x * box_size.y, guide.background_color.cast());
     auto buffer = FrameBuffer<uint32_t>{ pixel, static_cast<int32_t>( box_size.x), static_cast<int32_t>( box_size.y)};
 
+    drawShadow( rasters, row_details, buffer, guide);
     draw( rasters, row_details, buffer, guide);
 
     PropertyManager<FILE *> destination( stdout, []( FILE *maybe_destructible)
@@ -396,6 +401,50 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
     }
 #endif
+}
+void drawShadow( const MonoGlyphs &rasters, RowDetails &row_details,
+                 FrameBuffer<uint32_t> &frame, ApplicationHyperparameters &guide)
+{
+    auto n_glyphs = rasters.size();
+    auto n_levels = row_details.size();
+    for( auto& raster : rasters)
+    {
+        auto& [ main, outline] = raster.spans;
+        auto& rect  = raster.bbox;
+        int width   = raster.is_graph ? raster.bbox.width()  : raster.advance.x,
+            height  = raster.is_graph ? raster.bbox.height() : raster.advance.y;
+        auto& match = raster.match;
+        auto& row_detail = row_details[ raster.level];
+        auto& pen = row_detail.pen;
+        if( !raster.is_graph)
+        {
+            pen.x += width;
+            pen.y += height;
+            continue;
+        }
+
+        int v_offset = row_detail.v_disp - height - row_detail.max_descent - rect.ymin
+                       + guide.pad.top + match->shadow.y,
+            h_offset = (int)( ENUM_CAST( guide.j_mode) > 0)
+                           * (( frame.width - row_detail.width + row_detail.max_shadow_y) / ENUM_CAST( guide.j_mode))
+                           + guide.pad.left + match->shadow.x;
+        for ( auto& s: outline)
+        {
+            for ( int w = 0; w < s.width; ++w)
+            {
+                frame.buffer.get()[ (( v_offset + height - 1 - ( s.y - rect.ymin) + pen.y)
+                                     * frame.width + s.x - rect.xmin + w + h_offset + pen.x)] = match->shadow_color;
+            }
+        }
+
+        pen.x += raster.advance.x;
+        pen.y += raster.advance.y;
+    }
+    // Reset head of all pens to zero.
+    for( auto& raster : rasters)
+        memset( &row_details[ raster.level].pen, 0, sizeof( FT_Vector));
+
+//    applyFilter( frame, GAUSSIAN_BLUR_x5);
 }
 
 void draw( const MonoGlyphs &rasters, RowDetails &row_details,
@@ -467,7 +516,8 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
          */
         int v_offset = row_detail.v_disp - height - row_detail.max_descent - rect.ymin + guide.pad.top,
             h_offset = (int)( ENUM_CAST( guide.j_mode) > 0)
-                           * (( frame.width - row_detail.width) / ENUM_CAST( guide.j_mode)) + guide.pad.left;
+                           * (( frame.width - row_detail.width) / ENUM_CAST( guide.j_mode))
+                           + guide.pad.left;
          for ( auto& s: outline)
         {
             for ( int w = 0; w < s.width; ++w)
@@ -520,6 +570,7 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
         pen.y += raster.advance.y;
     }
 }
+
 
 static size_t byteCount( uint8_t c)
 {
@@ -1007,8 +1058,8 @@ uint32_t hslaToRgba( uint32_t hsla)
     float h = HUE( hsla) / 360.f,
           s = SAT( hsla) / 100.f,
           l = LUMIN( hsla) / 100.f;
-    if( s == 0)
-        return RGBA( 0, 0, 0, ALPHA( hsla));
+    if( ZERO( s))
+        return RGBA( l * RGB_SCALE, l * RGB_SCALE, l * RGB_SCALE, ALPHA( hsla));
 
     float q = l < .5f ? l * ( 1 + s) : l + s - l * s;
     float p =  2 * l - q;
@@ -1018,7 +1069,7 @@ uint32_t hslaToRgba( uint32_t hsla)
 
 std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel blend)
 {
-    std::function<uint32_t( uint32_t, uint32_t)> selector[ NUMBER_OF_BLEND_MODES] =
+    static std::function<uint32_t( uint32_t, uint32_t)> selector[ NUMBER_OF_BLEND_MODES] =
     {
         [ ENUM_CAST( BLEND_ENUM( Dissolve))]     = []( auto top, auto base)
         {
@@ -1064,7 +1115,7 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
 
             return RGBA( red_sum, green_sum, blue_sum, alpha_sum);
         },
-        [ ENUM_CAST( BLEND_ENUM( DarkerColor))]  = [ =]( auto top, auto base)
+        [ ENUM_CAST( BLEND_ENUM( DarkerColor))]  = []( auto top, auto base)
         {
             constexpr auto factor = .5f;
             return ALPHA( top) > 180 ?
@@ -1073,7 +1124,7 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
                    : RGBA( clamp( RED( base) * factor, 0, RGB_SCALE), clamp( GREEN( base) * factor, 0, RGB_SCALE),
                            clamp( BLUE( base) * factor, 0, RGB_SCALE), ALPHA( base));
         },
-        [ ENUM_CAST( BLEND_ENUM( Lighten))]      = [ =]( auto top, auto base)
+        [ ENUM_CAST( BLEND_ENUM( Lighten))]      = []( auto top, auto base)
         {
             return selector[ ENUM_CAST( CompositionRule::BlendModel::Darken)]( top, base) == top ? base : top;
         },
@@ -1244,7 +1295,7 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
 
             return RGBA( red, green, blue, alpha);
         },
-        [ ENUM_CAST( BLEND_ENUM( HardMix))]      = [ =]( auto top, auto base)
+        [ ENUM_CAST( BLEND_ENUM( HardMix))]      = []( auto top, auto base)
         {
             auto mix = selector[ ENUM_CAST( BLEND_ENUM( LinearDodge))]( top, base);
 
@@ -1314,8 +1365,7 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
         [ ENUM_CAST( BLEND_ENUM( Color))]        = []( auto top, auto base)
         {
             auto top_hsla   = rgbaToHsla( top),
-                 base_hsla  = rgbaToHsla( base),
-                 lum_change = HSLA( HUE( top_hsla), SAT( top_hsla), LUMIN( base_hsla), ALPHA( base_hsla));
+                 lum_change = HSLA( HUE( top_hsla), SAT( top_hsla), LUMIN( top_hsla), ALPHA( base));
 
             return hslaToRgba( lum_change);
         },
@@ -1475,23 +1525,37 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 			  auto point = Vec2D<float>( x, y);
 			  if constexpr ( std::is_same_v<T, Default>) // DestinationAtop
 			  {
-				auto d_index = j * d_frame.width * d_frame.n_channel +  i * d_frame.n_channel;
-				if( d_index < d_max_index && intersects( corners, point) && intersects( big_corners, point))
+				auto d_index = y * d_frame.width * d_frame.n_channel +  x * d_frame.n_channel;
+                auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+                int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                if( c_rule.b_model != BLEND_ENUM( Normal))
+                {
+                    bool corners_intersects = false;
+                    if(( corners_intersects = ( index >= 0 && index < s_frame_dimension && intersects( corners, point)))
+                        && d_index < d_max_index && intersects( big_corners, point))
+                    {
+                        image.buffer.get()[ j * final_width + i] = blendFn(
+                                                                    RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+                                                                    d_buffer[ d_index + 2], d_buffer[ d_index + 3]),
+                                                                    s_frame.buffer.get()[ index]);
+                    }
+                    else if( corners_intersects)
+                        image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
+                }
+                else if( d_index < d_max_index && intersects( corners, point) && intersects( big_corners, point))
 				{
 					image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
 						                                             d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
 				}
 				else if( intersects( corners, point))
 				{
-				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
-				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
 				  if( index >= 0 && index < s_frame_dimension)
 					image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
 				}
 			  }
 			  else if constexpr ( std::is_same_v<T, Top>) // DestinationIn
 			  {
-				auto d_index = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel;
+				auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
 				if( d_index < d_max_index && intersects( corners, point) && intersects( big_corners, point))
 				{
 				  image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
@@ -1562,19 +1626,29 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 					image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
 				}
 			  }
-			  else if( intersects( big_corners, point)) // Selection for DestinationOver
-			  {
-				auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-				auto *buffer = d_frame.buffer.get();
-				image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
-																 buffer[ d_index + 2], buffer[ d_index + 3]);
-			  }
-			  else if( intersects( corners, point)) // Selection for DestinationOver
-			  {
-				int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-				if( index > 0 && index < s_frame_dimension)
-				  image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
-			  }
+              else if( c_rule.b_model != BLEND_ENUM( Normal) &&
+                       intersects( big_corners, point) && intersects( corners, point))
+              {
+                  auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                  auto *buffer = d_frame.buffer.get();
+                  image.buffer.get()[ j * final_width + i] = blendFn( RGBA( buffer[ d_index], buffer[ d_index + 1],
+                                                                            buffer[ d_index + 2], buffer[ d_index + 3]),
+                                                                      s_frame.buffer.get()[ index]);
+              }
+              else if( intersects( big_corners, point)) // Selection for DestinationOver
+              {
+                  auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                  auto *buffer = d_frame.buffer.get();
+                  image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
+                                                                   buffer[ d_index + 2], buffer[ d_index + 3]);
+              }
+              else if( intersects( corners, point)) // Selection for DestinationOver
+              {
+                  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                  if( index > 0 && index < s_frame_dimension)
+                      image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
+              }
 			}
 		  }
 		}, part);
@@ -1612,11 +1686,19 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
 				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
 				  auto rgba    = s_frame.buffer.get()[ index];
-				  if( ALPHA( rgba) < 180)
-				    pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-								  d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-				  else
-				  	pixel = s_frame.buffer.get()[ index];
+                  if( c_rule.b_model == BLEND_ENUM( Normal))
+                  {
+                      if( ALPHA( rgba) < 180)
+                          pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                        d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                      else
+                          pixel = s_frame.buffer.get()[ index];
+                  }
+                  else
+                  {
+                      pixel = blendFn( s_frame.buffer.get()[ index], RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                                           d_ptr[ s_index + 2], d_ptr[ s_index + 3]));
+                  }
 				}
 				else
 				{
@@ -2548,9 +2630,7 @@ std::array<float, count> parseFloats( const char *&rule)
 	   while( *rule && *rule != ')' && *rule != ',');
 	   result += post_decimal_point_value;
    }
-   if( *rule == ')')
-     ++rule;
-   
+
    return response;
 }
 
@@ -2890,6 +2970,20 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                             ccolor.gradient.reset( new ConicGradient{
                               generateConicGradient( ++rule, ccolor, bkroot)});
 						}
+                        if( ltrim( rule) && *rule == '-' && std::tolower( rule[ 1]) == 's')
+                        {
+                            auto[ x_pos, y_pos, spread] = parseFloats<3>( rule += 2);
+                            assert( x_pos >= 0 && y_pos >= 0 && spread >= 0);
+                            ccolor.shadow = Vec3D( x_pos, y_pos, spread);
+                            if( ltrim( rule) && *rule == ')')
+                                ++rule;
+                            else if( *rule == ',')
+                            {
+                                ccolor.shadow_color = extractColor( ++rule, bkroot);
+                                if( ltrim( rule) && *rule == ')')
+                                    ++rule;
+                            }
+                        }
 
                         if( ltrim( rule) && *rule == '+')
                         {
@@ -2899,8 +2993,7 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
 
                         fillEasingMode( ccolor.color_easing_fn, rule, bkroot, '}');
                     }
-
-                    if( *rule == '}')
+                    if( ltrim( rule) && *rule == '}')
                         ++rule;
                     else
                     {
@@ -4911,8 +5004,8 @@ int main( int ac, char *av[])
         PropertyManager<FILE *> stream_handler( popen(( "file --mime-type "s + word).c_str(), "r"), pclose);
         if( stream_handler.get())
         {
-            std::string report( statbuf.st_size, '\0');
-            fread( &report[ 0], 1, statbuf.st_size, stream_handler.get());
+            std::string report( RGB_SCALE, 0);
+            fread( &report[ 0], 1, RGB_SCALE, stream_handler.get());
             is_plain_text = report.find( "text/plain") != std::string::npos;
             mime_type = report.substr( report.find( ": ") + 2);
         }

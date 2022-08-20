@@ -130,7 +130,7 @@ typedef std::vector<MonoGlyph> MonoGlyphs;
 struct RowDetail
 {
     int baseline{ INT_MAX}, v_disp{},
-            max_descent{}, width{};
+            max_descent{}, width{}, max_shadow_y{};
     FT_Vector pen{ 0, 0};
 };
 typedef std::vector<RowDetail> RowDetails;
@@ -267,9 +267,11 @@ struct ColorRule
 {
     Vec2D<int32_t> start{ 1, 1}, end{ -1, -1};
     PropertyProxy<uint64_t> scolor{ 0x000000FFu}, ecolor{ 0x000000FFu};
+    uint32_t shadow_color{ 0x000000FFu};
     uint32_t font_size_b = UINT32_MAX, font_size_m = UINT32_MAX,
              font_size_e = UINT32_MAX;
     bool soak{ false};
+    Vec3D shadow;
     std::shared_ptr<BaseGradient> gradient{ new LinearGradient()};
   std::function<float(float)> color_easing_fn, font_easing_fn;
 };
@@ -582,6 +584,7 @@ struct ApplicationHyperparameters
   PropertyProxy<uint32_t> background_color{};
   bool 					  as_image{ false};
   bool                    ease_col{ false};
+  bool                    shadow_present{ false};
   int                     image_quality{ 100},
                           dpi{ 120};
   Padding                 pad{};
@@ -589,6 +592,9 @@ struct ApplicationHyperparameters
 };
 
 void render( FT_Library library, FT_Face face, std::wstring_view text, ApplicationHyperparameters& guide);
+
+void drawShadow( const MonoGlyphs &rasters, RowDetails& row_details,
+           FrameBuffer<uint32_t> &frame, ApplicationHyperparameters& guide);
 
 void draw( const MonoGlyphs &rasters, RowDetails& row_details,
            FrameBuffer<uint32_t> &frame, ApplicationHyperparameters& guide);

@@ -118,7 +118,7 @@ struct Vec2D
 struct Vec3D
 {
   float x{}, y{}, z{};
-  Vec3D( float x, float y, float z);
+  Vec3D( float x = {}, float y = {}, float z = {});
 
   Vec3D operator*( float right) const;
 
