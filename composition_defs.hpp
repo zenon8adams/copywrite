@@ -27,6 +27,7 @@
 #ifndef COPYWRITE__COMPOSITION_DEFS_HPP_
 #define COPYWRITE__COMPOSITION_DEFS_HPP_
 
+#define CLIP             "clip"
 #define COPY 			 "copy"
 #define DESTINATION_ATOP "destination-atop"
 #define DESTINATION_IN 	 "destination-in"

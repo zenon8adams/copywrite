@@ -269,11 +269,11 @@ struct ColorRule
     PropertyProxy<uint64_t> scolor{ 0x000000FFu}, ecolor{ 0x000000FFu};
     uint32_t shadow_color{ 0x000000FFu};
     uint32_t font_size_b = UINT32_MAX, font_size_m = UINT32_MAX,
-             font_size_e = UINT32_MAX;
+             font_size_e = UINT32_MAX, max_bounce{};
     bool soak{ false};
     Vec3D shadow;
     std::shared_ptr<BaseGradient> gradient{ new LinearGradient()};
-  std::function<float(float)> color_easing_fn, font_easing_fn;
+    std::function<float(float)> color_easing_fn, font_easing_fn;
 };
 
 // Stores the standard red, green, and blue chroma (sRGB)
@@ -450,9 +450,13 @@ std::vector<std::string> partition( std::string_view provision, std::string_view
 
 ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_rule, BKNode *bkroot);
 
+void setColor( const char *& rule, BKNode *bkroot, PropertyProxy<uint64_t> &color);
+
 std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot);
 
 void testColor( const char *rule, BKNode *bkroot);
+
+uint32_t tintColor( uint32_t color, float factor = 0, bool include_alpha = true);
 
 uint64_t extractColor(const char *&rule, BKNode *bkroot);
 
@@ -503,7 +507,8 @@ struct CompositionRule
 {
   enum class CompositionModel
   {
-	Copy = 0,
+    Clip = 0,
+	Copy,
 	DestinationAtop,
 	DestinationIn,
 	DestinationOver,
@@ -545,14 +550,17 @@ struct CompositionRule
     Saturation,
     Color,
     Luminosity
-  }            b_model{ BlendModel::Normal};
+  };
+  std::deque<BlendModel> b_models;
   Vec2D<float> position{};
   int 	   	   angle{};
 };
 
 CompositionRule::CompositionModel selectCompositionModel( std::string_view given);
 
-CompositionRule::BlendModel selectBlendModel( std::string_view given);
+std::deque<CompositionRule::BlendModel> selectBlendModels( std::string_view given);
+
+std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel model);
 
 CompositionRule parseCompositionRule( std::string_view rule);
 
@@ -599,19 +607,20 @@ void drawShadow( const MonoGlyphs &rasters, RowDetails& row_details,
 void draw( const MonoGlyphs &rasters, RowDetails& row_details,
            FrameBuffer<uint32_t> &frame, ApplicationHyperparameters& guide);
 
-enum FilterMode
+enum class SpecialEffect
 {
-  SHARPEN,
-  BOX_BLUR,
-  GAUSSIAN_BLUR,
-  B_FILTER_SENTINEL,
-  GAUSSIAN_BLUR_x5,
-  E_FILTER_SENTINEL
+    Sharpen,
+    BoxBlur,
+    GaussianBlur,
+    RequiresKernelSentinel,
+    GrayScale,
+    Grainy,
+    Twirl
 };
 
 bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test);
 
-void applyFilter( FrameBuffer<uint32_t> &frame, uint8_t filter);
+std::vector<float> makeGaussian2D( size_t size, size_t radius);
 
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
 
