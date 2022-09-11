@@ -29,6 +29,7 @@
 #define LINE_HEIGHT                       "line-height"
 #define JUSTIFY                           "justify"
 #define STROKE_WIDTH                      "stroke-width"
+#define FINAL_SIZE                        "final-size"
 #define UNINSTALL_FONT                    "uninstall-font"
 #define INSTALL_FONT                      "install-font"
 #define QUALITY_INDEX                     "quality-index"
@@ -57,6 +58,7 @@
 #define LINE_HEIGHT_SHORT_FORM            "hL"
 #define JUSTIFY_SHORT_FORM                "j"
 #define STROKE_WIDTH_SHORT_FORM           "wS"
+#define FINAL_SIZE_SHORT_FORM             "fS"
 #define UNINSTALL_FONT_SHORT_FORM         "uF"
 #define INSTALL_FONT_SHORT_FORM           "iF"
 #define QUALITY_INDEX_SHORT_FORM          "iQ"
@@ -102,11 +104,18 @@
 
 #define JUSTIFY_MESSAGE                 "Move multiline text `left`, `right` or `center`.\n" \
                                         "Usage:\n" \
-                                         OPTIONIFY( JUSTIFY) "=left\n"
+                                         OPTIONIFY( JUSTIFY) "=`left`\n"
 
 #define STROKE_WIDTH_MESSAGE            "Set the outline thickness for all characters.\n" \
                                         "Usage:\n" \
-                                        OPTIONIFY( STROKE_WIDTH) "=12\n"
+                                        OPTIONIFY( STROKE_WIDTH) "=`12`\n"
+
+#define FINAL_SIZE_MESSAGE              "Set the resulting size for the image.\n" \
+                                        "Supported interpolation methods are:\n" \
+                                        "bi-linear, bi-cubic.\n" \
+                                        "Usage:\n" \
+                                        OPTIONIFY( FINAL_SIZE) "=`300 * 300 bi-cubic`.\n" \
+                                        OPTIONIFY( FINAL_SIZE) "=`300w` - Keeps aspect ratio.\n" \
 
 #define DRAWING_CHARACTER_MESSAGE       "This option can be used to control character used in\n" \
                                         " drawing glyphs to display in console mode.\n"
@@ -272,6 +281,7 @@
                        ADD( LINE_HEIGHT           ) \
                        ADD( JUSTIFY               ) \
                        ADD( STROKE_WIDTH          ) \
+                       ADD( FINAL_SIZE            ) \
                        ADD( UNINSTALL_FONT        ) \
                        ADD( INSTALL_FONT          ) \
                        ADD( QUALITY_INDEX         ) \

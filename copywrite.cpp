@@ -53,9 +53,9 @@
 #define GREEN( color)                  (( uint8_t)((( color) >> 16u) & 0xFFu))
 #define BLUE( color)                   (( uint8_t)((( color) >> 8u) & 0xFFu))
 #define ALPHA( color)                  (( uint8_t)(( color) & 0xFFu))
-#define RGBA( red, green, blue, alpha) (((( uint32_t)( red))  << 24u) |\
-                                       ((( uint32_t)( green)) << 16u) |\
-                                       ((( uint32_t)( blue))  << 8u) | ( alpha))
+#define RGBA( red, green, blue, alpha) (((( uint32_t)(( uint8_t)red))  << 24u) |\
+                                       ((( uint32_t)(( uint8_t)green)) << 16u) |\
+                                       ((( uint32_t)(( uint8_t)blue))  << 8u) | (( uint8_t)alpha))
 #define RGB( red, green, blue)         RGBA( red, green, blue, 0u)
 #define LUMIN( color)                  (( uint8_t)(( color) >> 8u)  & 0x7Fu)
 #define SAT( color)                    (( uint8_t)(( color) >> 15u) & 0x7Fu)
@@ -298,9 +298,9 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
                  * Set the spacing of the glyphs to ensure no extra space occurs
                  * at the far end.
                  */
-                max_row_box.x += ( i + 1 == t_len ? rect.width() : raster.advance.x) + best->shadow.x;
+                max_row_box.x += ( i + 1 == t_len ? rect.width() : raster.advance.x) + std::abs( best->shadow.x);
                 max_row_box.y = std::max<long>( max_row_box.y, height);
-                max_shadow_y  = std::max<long>( max_shadow_y, best->shadow.y);
+                max_shadow_y  = std::max<long>( max_shadow_y, std::abs( best->shadow.y));
                 raster.bbox = rect;
                 bearing_y = ( slot->metrics.horiBearingY >> 6) + guide.thickness * 2;
                 max_ascent  = std::max( max_ascent, bearing_y);
@@ -366,7 +366,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
     std::fill_n( pixel.get(), box_size.x * box_size.y, guide.background_color.cast());
     auto buffer = FrameBuffer<uint32_t>{ pixel, static_cast<int32_t>( box_size.x), static_cast<int32_t>( box_size.y)};
 
-    //drawShadow( rasters, row_details, buffer, guide);
+    drawShadow( rasters, row_details, buffer, guide);
     draw( rasters, row_details, buffer, guide);
 
     PropertyManager<FILE *> destination( stdout, []( FILE *maybe_destructible)
@@ -378,10 +378,12 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
 
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
 
-    if( guide.composition_rule)
+    if( guide.composition_rule && guide.dest_filename)
         composite( guide, buffer);
     else
     {
+        if( guide.interpolation[ 0] && guide.interpolation[ 1])
+            resize( buffer, guide);
         if( guide.as_image && guide.src_filename)
     #if defined( JPG_SUPPORTED) && defined( PNG_SUPPORTED)
             ( guide.out_format == OutputFormat::JPEG ? writeJPEG : writePNG)
@@ -407,6 +409,156 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
 #endif
 }
 
+std::vector<float> makeGaussian( float radius)
+{
+    constexpr auto size = 51 * 51;
+    constexpr auto mid = size / 2;
+    std::vector<float> result( size);
+    auto scale = static_cast<float>( 1.f / ( radius * std::sqrt( 2.f * M_PI)));
+    float sum = 0;
+    for( short i = 0; i < size; ++i)
+    {
+        result[ i] = scale * ( 1.f / std::exp((( i - mid) * ( i - mid)) / ( 2.f * radius * radius)));
+        sum += result[ i];
+    }
+    return result;
+}
+
+template <typename Tp, typename = std::enable_if_t<std::is_integral_v<Tp>>>
+void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = nullptr)
+{
+/*   const size_t bk_size =  9,
+	  			ek_size = 25;
+   float basic_kernels[ FilterMode::B_FILTER_SENTINEL][ bk_size] =
+   {
+   		[ FilterMode::SHARPEN]       = {  0, -1,  0,
+									     -1,  5, -1,
+									      0, -1,  0},
+		[ FilterMode::BOX_BLUR]		 = { 1/9., 1/9., 1/9.,
+								         1/9., 1/9., 1/9.,
+										 1/9., 1/9., 1/9.},
+   		[ FilterMode::GAUSSIAN_BLUR] = { 1/16., 2/16., 1/16.,
+									     2/16., 4/16., 2/16.,
+									     1/16., 2/16., 1/16.},
+   };
+
+   float extended_kernels[ FilterMode::E_FILTER_SENTINEL][ ek_size] =
+   {
+   		[ FilterMode::GAUSSIAN_BLUR_x5 - B_FILTER_SENTINEL - 1] = { 1/256., 4/256., 6/256., 4/256., 1/256.,
+																    4/256., 16/256., 24/256., 16/256., 4/256.,
+																    6/256., 24/256., 36/256., 24/256., 6/256.,
+																    4/256., 16/256., 24/256., 16/256., 4/256.,
+																    1/256., 4/256., 6/256., 4/256., 1/256.}
+   };
+
+  if( filter >= FilterMode::E_FILTER_SENTINEL)
+	return;
+
+  const auto k_width = filter < FilterMode::B_FILTER_SENTINEL ? 3 : 5;
+  const auto k_size = k_width > 3 ? ek_size : bk_size;
+  auto kernel = filter < FilterMode::B_FILTER_SENTINEL ? basic_kernels[ filter]
+													   : extended_kernels[ filter - FilterMode::B_FILTER_SENTINEL - 1];*/
+    if( ENUM_CAST( effect) < ENUM_CAST( SpecialEffect::RequiresKernelSentinel))
+    {
+        auto kernel = *( const std::vector<float> *)extras;
+        int n_channel = std::max( frame.n_channel, 1);
+        auto width   = frame.width,
+                height  = frame.height;
+        int k_size  = kernel.size(),
+            k_width = std::sqrt( k_size),
+            mid     = k_width / 2;
+        std::shared_ptr<Tp> dest(( Tp *)calloc( width * height  * n_channel, sizeof( Tp)), []( auto *p){ free( p);});
+        auto buffer   = frame.buffer.get(),
+                d_buffer = dest.get();
+        for( int j = 0; j < height; ++j)
+        {
+            for( int i = 0; i < width; ++i)
+            {
+                double red{}, green{}, blue{}, alpha{};
+                for( int k = 0; k < k_size; ++k)
+                {
+                    int row = k / k_width - mid + j,
+                        col = k % k_width - mid + i;
+                    if( row >= 0 && row < height && col >= 0 && col < width)
+                    {
+                        size_t index = row * width * n_channel + col * n_channel;
+                        if constexpr ( sizeof( Tp) == 4)
+                        {
+                            auto pixel = buffer[ index];
+                            red   += kernel[ k] * RED( pixel);
+                            green += kernel[ k] * GREEN( pixel);
+                            blue  += kernel[ k] * BLUE( pixel);
+                            alpha += kernel[ k] * ALPHA( pixel);
+                        }
+                        else
+                        {
+                            red   += kernel[ k] * buffer[ index];
+                            green += kernel[ k] * buffer[ index + 1];
+                            blue  += kernel[ k] * buffer[ index + 2];
+                            alpha += kernel[ k] * buffer[ index + 3];
+                        }
+                    }
+                }
+                if constexpr ( sizeof( Tp) == 4)
+                    d_buffer[ j * width + i] =  RGBA( red, green, blue, alpha);
+                else
+                {
+                    auto index = j * width * n_channel + i * n_channel;
+                    d_buffer[ index]    = red;
+                    d_buffer[ index + 1] = green;
+                    d_buffer[ index + 2] = blue;
+                    d_buffer[ index + 3] = alpha;
+                }
+            }
+        }
+        frame.buffer = dest;
+    }
+    else if( effect == SpecialEffect::GrayScale || effect == SpecialEffect::Grainy)
+    {
+        auto buffer = frame.buffer.get();
+        auto size = frame.width * frame.height;
+        constexpr auto color_change_freq = 8;
+        for( size_t i = 0; i < size; ++i)
+        {
+            if constexpr( sizeof( Tp) == 4)
+            {
+                if( effect == SpecialEffect::Grainy && rand() % 4 == 0)
+                {
+                    buffer[ i] = rand() % color_change_freq == 0 ? RGBA( 0x9a, 0x9a, 0x90, ALPHA( buffer[ i]))
+                                                                 : RGBA( 0xa9, 0xa9, 0x90, ALPHA( buffer[ i]));
+                }
+                else if( effect == SpecialEffect::GrayScale)
+                {
+                    auto avg = .2126 * RED( buffer[ i]) + .7152 * GREEN( buffer[ i]) + .0722 * BLUE( buffer[ i]);
+                    buffer[ i] = RGBA( avg, avg, avg, ALPHA( buffer[ i]));
+                }
+            }
+            else
+            {
+                auto index = i * frame.n_channel;
+                if( effect == SpecialEffect::Grainy && rand() % 4 == 0)
+                {
+                    uint32_t color = rand() % color_change_freq == 0 ? RGBA( 0x9a, 0x9a, 0x90, ALPHA( buffer[ index]))
+                                                                     : RGBA( 0xa9, 0xa9, 0x90, ALPHA( buffer[ index]));
+                    buffer[ index + 0] = RED( color);
+                    buffer[ index + 1] = GREEN( color);
+                    buffer[ index + 2] = BLUE( color);
+                    buffer[ index + 3] = ALPHA( color);
+                }
+                else if( effect == SpecialEffect::GrayScale)
+                {
+                    auto avg = .2126 * buffer[ index] + .7152 * buffer[ index + 1]
+                               + .0722 * buffer[ index + 2];
+                    buffer[ index + 0] = avg;
+                    buffer[ index + 1] = avg;
+                    buffer[ index + 2] = avg;
+                    buffer[ index + 3] = buffer[ i + 3];
+                }
+            }
+        }
+    }
+}
+
 void drawShadow( const MonoGlyphs &rasters, RowDetails &row_details,
                  FrameBuffer<uint32_t> &frame, ApplicationHyperparameters &guide)
 {
@@ -419,6 +571,8 @@ void drawShadow( const MonoGlyphs &rasters, RowDetails &row_details,
         int width   = raster.is_graph ? raster.bbox.width()  : raster.advance.x,
             height  = raster.is_graph ? raster.bbox.height() : raster.advance.y;
         auto& match = raster.match;
+        if( ZERO( match->shadow.x) && ZERO( match->shadow.y) && ZERO( match->shadow.z))
+            continue;
         auto& row_detail = row_details[ raster.level];
         auto& pen = row_detail.pen;
         if( !raster.is_graph)
@@ -439,10 +593,10 @@ void drawShadow( const MonoGlyphs &rasters, RowDetails &row_details,
             bounce_disp = match->max_bounce * fraction;
         }
         int v_offset = row_detail.v_disp - height - row_detail.max_descent - rect.ymin
-                       + guide.pad.top + match->shadow.y - bounce_disp,
+                       + guide.pad.top + ( match->shadow.y >= 0) * match->shadow.y - bounce_disp,
             h_offset = (int)( ENUM_CAST( guide.j_mode) > 0)
                            * (( frame.width - row_detail.width + row_detail.max_shadow_y) / ENUM_CAST( guide.j_mode))
-                           + guide.pad.left + match->shadow.x;
+                           + guide.pad.left + ( match->shadow.x >= 0) * match->shadow.x;
         for ( auto& s: outline)
         {
             for ( int w = 0; w < s.width; ++w)
@@ -459,8 +613,8 @@ void drawShadow( const MonoGlyphs &rasters, RowDetails &row_details,
     for( auto& raster : rasters)
         memset( &row_details[ raster.level].pen, 0, sizeof( FT_Vector));
 
-//    auto kernel = makeGaussian2D( 256, 4);
-//    applyFilter( frame, kernel);
+//    auto kernel = makeGaussian( 500);
+//    applyEffect( frame, SpecialEffect::GaussianBlur, &kernel);
 }
 
 void draw( const MonoGlyphs &rasters, RowDetails &row_details,
@@ -969,159 +1123,6 @@ bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test)
    return is_in;
 }
 
-std::vector<float> makeGaussian2D( size_t size, size_t radius)
-{
-    // The radius is the full-width-half-maximum of the normal distribution.
-    // It is the effective radius of the 2D gaussian.
-    constexpr float factor = -2.77258872f;
-    size_t row = std::sqrt( size), val = 0;
-    float source[ row];
-    std::vector<float> gauss( size);
-    for( auto& each : source)
-    {
-        each = ( val - row / 2) * ( val - row / 2);
-        val += 1;
-    }
-    float sum = 0;
-    for( size_t j = 0; j < row; ++j)
-        for( size_t i = 0; i < row; ++i)
-        {
-            gauss[ j * row + i] = std::exp( factor / ( radius * radius) * ( source[ j] + source[ i]));
-            sum += gauss[ j * row + i];
-        }
-    if( !ZERO( sum))
-        for( auto& each : gauss)
-            each /= sum;
-    return gauss;
-}
-
-template <typename Tp, typename = std::enable_if_t<std::is_integral_v<Tp>>>
-void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = nullptr)
-{
-/*   const size_t bk_size =  9,
-	  			ek_size = 25;
-   float basic_kernels[ FilterMode::B_FILTER_SENTINEL][ bk_size] =
-   {
-   		[ FilterMode::SHARPEN]       = {  0, -1,  0,
-									     -1,  5, -1,
-									      0, -1,  0},
-		[ FilterMode::BOX_BLUR]		 = { 1/9., 1/9., 1/9.,
-								         1/9., 1/9., 1/9.,
-										 1/9., 1/9., 1/9.},
-   		[ FilterMode::GAUSSIAN_BLUR] = { 1/16., 2/16., 1/16.,
-									     2/16., 4/16., 2/16.,
-									     1/16., 2/16., 1/16.},
-   };
- 
-   float extended_kernels[ FilterMode::E_FILTER_SENTINEL][ ek_size] =
-   {
-   		[ FilterMode::GAUSSIAN_BLUR_x5 - B_FILTER_SENTINEL - 1] = { 1/256., 4/256., 6/256., 4/256., 1/256.,
-																    4/256., 16/256., 24/256., 16/256., 4/256.,
-																    6/256., 24/256., 36/256., 24/256., 6/256.,
-																    4/256., 16/256., 24/256., 16/256., 4/256.,
-																    1/256., 4/256., 6/256., 4/256., 1/256.}
-   };
- 
-  if( filter >= FilterMode::E_FILTER_SENTINEL)
-	return;
-  
-  const auto k_width = filter < FilterMode::B_FILTER_SENTINEL ? 3 : 5;
-  const auto k_size = k_width > 3 ? ek_size : bk_size;
-  auto kernel = filter < FilterMode::B_FILTER_SENTINEL ? basic_kernels[ filter]
-													   : extended_kernels[ filter - FilterMode::B_FILTER_SENTINEL - 1];*/
-  if( ENUM_CAST( effect) < ENUM_CAST( SpecialEffect::RequiresKernelSentinel))
-  {
-      auto kernel = *( const std::vector<float> *)extras;
-      auto width   = frame.width,
-              height  = frame.height;
-      auto k_size  = kernel.size(),
-           k_width = ( size_t)std::sqrt( k_size);
-      std::shared_ptr<Tp> dest( ( Tp *)malloc( width * height * sizeof( Tp) * std::max( frame.n_channel, 1)),
-                                      []( auto *p){ free( p);});
-      auto buffer   = frame.buffer.get(),
-           d_buffer = dest.get();
-      for( size_t j = 0; j < height; ++j)
-      {
-          for( size_t i = 0; i < width; ++i)
-          {
-              int red{}, green{}, blue{}, alpha{};
-              for( size_t k = 0; k < k_size; ++k)
-              {
-                  size_t row = k % k_width,
-                          col = k / k_width;
-                  if( row + j < height && col + i < width)
-                  {
-                      if constexpr ( sizeof( Tp) == 4)
-                      {
-                          size_t index = ( row + j) * width + i + col;
-                          auto pixel = buffer[ index];
-                          red   += kernel[ k] * RED( pixel);
-                          green += kernel[ k] * GREEN( pixel);
-                          blue  += kernel[ k] * BLUE( pixel);
-                          alpha += kernel[ k] * ALPHA( pixel);
-                      }
-                      else
-                      {
-                          size_t index = ( row + j) * width * frame.n_channel + i * frame.n_channel + col;
-                          auto pixel = buffer[ index];
-                          red   += kernel[ k] * RED( buffer[ index]);
-                          green += kernel[ k] * GREEN( buffer[ index + 1]);
-                          blue  += kernel[ k] * BLUE( buffer[ index + 2]);
-                          alpha += kernel[ k] * ALPHA( buffer[ index + 3]);
-                      }
-                  }
-              }
-              d_buffer[ j * width + i] = RGBA( red, green, blue, alpha);
-          }
-      }
-      frame.buffer = dest;
-  }
-  else if( effect == SpecialEffect::GrayScale || effect == SpecialEffect::Grainy)
-  {
-      auto buffer = frame.buffer.get();
-      auto size = frame.width * frame.height;
-      constexpr auto color_change_freq = 8;
-      for( size_t i = 0; i < size; ++i)
-      {
-          if constexpr( sizeof( Tp) == 4)
-          {
-              if( effect == SpecialEffect::Grainy && rand() % 4 == 0)
-              {
-                  buffer[ i] = rand() % color_change_freq == 0 ? RGBA( 0x9a, 0x9a, 0x90, ALPHA( buffer[ i]))
-                                                               : RGBA( 0xa9, 0xa9, 0x90, ALPHA( buffer[ i]));
-              }
-              else if( effect == SpecialEffect::GrayScale)
-              {
-                  auto avg = .2126 * RED( buffer[ i]) + .7152 * GREEN( buffer[ i]) + .0722 * BLUE( buffer[ i]);
-                  buffer[ i] = RGBA( avg, avg, avg, ALPHA( buffer[ i]));
-              }
-          }
-          else
-          {
-              auto index = i * frame.n_channel;
-              if( effect == SpecialEffect::Grainy && rand() % 4 == 0)
-              {
-                  uint32_t color = rand() % color_change_freq == 0 ? RGBA( 0x9a, 0x9a, 0x90, ALPHA( buffer[ index]))
-                                                                   : RGBA( 0xa9, 0xa9, 0x90, ALPHA( buffer[ index]));
-                  buffer[ index + 0] = RED( color);
-                  buffer[ index + 1] = GREEN( color);
-                  buffer[ index + 2] = BLUE( color);
-                  buffer[ index + 3] = ALPHA( color);
-              }
-              else if( effect == SpecialEffect::GrayScale)
-              {
-                  auto avg = .2126 * RED( buffer[ index]) + .7152 * GREEN( buffer[ index + 1])
-                             + .0722 * BLUE( buffer[ index + 2]);
-                  buffer[ index + 0] = avg;
-                  buffer[ index + 1] = avg;
-                  buffer[ index + 2] = avg;
-                  buffer[ index + 3] = ALPHA( buffer[ i + 3]);
-              }
-          }
-      }
-  }
-}
-
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
 
 uint32_t rgbaToHsla( uint32_t rgba)
@@ -1503,6 +1504,70 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
     return selector[ ENUM_CAST( model)];
 }
 
+void resize( FrameBuffer<uint32_t> &frame, ApplicationHyperparameters &guide)
+{
+    std::array<int, 2> neighbours = { 9, 16};
+
+    auto new_width  = guide.interpolation[ 0],
+         new_height = guide.interpolation[ 1],
+         o_width    = frame.width,
+         o_height   = frame.height,
+         o_size     = frame.width * frame.height;
+
+    auto adjust = [ &]( auto& side, auto other, bool is_width = true)
+    {
+        if( side > 0)
+            return;
+
+        auto aspect = static_cast<float>( o_width) / static_cast<float>( o_height);
+        side = other * ( is_width ? aspect : 1. / aspect);
+    };
+
+    adjust( new_width == -1 ? new_width : new_height, new_width == -1 ? new_height : new_width, new_width == -1);
+
+    auto w_scale = static_cast<float>( o_width) / static_cast<float>( new_width),
+         h_scale = static_cast<float>( o_height) / static_cast<float>( new_height);
+
+    auto n_neighbour = static_cast<float>( neighbours[ guide.interpolation[ 2]]);
+    auto n_size  = static_cast<int>( n_neighbour),
+         n_width = static_cast<int>( std::sqrt( n_size)),
+         mid      = n_width / 2;
+    std::shared_ptr<uint32_t> dest(( uint32_t *)malloc( new_width * new_height * sizeof( uint32_t)),
+                                   []( auto *p){ free( p);});
+    auto s_buffer = frame.buffer.get();
+    auto d_buffer = dest.get();
+    for( int j = 0; j < new_height; ++j)
+    {
+        for( int i = 0; i < new_width; ++i)
+        {
+            int red{}, green{}, blue{}, alpha{};
+            for( int k = 0; k < n_size; ++k)
+            {
+                int row = k / n_width - mid + j,
+                    col = k % n_width - mid + i,
+                    a_row = static_cast<int>( row * h_scale),
+                    a_col = static_cast<int>( col * w_scale);
+                auto index = a_row * o_width + a_col;
+                if( a_row >= 0 && a_col >= 0 && index >= 0 && index < o_size)
+                {
+                    auto color = s_buffer[ index];
+                    red += RED( color);
+                    green += GREEN( color);
+                    blue += BLUE( color);
+                    alpha += ALPHA( color);
+                }
+            }
+            d_buffer[ j * new_width + i] = RGBA(( red / n_neighbour),
+                                                 ( green / n_neighbour),
+                                                 ( blue / n_neighbour),
+                                                 ( alpha / n_neighbour));
+        }
+    }
+    frame.width  = new_width;
+    frame.height = new_height;
+    frame.buffer = dest;
+}
+
 void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame)
 {
    auto c_rule = parseCompositionRule( guide.composition_rule);
@@ -1691,8 +1756,18 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 				auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
 				if( d_index < d_max_index && intersects( corners, point) && intersects( big_corners, point))
 				{
-				  image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
-																   d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
+                  auto top = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+                                   d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
+                  if( !c_rule.b_models.empty())
+                  {
+                      auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+                      int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                      auto base = s_frame.buffer.get()[ index];
+                      for( auto& blendFn : blendFns)
+                          top = blendFn( top, base);
+                  }
+
+                  image.buffer.get()[ j * final_width + i] = top;
 				}
 			  }
 			  else if constexpr( std::is_same_v<T, Bottom>) // Source-Out
@@ -1804,6 +1879,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 	  {
 	    std::visit( [ &]( auto&& current)
 	    {
+          auto max_d_frame_dimension = d_frame.width * d_frame.height * d_frame.n_channel;
 	      using T = std::remove_cv_t<std::remove_reference_t<decltype( current)>>;
 		  for( int y = origin.y, j = 0; j < final_height; ++y, ++j)
 		  {
@@ -1858,6 +1934,8 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
 				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
                   auto color   = s_frame.buffer.get()[ index];
+                  if( s_index >= max_d_frame_dimension)
+                      continue;
                   if(!c_rule.b_models.empty())
                   {
                       auto top  = color,
@@ -1944,10 +2022,11 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 		models[ ENUM_CAST( MODEL_ENUM( DestinationOver))]( Top());
 	  }
    };
-
 //  applyEffect( d_frame, SpecialEffect::Grainy);
   models[ ENUM_CAST( c_rule.c_model)]( Default());
 
+  if( guide.interpolation[ 0] && guide.interpolation[ 1])
+      resize( image, guide);
 #if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
     ( guide.out_format == OutputFormat::JPEG ? writeJPEG : writePNG)( guide.src_filename, image, guide.image_quality);
 #elif defined( PNG_SUPPORTED)
@@ -2771,7 +2850,9 @@ std::array<float, count> parseFloats( const char *&rule)
    {
 	   result = 0;
 	   float post_decimal_point_value = 0, shift = 1;
-	   if( ltrim( rule) && ( *rule == '(' || *rule == ',' || *rule == '+'))
+       if( ltrim( rule) && *rule == ')')
+           break;
+	   if(( *rule == '(' || *rule == ',' || *rule == '+'))
 		 ++rule;
        float sign = 1;
        if( *rule == '-')
@@ -3184,15 +3265,14 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                             exit( EXIT_FAILURE);
                         }
 
-                        if( !gradient_is_next)
+                        if( !gradient_is_next && std::tolower( rule[ 1]) != 's')
 						{
-							++rule;
-							if( *rule != '>')
+							if( rule[ 1] != '>')
 							{
 							  fprintf( stderr, "Expected '>' near -> %s", rule);
 							  exit( EXIT_FAILURE);
 							}
-                            setColor( ++rule, bkroot, ccolor.ecolor);
+                            setColor( rule += 2, bkroot, ccolor.ecolor);
 						}
                         
                         if( ltrim( rule) && *rule == '-'
@@ -3214,8 +3294,7 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
                         if( ltrim( rule) && *rule == '-' && std::tolower( rule[ 1]) == 's')
                         {
                             auto[ x_pos, y_pos, spread] = parseFloats<3>( rule += 2);
-                            assert( x_pos >= 0 && y_pos >= 0 && spread >= 0);
-                            ccolor.shadow = Vec3D( x_pos, y_pos, spread);
+                            ccolor.shadow = Vec3D(( int)x_pos, ( int)y_pos, ( int)spread);
                             if( ltrim( rule) && *rule == ')')
                                 ++rule;
                             else if( *rule == ',')
@@ -4312,7 +4391,6 @@ void executeActionOnFont( std::string_view font_name, FontActivity mode, std::fu
             || ( stat.valid & ZIP_STAT_NAME) == 0
             ||  *( stat.name + strlen( stat.name) - 1) == '/')
             continue;
-
         if( strcasestr( stat.name, font_file.c_str()) != nullptr)
             break;
     }
@@ -4336,7 +4414,11 @@ void executeActionOnFont( std::string_view font_name, FontActivity mode, std::fu
 
         PropertyManager<zip_file_t *> handle( zip_fopen_index( zipper.get(), stat.index, ZIP_FL_UNCHANGED),
                                               []( auto *p){ if( p != nullptr) zip_fclose( p);});
-        assert( zip_fread( handle.get(), buffer, stat.size) == stat.size);
+        if( zip_fread( handle.get(), buffer, stat.size) != stat.size)
+        {
+            fprintf( stderr, "Read invalid number of bytes\n");
+            return;
+        }
         params.push_back( buffer);
         params.push_back( ( void *)&stat.size);
     }
@@ -4851,6 +4933,7 @@ int main( int ac, char *av[])
              *easing_direction{ nullptr},
              *font_size{ nullptr},
              *background_color{ nullptr},
+             *final_size{ nullptr},
              *word,
              *program{ *av};
 
@@ -5002,10 +5085,13 @@ int main( int ac, char *av[])
          || ( strlen( SHORT( DPI)) == count
          && FOUND_STRING( strncmp( directive, SHORT( DPI), count))))
             selection = &resolution;
-        else if( ( strlen( EASING_DIRECTION) == count && FOUND_STRING( strncmp( directive, EASING_DIRECTION, count)))
+        else if(( strlen( EASING_DIRECTION) == count && FOUND_STRING( strncmp( directive, EASING_DIRECTION, count)))
          || ( strlen( SHORT( EASING_DIRECTION)) == count
          && FOUND_STRING( strncmp( directive, SHORT( EASING_DIRECTION), count))))
             selection = &easing_direction;
+        else if(( strlen( FINAL_SIZE) == count && FOUND_STRING( strncmp( directive, FINAL_SIZE, count)))
+         || ( strlen( SHORT( FINAL_SIZE)) == count && FOUND_STRING( strncmp( directive, SHORT( FINAL_SIZE), count))))
+            selection = &final_size;
 #endif
         else if( ( strlen( FONT_SIZE) == count && FOUND_STRING( strncmp( directive, FONT_SIZE, count)))
          || ( strlen( SHORT( FONT_SIZE)) == count && FOUND_STRING( strncmp( directive, SHORT( FONT_SIZE), count))))
@@ -5098,8 +5184,38 @@ int main( int ac, char *av[])
     if( ACCESSIBLE(  resolution))
         business_rules.dpi = strtoul( resolution, nullptr, 10);
 
-    if( ACCESSIBLE(  image_quality))
+    if( ACCESSIBLE( image_quality))
         business_rules.image_quality = strtol( image_quality, nullptr, 10);
+
+    if( ACCESSIBLE( final_size))
+    {
+        std::cmatch cm;
+        std::regex key( R"(^\s*(?:(\d+)(w|h)|(\d+)\s*[x]\s*(\d+))\s*(bi(?:-)?linear|bi(?:-)?cubic)?\s*$)",
+                        std::regex_constants::icase);
+        if( std::regex_match( final_size, cm, key))
+        {
+            constexpr auto size  = 1,
+                           side  = size + 1,
+                           width  = side + 1,
+                           height = width + 1,
+                           interp = height + 1;
+            constexpr const char *cubic = "cubic";
+            auto auto_scale = cm[ size].matched;
+            if( cm[ width].matched || auto_scale)
+            {
+                auto selection = std::tolower( cm[ side].str()[ 0]);
+                business_rules.interpolation[ size - 1]  = auto_scale ? selection == 'h' ? -1 :
+                                                            std::stoi( cm[ size].str()) : std::stoi( cm[ width].str());
+                business_rules.interpolation[ side - 1] = auto_scale ? selection == 'w' ? -1 :
+                                                            std::stoi( cm[ size].str()) : std::stoi( cm[ height].str());
+                if( cm[ interp].matched)
+                {
+                    auto s_rep = cm[ interp].str();
+                    business_rules.interpolation[ side] = FOUND_STRING( strcasestr( s_rep.data(), cubic));
+                }
+            }
+        }
+    }
 #endif
     if( ACCESSIBLE(  background_color))
         business_rules.background_color = extractColor( background_color, business_rules.bkroot.get());
@@ -5147,6 +5263,7 @@ int main( int ac, char *av[])
             STRUCTURE_PREFIX( LINE_HEIGHT),
             STRUCTURE_PREFIX( JUSTIFY),
             STRUCTURE_PREFIX( STROKE_WIDTH),
+            STRUCTURE_PREFIX( FINAL_SIZE),
             STRUCTURE_PREFIX( UNINSTALL_FONT),
             STRUCTURE_PREFIX( INSTALL_FONT),
             STRUCTURE_PREFIX( QUALITY_INDEX),
@@ -5177,6 +5294,7 @@ int main( int ac, char *av[])
             MESSAGE( LINE_HEIGHT),
             MESSAGE( JUSTIFY),
             MESSAGE( STROKE_WIDTH),
+            MESSAGE( FINAL_SIZE),
             MESSAGE( UNINSTALL_FONT),
             MESSAGE( INSTALL_FONT),
             MESSAGE( QUALITY_INDEX),

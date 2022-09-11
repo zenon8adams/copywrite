@@ -214,7 +214,7 @@ class PropertyProxy
     return changed_since_initialization;
   }
 private:
-  T value;
+  T value{};
   std::function<void( T)> state_change_callable;
   bool changed_since_initialization{ false};
 };
@@ -437,6 +437,8 @@ struct ApplicationHyperparameters;
 
 void write( FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destination, KDNode *root);
 
+std::vector<float> makeGaussian( float radius);
+
 static size_t byteCount( uint8_t c );
 
 static uint32_t collate( uint8_t *str, size_t idx, uint8_t count);
@@ -593,6 +595,7 @@ struct ApplicationHyperparameters
   bool 					  as_image{ false};
   bool                    ease_col{ false};
   bool                    shadow_present{ false};
+  int                     interpolation[ 3]{};
   int                     image_quality{ 100},
                           dpi{ 120};
   Padding                 pad{};
@@ -620,9 +623,9 @@ enum class SpecialEffect
 
 bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test);
 
-std::vector<float> makeGaussian2D( size_t size, size_t radius);
-
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
+
+void resize( FrameBuffer<uint32_t> &buffer, ApplicationHyperparameters &guide);
 
 void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame);
 
