@@ -34,6 +34,7 @@
 #include <variant>
 #include <cassert>
 #include <cstdint>
+#include <string>
 #include <iomanip>
 #include <numeric>
 #include "colors_defs.hpp"
@@ -378,7 +379,6 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
     draw( rasters, row_details, buffer, guide);
     printf( "Ended Text Placement %lus\n", Timer::yield( GLOBAL_TIME_ID));
 
-    std::clog << "Writing to file after: " << Timer::yield( GLOBAL_TIME_ID) << "s\n";
     PropertyManager<FILE *> destination( stdout, []( FILE *maybe_destructible)
     {
         if( maybe_destructible != stdout)
@@ -388,7 +388,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
 
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
 
-    if( guide.composition_rule && guide.dest_filename)
+    if( guide.composition_rule)
         composite( guide, buffer);
     else
     {
@@ -424,14 +424,8 @@ std::vector<float> makeEmboss( int width)
     auto size = width * width;
     auto mid = size / 2;
     std::vector<float> emboss( size);
-    emboss[ 0] = 1.8;
-//    emboss[ 1] = 1.5;
-//    emboss[ 1 * width] = 1.5;
-//    emboss[ 1 * width + 1] = 1.5;
-//    emboss[ ( width - 2) * width + width - 2] = -1.1;
-//    emboss[ ( width - 2) * width + width - 1] = -1.1;
-//    emboss[ size - 2] = -1.1;
-    emboss[ size - 1] = -1.1;
+    emboss[ 0] = 1.5;
+    emboss[ size - 1] = -1.7;
 
     for ( int j = 0; j < width; ++j)
     {
@@ -707,11 +701,12 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
             h_offset = (int)( ENUM_CAST( guide.j_mode) > 0)
                            * (( frame.width - row_detail.width) / ENUM_CAST( guide.j_mode))
                            + guide.pad.left;
+        auto buffer = frame.buffer.get();
          for ( auto& s: outline)
         {
             for ( int w = 0; w < s.width; ++w)
             {
-                auto& dest = frame.buffer.get()[(( v_offset + height - 1 - ( s.y - rect.ymin) + pen.y)
+                auto& dest = buffer[ (( v_offset + height - 1 - ( s.y - rect.ymin) + pen.y)
                                                  * frame.width + s.x - rect.xmin + w + h_offset + pen.x)];
                 int i = s.x - rect.xmin + w,
                     j = s.y - rect.ymin,
@@ -1602,480 +1597,502 @@ void resize( FrameBuffer<Tp> &frame, int *interpolation)
 
 void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame)
 {
-   auto c_rule = parseCompositionRule( guide.composition_rule);
-   if( c_rule.c_model == MODEL_ENUM( NotApplicable))
-     return;
+    auto emboss = makeEmboss( 17);
+    applyEffect( s_frame, SpecialEffect::Emboss, &emboss);
+   auto c_rules = parseCompositionRule( guide.composition_rule);
+   auto frame_buffer = FrameBuffer<uint32_t>();
+   auto cur_layer = 1;
+   for( auto& c_rule : c_rules)
+   {
+       if( c_rule.c_model == MODEL_ENUM( NotApplicable))
+           continue;
+       #if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
+              auto d_frame = ( isJPEG( c_rule.image) ? readJPEG : readPNG)( c_rule.image);
+       #elif defined( PNG_SUPPORTED)
+              auto d_frame = readPNG( c_rule.image);
+       #else
+          if( !isJPEG( c_rule.image))
+              return;
+          auto d_frame = readJPEG( c_rule.image);
+       #endif
 
-#if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
-   auto d_frame = ( isJPEG( guide.dest_filename) ? readJPEG : readPNG)( guide.dest_filename);
-#elif defined( PNG_SUPPORTED)
-   auto d_frame = readPNG( guide.dest_filename);
-#else
-   if( !isJPEG( guide.dest_filename))
-       return;
-   auto d_frame = readJPEG( guide.dest_filename);
-#endif
+       if( d_frame.buffer == nullptr)
+           continue;
 
-   if( d_frame.buffer == nullptr)
-     return;
-
-   auto emboss = makeEmboss( 9);
-   auto gaussian = makeGaussian( 30);
-
-   int interpolation[ 3] = { s_frame.width >= s_frame.height ? s_frame.width : -1,
-                             s_frame.height >= s_frame.width ? s_frame.height : -1, 0};
-   resize( d_frame, interpolation);
+//   auto emboss = makeEmboss( 17);
+//   auto gaussian = makeGaussian( 30);
+//   int interpolation[ 3] = { s_frame.width >= s_frame.height ? s_frame.width : -1,
+//                             s_frame.height >= s_frame.width ? s_frame.height : -1, 0};
+//   resize( d_frame, interpolation);
 //   applyEffect( s_frame, SpecialEffect::Emboss, &emboss);
 //   applyEffect( s_frame, SpecialEffect::GaussianBlur, &gaussian);
 
-   int32_t dwidth  = d_frame.width,
-   		   dheight = d_frame.height;
-   auto swidth     = s_frame.width,
-        sheight    = s_frame.height;
+       int32_t dwidth  = d_frame.width,
+               dheight = d_frame.height;
+       auto swidth     = s_frame.width,
+            sheight    = s_frame.height;
 
-   auto pos = Vec2D<float>( c_rule.position.x * ( dwidth - 1)  + ( 1 - c_rule.position.x) * - swidth  + 1,
-   	                        c_rule.position.y * ( dheight - 1) + ( 1 - c_rule.position.y) * - sheight + 1),
-		center = Vec2D<float>( pos.x + swidth / 2.f, pos.y + sheight / 2.f);
+       auto pos    = Vec2D<float>( c_rule.position.x * ( dwidth - 1)  + ( 1 - c_rule.position.x) * - swidth  + 1,
+                                   c_rule.position.y * ( dheight - 1) + ( 1 - c_rule.position.y) * - sheight + 1),
+            center = Vec2D<float>( pos.x + swidth / 2.f, pos.y + sheight / 2.f);
 
-   // Defines the rotated corners of the given image.
-	std::array<Vec2D<float>, 4> corners = {
-		( pos                                               - center).rotate( c_rule.angle) + center,
-		( pos + Vec2D<float>( swidth - 1.f, 0)              - center).rotate( c_rule.angle) + center,
-		( pos + Vec2D<float>( swidth - 1.f, sheight - 1.f)  - center).rotate( c_rule.angle) + center,
-		( pos + Vec2D<float>( 0, sheight - 1.f)             - center).rotate( c_rule.angle) + center
-	};
+       // Defines the rotated corners of the given image.
+       std::array<Vec2D<float>, 4> corners = {
+           ( pos                                               - center).rotate( c_rule.angle) + center,
+           ( pos + Vec2D<float>( swidth - 1.f, 0)              - center).rotate( c_rule.angle) + center,
+           ( pos + Vec2D<float>( swidth - 1.f, sheight - 1.f)  - center).rotate( c_rule.angle) + center,
+           ( pos + Vec2D<float>( 0, sheight - 1.f)             - center).rotate( c_rule.angle) + center
+       };
 
-	// Defines the corners of the destination image
-	std::array<Vec2D<float>, 4> big_corners = {
-		Vec2D<float>( 0, 0),
-		Vec2D<float>( dwidth - 1, 0),
-		Vec2D<float>( dwidth - 1, dheight - 1),
-		Vec2D<float>( 0, dheight - 1)
-	};
+       // Defines the corners of the destination image
+       std::array<Vec2D<float>, 4> big_corners = {
+               Vec2D<float>( 0, 0),
+               Vec2D<float>( dwidth - 1, 0),
+               Vec2D<float>( dwidth - 1, dheight - 1),
+               Vec2D<float>( 0, dheight - 1)
+       };
 
-	// Selects the boundaries of the image
-	auto cherryPick = []( auto corners, bool is_min = true)
-	{
-	  using iter_type = decltype( std::begin( corners));
-	  auto comp       = []( auto l, auto r){ return l.x < r.x;};
-	  auto model      = ( is_min ? std::min_element<iter_type, decltype( comp)>
-	                             : std::max_element<iter_type, decltype( comp)>);
-	  auto x_ptr      = model( std::begin( corners), std::end( corners), comp);
+       // Selects the boundaries of the image
+       auto cherryPick = []( auto corners, bool is_min = true)
+       {
+           using iter_type = decltype( std::begin( corners));
+           auto comp       = []( auto l, auto r){ return l.x < r.x;};
+           auto model      = ( is_min ? std::min_element<iter_type, decltype( comp)>
+                                      : std::max_element<iter_type, decltype( comp)>);
+           auto x_ptr      = model( std::begin( corners), std::end( corners), comp);
 
-	  Vec2D<float> *y_ptr{ nullptr};
-	  for( auto& corner : corners)
-	  {
-		if( &corner == x_ptr)
-		  continue;
-		if( y_ptr == nullptr)
-		  y_ptr = &corner;
-		else if( is_min ? corner.y < y_ptr->y : corner.y > y_ptr->y)
-		  y_ptr = &corner;
-	  }
-	  
-	  return std::pair{ *x_ptr, *y_ptr};
-	};
-   Vec2D<float> x_min, y_min, x_max, y_max;
-  
-  std::tie( x_min, y_min) 	 = cherryPick( corners);
-  std::tie( x_max, y_max)	 = cherryPick( corners, false);
-   
-   auto angle                = ( y_min - x_min).angle();
-   auto smallbox_top_edge    = Vec2D<float>( ( ( y_min - x_min).rotate( -angle) + x_min).x, y_min.y);
-   auto origin      		 = smallbox_top_edge;
-   float width      		 = x_max.x - x_min.x + 1,
-   		 height     		 = y_max.y - y_min.y + 1;
-   int   final_width,
-   		 final_height;
-   
-   if( COMPOSITON_SIZE( c_rule.c_model))
-   { // The final canvas size is the maximum of the width and height of both canvas
-     auto bottom_edge = Vec2D<float>( std::max( origin.x + width  - 1.f,  dwidth  - 1.f),
-     	                              std::max( origin.y + height - 1.f, dheight  - 1.f));
-     origin.x         = std::min( origin.x, 0.f);
-     origin.y         = std::min( origin.y, 0.f);
-     final_width      = bottom_edge.x - origin.x + 1;
-     final_height     = bottom_edge.y - origin.y + 1;
-   }
-   else if( COMPOSITION_SIDE( c_rule.c_model))
-   { // The final canvas size is the size of the bounding box of the source canvas
-     final_width  = width;
-     final_height = height;
-   }
-   else
-   { // The final canvas size is the size of the destination canvas
-     origin       = big_corners[ 0];
-     final_width  = dwidth;
-     final_height = dheight;
-   }
-   
-   auto image = FrameBuffer<uint32_t>( std::shared_ptr<uint32_t>(
-   	                                   ( uint32_t *)calloc( final_width * final_height, sizeof( uint32_t)),
-   	                                   []( auto *p) { free( p);}), final_width, final_height);
-  struct Default{};
-  struct Top{};
-  struct Bottom{};
-  
-  auto s_frame_dimension = s_frame.width * s_frame.height;
-  bool source_over = false;
-  std::vector<std::function<uint32_t(uint32_t, uint32_t)>> blendFns( c_rule.b_models.size());
-  for( size_t i = 0; i < blendFns.size(); ++i)
-  {
-      if( c_rule.b_models[ i] == BLEND_ENUM( Normal))
-          continue;
-      blendFns[ i] = selectBlendFn( c_rule.b_models[ i]);
-  }
-  std::array<std::function<void( std::variant<Default, Top, Bottom>)>,
-      ENUM_CAST( MODEL_ENUM( Xor)) + 1> models = {
-	  [&]( auto part) // Clip
-      {
-          models[ ENUM_CAST( MODEL_ENUM( SourceAtop))]( Bottom());
-      },
-      [&]( auto part) // Copy
-	  {
-		for( int y = smallbox_top_edge.y, j = 0; j < final_height; ++y, ++j)
-		{
-		  for ( int x = smallbox_top_edge.x, i = 0; i < final_width; ++x, ++i)
-		  {
-			auto point = Vec2D<float>( x, y);
-			if( intersects( corners, point))
-			{
-			  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
-			  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-			  if( index > 0 && index < s_frame_dimension)
-				image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
-			}
-		  }
-		}
-	  },
-	  [&]( auto part) // DestinationAtop
-	  {
-		std::visit( [ &]( auto&& current)
-		{
-		  using T = std::remove_cv_t<std::remove_reference_t<decltype(current)>>;
-		  const size_t d_max_index = d_frame.width * d_frame.height * d_frame.n_channel;
-		  auto *d_buffer = d_frame.buffer.get();
-		  for( int y = smallbox_top_edge.y, j = 0; j < final_height; ++y, ++j)
-		  {
-			for ( int x = smallbox_top_edge.x, i = 0; i < final_width; ++x, ++i)
-			{
-			  auto point = Vec2D<float>( x, y);
-			  if constexpr ( std::is_same_v<T, Default>) // DestinationAtop
-			  {
-				auto d_index = y * d_frame.width * d_frame.n_channel +  x * d_frame.n_channel;
-                auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
-                int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                if(!c_rule.b_models.empty())
-                {
-                    bool corners_intersects = false;
-                    if(( corners_intersects = ( index >= 0 && index < s_frame_dimension && intersects( corners, point)))
-                        && d_index < d_max_index && intersects( big_corners, point))
-                    {
-                        auto top = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
-                                         d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
-                        auto base = s_frame.buffer.get()[ index];
-                        for( auto& blendFn : blendFns)
-                            top = blendFn( top, base);
-                        image.buffer.get()[ j * final_width + i] = top;
-                    }
-                    else if( corners_intersects)
-                        image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
-                }
-                else if( d_index < d_max_index && intersects( corners, point) && intersects( big_corners, point))
-				{
-					image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
-						                                             d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
-				}
-				else if( intersects( corners, point))
-				{
-				  if( index >= 0 && index < s_frame_dimension)
-					image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
-				}
-			  }
-			  else if constexpr ( std::is_same_v<T, Top>) // DestinationIn
-			  {
-				auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-				if( d_index < d_max_index && intersects( corners, point) && intersects( big_corners, point))
-				{
-                  auto top = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
-                                   d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
-                  if( !c_rule.b_models.empty())
-                  {
-                      auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
-                      int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                      auto base = s_frame.buffer.get()[ index];
-                      for( auto& blendFn : blendFns)
-                          top = blendFn( top, base);
-                  }
+           Vec2D<float> *y_ptr{ nullptr};
+           for( auto& corner : corners)
+           {
+               if( &corner == x_ptr)
+                   continue;
+               if( y_ptr == nullptr)
+                   y_ptr = &corner;
+               else if( is_min ? corner.y < y_ptr->y : corner.y > y_ptr->y)
+                   y_ptr = &corner;
+           }
 
-                  image.buffer.get()[ j * final_width + i] = top;
-				}
-			  }
-			  else if constexpr( std::is_same_v<T, Bottom>) // Source-Out
-			  {
-				if( intersects( corners, point) && !intersects( big_corners, point))
-				{
-				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
-				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-				  if( index > 0 && index < s_frame_dimension)
-					image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
-				}
-			  }
-			}
-		  }
-		}, part);
-	  },
-	  [&]( auto part) // DestinationIn
-	  {
-		models[ ENUM_CAST( MODEL_ENUM( DestinationAtop))]( Top());
-	  },
-	  [&]( auto part) // DestinationOver
-	  {
-	    std::visit( [&]( auto&& current)
-	    {
-	      using T = std::remove_cv_t<std::remove_reference_t<decltype( current)>>;
-		  for( int y = origin.y, j = 0; j < final_height; ++y, ++j)
-		  {
-			for ( int x = origin.x, i = 0; i < final_width; ++x, ++i)
-			{
-			  auto point = Vec2D<float>( x, y);
-			  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
-			  if constexpr ( !std::is_same_v<T, Default>)
-			  {
-			    if( auto b_intersects = intersects( big_corners, point), c_intersects = intersects( corners, point);
-			        b_intersects && c_intersects)
-				{
-			      if constexpr( std::is_same_v<T, Bottom>) // Selection for Lighter
-				  {
-					auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-					int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-					auto *buffer = d_frame.buffer.get();
-					auto b_color = RGBA( buffer[ d_index], buffer[ d_index + 1],
-										 buffer[ d_index + 2], buffer[ d_index + 3]);
-					uint32_t c_color = b_color;
-					if( index > 0 && index < s_frame_dimension)
-					 	c_color = s_frame.buffer.get()[ index];
-					auto final_color = sumMix(b_color, c_color);
-					auto alpha = ( uint16_t)( c_color & 0xFFu) + ( b_color & 0xFFu);
-					final_color = final_color | std::min( 0xFFu, alpha);
-					image.buffer.get()[ j * final_width + i] = final_color;
-				  }
-				}
-			    else if( b_intersects) // Bypass the intersection of source and destination
-				{
-				  auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-				  auto *buffer = d_frame.buffer.get();
-				  image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
-																   buffer[ d_index + 2], buffer[ d_index + 3]);
-				}
-			    else if( c_intersects)
-				{
-				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-				  if( index > 0 && index < s_frame_dimension)
-					image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
-				}
-			  }
-              else if( !c_rule.b_models.empty() &&
-                      intersects( big_corners, point) && intersects( corners, point))
-              {
-                  auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-                  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                  auto *buffer = d_frame.buffer.get();
-                  auto top = RGBA( buffer[ d_index], buffer[ d_index + 1],
-                                   buffer[ d_index + 2], buffer[ d_index + 3]),
-                       base = s_frame.buffer.get()[ index];
-                  for( auto& blendFn : blendFns)
-                      top = blendFn( top, base);
-                  image.buffer.get()[ j * final_width + i] = top;
-              }
-              else if( intersects( big_corners, point)) // Selection for DestinationOver
-              {
-                  auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-                  auto *buffer = d_frame.buffer.get();
-                  image.buffer.get()[ j * final_width + i] = RGBA( buffer[ d_index], buffer[ d_index + 1],
-                                                                   buffer[ d_index + 2], buffer[ d_index + 3]);
-              }
-              else if( intersects( corners, point)) // Selection for DestinationOver
-              {
-                  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                  if( index > 0 && index < s_frame_dimension)
-                      image.buffer.get()[ j * final_width + i] = s_frame.buffer.get()[ index];
-              }
-			}
-		  }
-		}, part);
-	  },
-	  [&]( auto part) // DestinationOut
-	  {
-		models[ ENUM_CAST( MODEL_ENUM( SourceAtop))]( Top());
-	  },
-	  [&]( auto part) // Lighter
-	  {
-		models[ ENUM_CAST( MODEL_ENUM( DestinationOver))]( Bottom());
-	  },
-	  []( auto part) // Not Applicable
-	  {
-	  },
-	  [&]( auto part) // SourceAtop
-	  {
-	    std::visit( [ &]( auto&& current)
-	    {
-          auto max_d_frame_dimension = d_frame.width * d_frame.height * d_frame.n_channel;
-	      using T = std::remove_cv_t<std::remove_reference_t<decltype( current)>>;
-		  for( int y = origin.y, j = 0; j < final_height; ++y, ++j)
-		  {
-			for( int x = origin.x, i = 0; i < final_width; ++x, ++i)
-			{
-			  int s_index    = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel,
-				  d_index     = j * final_width + i;
-			  auto *d_ptr   = d_frame.buffer.get();
-			  uint32_t &pixel = image.buffer.get()[ d_index];
-			  auto point      = Vec2D<float>( x, y);
-			  if constexpr ( std::is_same_v<T, Default>) // SourceAtop
-			  {
-				if( intersects( corners, point) && intersects( big_corners, point))
-				{
-				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
-				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-				  auto rgba    = s_frame.buffer.get()[ index];
-                  if( c_rule.b_models.empty())
-                  {
-                      if( ALPHA( rgba) < 180)
-                          pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-                                        d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-                      else
-                          pixel = s_frame.buffer.get()[ index];
-                  }
-                  else
-                  {
-                      auto top  = s_frame.buffer.get()[ index],
-                           base = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-                                        d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-                      for( auto& blendFn : blendFns)
-                          top = blendFn( top, base);
-                      pixel = top;
-                  }
-				}
-				else
-				{
-				  pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-								d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-				}
-			  }
-			  else if constexpr ( std::is_same_v<T, Top>) // DestinationOut
-			  {
-				if( !intersects( corners, point) || !intersects( big_corners, point))
-				  pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-								d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-			  }
-			  else if constexpr ( std::is_same_v<T, Bottom>) // SourceIn, Clip
-			  {
-				if( intersects( corners, point) && intersects( big_corners, point))
-				{
-				  auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
-				  int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                  auto color   = s_frame.buffer.get()[ index];
-                  if( s_index >= max_d_frame_dimension)
-                      continue;
-                  if(!c_rule.b_models.empty())
-                  {
-                      auto top  = color,
-                           base = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-                                        d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-                       for( auto& blendFn : blendFns)
-                           top = blendFn( top, base);
-                       pixel = top;
-                  }
-                  else
-                  {
-                      if( ALPHA( color) < 180)
-                          pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-                                        d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-                      else
-                          pixel = color;
-                  }
-				}
-			  }
-			}
-		  }
-	    }, part);
-	  },
-	  [&]( auto part) // SourceIn
-	  {
-		models[ ENUM_CAST( MODEL_ENUM( SourceAtop))]( Bottom());
-	  },
-	  [&]( auto part) // SourceOver
-	  {
-	    auto *s_buffer = s_frame.buffer.get();
-	    auto *d_buffer = d_frame.buffer.get();
-		for( int y = origin.y, j = 0; j < final_height; ++y, ++j)
-		{
-		  for( int x = origin.x, i = 0; i < final_width; ++x, ++i)
-		  {
-			auto point = Vec2D<float>( x, y);
-			auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
-			if( intersects( corners, point))
-			{
-			  int index = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-			  if( index > 0 && index < s_frame_dimension)
-              {
-                  if( c_rule.b_models.empty())
-                  {
-                      if( ALPHA( s_buffer[ index]) < 180 && intersects( big_corners, point))
-                      {
-                          auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-                          image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
-                                                                           d_buffer[ d_index + 2],
-                                                                           d_buffer[ d_index + 3]);
-                      }
-                      else
-                          image.buffer.get()[ j * final_width + i] = s_buffer[ index];
-                  }
-                  else if( intersects( big_corners, point))
-                  {
-                      auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-                      auto top  = s_buffer[ index],
-                           base = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
-                                        d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
-                      for( auto& blendFn : blendFns)
-                          top = blendFn( top, base);
-                      image.buffer.get()[ j * final_width + i] = top;
-                  }
-                  else
-                      image.buffer.get()[ j * final_width + i] = s_buffer[ index];
-              }
-			}
-			else if( intersects( big_corners, point))
-			{
-			  auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-			  image.buffer.get()[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
-															   d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
-			}
-		  }
-		}
-	  },
-	  [&]( auto part) // SourceOut
-	  {
-		models[ ENUM_CAST( MODEL_ENUM( DestinationAtop))]( Bottom());
-	  },
-	  [&]( auto part) // Xor
-	  {
-		models[ ENUM_CAST( MODEL_ENUM( DestinationOver))]( Top());
-	  }
-   };
+           return std::pair{ *x_ptr, *y_ptr};
+       };
+       Vec2D<float> x_min, y_min, x_max, y_max;
+
+       std::tie( x_min, y_min) 	 = cherryPick( corners);
+       std::tie( x_max, y_max)	 = cherryPick( corners, false);
+
+       auto angle                = ( y_min - x_min).angle();
+       auto smallbox_top_edge    = Vec2D<float>( ( ( y_min - x_min).rotate( -angle) + x_min).x, y_min.y);
+       auto origin      		 = smallbox_top_edge;
+       float width      		 = x_max.x - x_min.x + 1,
+             height     		 = y_max.y - y_min.y + 1;
+       int   final_width,
+             final_height;
+
+       if( COMPOSITON_SIZE( c_rule.c_model))
+       { // The final canvas size is the maximum of the width and height of both canvas
+           auto bottom_edge = Vec2D<float>( std::max( origin.x + width  - 1.f,  dwidth  - 1.f),
+                                            std::max( origin.y + height - 1.f, dheight  - 1.f));
+           origin.x         = std::min( origin.x, 0.f);
+           origin.y         = std::min( origin.y, 0.f);
+           final_width      = bottom_edge.x - origin.x + 1;
+           final_height     = bottom_edge.y - origin.y + 1;
+       }
+       else if( COMPOSITION_SIDE( c_rule.c_model))
+       { // The final canvas size is the size of the bounding box of the source canvas
+           final_width  = width;
+           final_height = height;
+       }
+       else
+       { // The final canvas size is the size of the destination canvas
+           origin       = big_corners[ 0];
+           final_width  = dwidth;
+           final_height = dheight;
+       }
+
+       frame_buffer.buffer = std::shared_ptr<uint32_t>(( uint32_t *)calloc( final_width * final_height, sizeof( uint32_t)),
+                                                       []( auto *p) { free( p);});
+       auto out_buffer   = frame_buffer.buffer.get();
+       frame_buffer.width = final_width,
+       frame_buffer.height = final_height;
+       struct Default{};
+       struct Top{};
+       struct Bottom{};
+
+       auto s_frame_dimension = s_frame.width * s_frame.height;
+       bool source_over = false;
+       std::vector<std::function<uint32_t(uint32_t, uint32_t)>> blendFns( c_rule.b_models.size());
+       for( size_t i = 0; i < blendFns.size(); ++i)
+       {
+           if( c_rule.b_models[ i] == BLEND_ENUM( Normal))
+               continue;
+           blendFns[ i] = selectBlendFn( c_rule.b_models[ i]);
+       }
+       std::array<std::function<void( std::variant<Default, Top, Bottom>)>,
+               ENUM_CAST( MODEL_ENUM( Xor)) + 1> models = {
+           [&]( auto part) // Clip
+           {
+               models[ ENUM_CAST( MODEL_ENUM( SourceAtop))]( Bottom());
+           },
+           [&]( auto part) // Copy
+           {
+               for( int y = smallbox_top_edge.y, j = 0; j < final_height; ++y, ++j)
+               {
+                   for ( int x = smallbox_top_edge.x, i = 0; i < final_width; ++x, ++i)
+                   {
+                       auto point = Vec2D<float>( x, y);
+                       if( intersects( corners, point))
+                       {
+                           auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+                           int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                           if( index > 0 && index < s_frame_dimension)
+                               out_buffer[  j * final_width + i] = s_frame.buffer.get()[ index];
+                       }
+                   }
+               }
+           },
+           [&]( auto part) // DestinationAtop
+           {
+               std::visit( [ &]( auto&& current)
+               {
+                   using T = std::remove_cv_t<std::remove_reference_t<decltype(current)>>;
+                   const size_t d_max_index = d_frame.width * d_frame.height * d_frame.n_channel;
+                   auto *d_buffer = d_frame.buffer.get();
+                   for( int y = smallbox_top_edge.y, j = 0; j < final_height; ++y, ++j)
+                   {
+                       for ( int x = smallbox_top_edge.x, i = 0; i < final_width; ++x, ++i)
+                       {
+                           auto point = Vec2D<float>( x, y);
+                           if constexpr ( std::is_same_v<T, Default>) // DestinationAtop
+                           {
+                               auto d_index = y * d_frame.width * d_frame.n_channel +  x * d_frame.n_channel;
+                               auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+                               int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                               if(!c_rule.b_models.empty())
+                               {
+                                   bool corners_intersects = false;
+                                   if(( corners_intersects = ( index >= 0 && index < s_frame_dimension
+                                      && intersects( corners, point)))
+                                      && d_index < d_max_index && intersects( big_corners, point))
+                                   {
+                                       auto top = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+                                                        d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
+                                       auto base = s_frame.buffer.get()[ index];
+                                       for( auto& blendFn : blendFns)
+                                           top = blendFn( top, base);
+                                       out_buffer[  j * final_width + i] = top;
+                                   }
+                                   else if( corners_intersects)
+                                       out_buffer[  j * final_width + i] = s_frame.buffer.get()[ index];
+                               }
+                               else if( d_index < d_max_index && intersects( corners, point)
+                                        && intersects( big_corners, point))
+                               {
+                                   out_buffer[  j * final_width + i] = RGBA( d_buffer[ d_index],
+                                                                             d_buffer[d_index + 1],
+                                                                             d_buffer[ d_index + 2],
+                                                                             d_buffer[ d_index + 3]);
+                               }
+                               else if( intersects( corners, point))
+                               {
+                                   if( index >= 0 && index < s_frame_dimension)
+                                       out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
+                               }
+                           }
+                           else if constexpr ( std::is_same_v<T, Top>) // DestinationIn
+                           {
+                               auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                               if( d_index < d_max_index && intersects( corners, point)
+                               && intersects( big_corners, point))
+                               {
+                                   auto top = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+                                                    d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
+                                   if( !c_rule.b_models.empty())
+                                   {
+                                       auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+                                       int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                       auto base = s_frame.buffer.get()[ index];
+                                       for( auto& blendFn : blendFns)
+                                           top = blendFn( top, base);
+                                   }
+
+                                   out_buffer[ j * final_width + i] = top;
+                               }
+                           }
+                           else if constexpr( std::is_same_v<T, Bottom>) // Source-Out
+                           {
+                               if( intersects( corners, point) && !intersects( big_corners, point))
+                               {
+                                   auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+                                   int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                   if( index > 0 && index < s_frame_dimension)
+                                       out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
+                               }
+                           }
+                       }
+                   }
+               }, part);
+           },
+           [&]( auto part) // DestinationIn
+           {
+               models[ ENUM_CAST( MODEL_ENUM( DestinationAtop))]( Top());
+           },
+           [&]( auto part) // DestinationOver
+           {
+               std::visit( [&]( auto&& current)
+               {
+                   using T = std::remove_cv_t<std::remove_reference_t<decltype( current)>>;
+                   for( int y = origin.y, j = 0; j < final_height; ++y, ++j)
+                   {
+                       for ( int x = origin.x, i = 0; i < final_width; ++x, ++i)
+                       {
+                           auto point = Vec2D<float>( x, y);
+                           auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+                           if constexpr ( !std::is_same_v<T, Default>)
+                           {
+                               if( auto b_intersects = intersects( big_corners, point),
+                                       c_intersects = intersects( corners, point);
+                                       b_intersects && c_intersects)
+                               {
+                                   if constexpr( std::is_same_v<T, Bottom>) // Selection for Lighter
+                                   {
+                                       auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                                       int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                       auto *buffer = d_frame.buffer.get();
+                                       auto b_color = RGBA( buffer[ d_index], buffer[ d_index + 1],
+                                                            buffer[ d_index + 2], buffer[ d_index + 3]);
+                                       uint32_t c_color = b_color;
+                                       if( index > 0 && index < s_frame_dimension)
+                                           c_color = s_frame.buffer.get()[ index];
+                                       auto final_color = sumMix(b_color, c_color);
+                                       auto alpha = ( uint16_t)( c_color & 0xFFu) + ( b_color & 0xFFu);
+                                       final_color = final_color | std::min( 0xFFu, alpha);
+                                       out_buffer[ j * final_width + i] = final_color;
+                                   }
+                               }
+                               else if( b_intersects) // Bypass the intersection of source and destination
+                               {
+                                   auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                                   auto *buffer = d_frame.buffer.get();
+                                   out_buffer[ j * final_width + i] = RGBA( buffer[ d_index], buffer[d_index + 1],
+                                                                            buffer[ d_index + 2], buffer[ d_index + 3]);
+                               }
+                               else if( c_intersects)
+                               {
+                                   int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                   if( index > 0 && index < s_frame_dimension)
+                                       out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
+                               }
+                           }
+                           else if( !c_rule.b_models.empty() &&
+                                    intersects( big_corners, point) && intersects( corners, point))
+                           {
+                               auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                               int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                               auto *buffer = d_frame.buffer.get();
+                               auto top = RGBA( buffer[ d_index], buffer[ d_index + 1],
+                                                buffer[ d_index + 2], buffer[ d_index + 3]),
+                                       base = s_frame.buffer.get()[ index];
+                               for( auto& blendFn : blendFns)
+                                   top = blendFn( top, base);
+                               out_buffer[ j * final_width + i] = top;
+                           }
+                           else if( intersects( big_corners, point)) // Selection for DestinationOver
+                           {
+                               auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                               auto *buffer = d_frame.buffer.get();
+                               out_buffer[ j * final_width + i] = RGBA( buffer[ d_index], buffer[d_index + 1],
+                                                                        buffer[ d_index + 2], buffer[ d_index + 3]);
+                           }
+                           else if( intersects( corners, point)) // Selection for DestinationOver
+                           {
+                               int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                               if( index > 0 && index < s_frame_dimension)
+                                   out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
+                           }
+                       }
+                   }
+               }, part);
+           },
+           [&]( auto part) // DestinationOut
+           {
+               models[ ENUM_CAST( MODEL_ENUM( SourceAtop))]( Top());
+           },
+           [&]( auto part) // Lighter
+           {
+               models[ ENUM_CAST( MODEL_ENUM( DestinationOver))]( Bottom());
+           },
+           []( auto part) // Not Applicable
+           {
+           },
+           [&]( auto part) // SourceAtop
+           {
+               std::visit( [ &]( auto&& current)
+               {
+                   auto max_d_frame_dimension = d_frame.width * d_frame.height * d_frame.n_channel;
+                   using T = std::remove_cv_t<std::remove_reference_t<decltype( current)>>;
+                   for( int y = origin.y, j = 0; j < final_height; ++y, ++j)
+                   {
+                       for( int x = origin.x, i = 0; i < final_width; ++x, ++i)
+                       {
+                           int s_index    = j * d_frame.width * d_frame.n_channel + i * d_frame.n_channel,
+                                   d_index     = j * final_width + i;
+                           auto *d_ptr   = d_frame.buffer.get();
+                           uint32_t &pixel = out_buffer[  d_index];
+                           auto point      = Vec2D<float>( x, y);
+                           if constexpr ( std::is_same_v<T, Default>) // SourceAtop
+                           {
+                               if( intersects( corners, point) && intersects( big_corners, point))
+                               {
+                                   auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+                                   int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                   auto rgba    = s_frame.buffer.get()[ index];
+                                   if( c_rule.b_models.empty())
+                                   {
+                                       if( ALPHA( rgba) < 180)
+                                           pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                         d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                                       else
+                                           pixel = s_frame.buffer.get()[ index];
+                                   }
+                                   else
+                                   {
+                                       auto top  = s_frame.buffer.get()[ index],
+                                               base = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                            d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                                       for( auto& blendFn : blendFns)
+                                           top = blendFn( top, base);
+                                       pixel = top;
+                                   }
+                               }
+                               else
+                               {
+                                   pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                 d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                               }
+                           }
+                           else if constexpr ( std::is_same_v<T, Top>) // DestinationOut
+                           {
+                               if( !intersects( corners, point) || !intersects( big_corners, point))
+                                   pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                 d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                           }
+                           else if constexpr ( std::is_same_v<T, Bottom>) // SourceIn, Clip
+                           {
+                               if( intersects( corners, point) && intersects( big_corners, point))
+                               {
+                                   auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+                                   int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                   auto color   = s_frame.buffer.get()[ index];
+                                   if( s_index >= max_d_frame_dimension)
+                                       continue;
+                                   if(!c_rule.b_models.empty())
+                                   {
+                                       auto top  = color,
+                                            base = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                         d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                                       for( auto& blendFn : blendFns)
+                                           top = blendFn( top, base);
+                                       pixel = top;
+                                   }
+                                   else
+                                   {
+                                       if( ALPHA( color) < 180)
+                                           pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                         d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                                       else
+                                           pixel = color;
+                                   }
+                               }
+                           }
+                       }
+                   }
+               }, part);
+           },
+           [&]( auto part) // SourceIn
+           {
+               models[ ENUM_CAST( MODEL_ENUM( SourceAtop))]( Bottom());
+           },
+           [&]( auto part) // SourceOver
+           {
+               auto *s_buffer = s_frame.buffer.get();
+               auto *d_buffer = d_frame.buffer.get();
+               for( int y = origin.y, j = 0; j < final_height; ++y, ++j)
+               {
+                   for( int x = origin.x, i = 0; i < final_width; ++x, ++i)
+                   {
+                       auto point = Vec2D<float>( x, y);
+                       auto s_coord = ( point - center).rotate( -c_rule.angle) + center - pos;
+                       if( intersects( corners, point))
+                       {
+                           int index = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                           if( index > 0 && index < s_frame_dimension)
+                           {
+                               if( c_rule.b_models.empty())
+                               {
+                                   if( ALPHA( s_buffer[ index]) < 180 && intersects( big_corners, point))
+                                   {
+                                       auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                                       out_buffer[ j * final_width + i] = RGBA( d_buffer[ d_index],
+                                                                                d_buffer[d_index + 1],
+                                                                                d_buffer[ d_index + 2],
+                                                                                d_buffer[ d_index + 3]);
+                                   }
+                                   else
+                                       out_buffer[ j * final_width + i] = s_buffer[ index];
+                               }
+                               else if( intersects( big_corners, point))
+                               {
+                                   auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                                   auto top  = s_buffer[ index],
+                                           base = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+                                                        d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
+                                   for( auto& blendFn : blendFns)
+                                       top = blendFn( top, base);
+                                   out_buffer[ j * final_width + i] = top;
+                               }
+                               else
+                                   out_buffer[ j * final_width + i] = s_buffer[ index];
+                           }
+                       }
+                       else if( intersects( big_corners, point))
+                       {
+                           auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                           out_buffer[ j * final_width + i] = RGBA( d_buffer[ d_index], d_buffer[d_index + 1],
+                                                                    d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
+                       }
+                   }
+               }
+           },
+           [&]( auto part) // SourceOut
+           {
+               models[ ENUM_CAST( MODEL_ENUM( DestinationAtop))]( Bottom());
+           },
+           [&]( auto part) // Xor
+           {
+                   models[ ENUM_CAST( MODEL_ENUM( DestinationOver))]( Top());
+               }
+       };
 //  applyEffect( d_frame, SpecialEffect::Grainy);
-  models[ ENUM_CAST( c_rule.c_model)]( Default());
+       models[ ENUM_CAST( c_rule.c_model)]( Default());
+       s_frame.buffer = std::move( frame_buffer.buffer);
+       s_frame.width  = frame_buffer.width;
+       s_frame.height = frame_buffer.height;
+       ++cur_layer;
+   }
 
+   if( s_frame.buffer == nullptr)
+       return;
   if( guide.interpolation[ 0] && guide.interpolation[ 1])
-      resize( image, guide.interpolation);
-#if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
-    ( guide.out_format == OutputFormat::JPEG ? writeJPEG : writePNG)( guide.src_filename, image, guide.image_quality);
-#elif defined( PNG_SUPPORTED)
-    writePNG( guide.src_filename, image, guide.image_quality);
-#else
-    writeJPEG( guide.src_filename, image, guide.image_quality);
-#endif
+      resize( s_frame, guide.interpolation);
 
+  std::clog << "Writing to file after: " << Timer::yield( GLOBAL_TIME_ID) << "s\n";
+#if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
+    ( guide.out_format == OutputFormat::JPEG ? writeJPEG : writePNG)( guide.src_filename, s_frame, guide.image_quality);
+#elif defined( PNG_SUPPORTED)
+    writePNG( guide.src_filename, frame_buffer, guide.image_quality);
+#else
+    writeJPEG( guide.src_filename, frame_buffer, guide.image_quality);
+#endif
+    std::clog << "Finished writing to file after: " << Timer::yield( GLOBAL_TIME_ID) << "s\n";
 }
 
 #endif
@@ -2925,7 +2942,7 @@ std::array<float, count> parseFloats( const char *&rule)
 std::vector<std::string> partition( std::string_view provision, std::string_view regexpr)
 {
    std::cmatch search_result;
-   std::regex  key( regexpr.data()); // Find a `,` and assert that the comma is followed by an alphabet.
+   std::regex  key( regexpr.data());
   std::cregex_iterator begin( provision.cbegin(), provision.cend(), key),
   					   end, prev;
   
@@ -4161,32 +4178,48 @@ std::deque<CompositionRule::BlendModel> selectBlendModels( std::string_view give
     return models;
 }
 
-CompositionRule parseCompositionRule( std::string_view rule)
+std::vector<CompositionRule> parseCompositionRule( std::string_view rule)
 {
-  std::cmatch match_results;
+  using namespace std::string_literals;
+  std::smatch match_results;
   //Match any of the following:
   //1. from 30deg, mode=source-over
   //2. from 30deg, at .5, 0.45, mode=source-over
   //3. mode=source-over or mode=lighter
   //4. blend=dissolve or blend
-  std::regex matcher( R"(^(?:from\s+([+-]?\d{1,3})deg(?:\s+at\s+)"
-					  R"(([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?),\s*([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))?,\s*)?)"
-                      R"(mode=([a-z]+(?:-[a-z]+)?)(?:,\s*blend=([a-z]+(?:-[a-z]+)?(?:\s*\|\s*[a-z]+(?:-[a-z]+)?)*))?$)",
-                      std::regex_constants::icase);
-  if( std::regex_match( rule.cbegin(), rule.cend(), match_results, matcher))
+  std::string_view base( R"((?:from\s+([+-]?\d{1,3})deg(?:\s+at\s+([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))"
+                         R"(,\s*([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))?,\s*)?\s*)"
+                         R"(layer=(.+?)\s*,\s*mode=([a-z]+(?:-[a-z]+)?))"
+                         R"((?:,\s*blend=([a-z]+(?:-[a-z]+)?(?:\s*\|\s*[a-z]+(?:-[a-z]+)?)*))?)");
+  auto parts = partition( rule, R"(;(?=\[))");
+  if( parts.empty())
+      parts.push_back( rule.data());
+  std::regex matcher( base.data(), std::regex_constants::icase);
+  std::vector<CompositionRule> c_rules;
+  for( auto& part : parts)
   {
-    auto x_origin = match_results[ 2].str(),
-         y_origin = match_results[ 3].str(),
-         angle    = match_results[ 1].str();
-	return {
-		.c_model = selectCompositionModel( match_results[ 4].str()),
-        .b_models = selectBlendModels( match_results[ 5].str()),
-		.position = Vec2D( x_origin.size() ? std::stof( x_origin, nullptr) : 0.f,
-						   y_origin.size() ? std::stof( y_origin, nullptr) : 0.f),
-		.angle = angle.size() ? std::stoi( angle, nullptr, 10) : 0
-	};
+      if( part.front() == '[')
+          part.erase( 0, 1);
+      if( part.back() == ']')
+          part.erase( part.size() - 1, 1);
+      if( std::regex_match( part.cbegin(), part.cend(), match_results, matcher))
+      {
+          auto x_origin = match_results[2].str(),
+               y_origin = match_results[3].str(),
+               angle    = match_results[1].str();
+          c_rules.push_back(
+          {
+              .c_model  = selectCompositionModel( match_results[ 5].str()),
+              .b_models  = selectBlendModels( match_results[ 6].str()),
+              .position = Vec2D( x_origin.size() ? std::stof( x_origin, nullptr) : 0.f,
+                                 y_origin.size() ? std::stof( y_origin, nullptr) : 0.f),
+              .angle    = angle.size() ? std::stoi( angle, nullptr, 10) : 0,
+              .image    = match_results[ 4].str()
+          });
+      }
   }
-  return {};
+
+  return c_rules;
 }
 
 void requestFontList()
@@ -5110,10 +5143,6 @@ int main( int ac, char *av[])
          || ( strlen( SHORT( COMPOSITION_RULE)) == count
          && FOUND_STRING( strncmp( directive, SHORT( COMPOSITION_RULE), count))))
 		  selection = &business_rules.composition_rule;
-        else if( ( strlen( COMPOSITION_IMAGE) == count && FOUND_STRING( strncmp( directive, COMPOSITION_IMAGE, count)))
-         || ( strlen( SHORT( COMPOSITION_IMAGE)) == count
-         && FOUND_STRING( strncmp( directive, SHORT( COMPOSITION_IMAGE), count))))
-            selection = &business_rules.dest_filename;
         else if( FOUND_STRING( strcmp( directive, AS_IMAGE)) || FOUND_STRING( strcmp( directive, SHORT( AS_IMAGE))))
             business_rules.as_image = true;
         else if( ( strlen( QUALITY_INDEX) == count && FOUND_STRING( strncmp( directive, QUALITY_INDEX, count)))
@@ -5296,7 +5325,6 @@ int main( int ac, char *av[])
             STRUCTURE_PREFIX( LIST_COMPOSITION_MODES),
             STRUCTURE_PREFIX( LIST_BLEND_MODES),
             STRUCTURE_PREFIX( COMPOSITION_RULE),
-            STRUCTURE_PREFIX( COMPOSITION_IMAGE),
             STRUCTURE_PREFIX( DPI),
             STRUCTURE_PREFIX( BACKGROUND_COLOR),
             STRUCTURE_PREFIX( LINE_HEIGHT),
@@ -5327,7 +5355,6 @@ int main( int ac, char *av[])
             MESSAGE( LIST_COMPOSITION_MODES),
             MESSAGE( LIST_BLEND_MODES),
             MESSAGE( COMPOSITION_RULE),
-            MESSAGE( COMPOSITION_IMAGE),
             MESSAGE( DPI),
             MESSAGE( BACKGROUND_COLOR),
             MESSAGE( LINE_HEIGHT),

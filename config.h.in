@@ -23,7 +23,6 @@
 #define LIST_COMPOSITION_MODES            "list-composition-modes"
 #define LIST_BLEND_MODES                  "list-blend-modes"
 #define COMPOSITION_RULE                  "composition-rule"
-#define COMPOSITION_IMAGE                 "composition-image"
 #define DPI                               "dpi"
 #define BACKGROUND_COLOR                  "background-color"
 #define LINE_HEIGHT                       "line-height"
@@ -52,7 +51,6 @@
 #define LIST_COMPOSITION_MODES_SHORT_FORM "cL"
 #define LIST_BLEND_MODES_SHORT_FORM       "bL"
 #define COMPOSITION_RULE_SHORT_FORM       "c"
-#define COMPOSITION_IMAGE_SHORT_FORM      "iC"
 #define DPI_SHORT_FORM                    "iR"
 #define BACKGROUND_COLOR_SHORT_FORM       "bG"
 #define LINE_HEIGHT_SHORT_FORM            "hL"
@@ -229,10 +227,6 @@
                                         "Set the order of stacking as source-over rotate the source image by 30deg.\n" \
                                         "See also: `"  OPTIONIFY( COMPOSITION_RULE) "`.\n"
 
-#define COMPOSITION_IMAGE_MESSAGE       "Set the image to be used for image composition.\n" \
-                                        "Usage:\n" \
-                                         OPTIONIFY( COMPOSITION_IMAGE) "=image.png\n"
-
 #define EASING_DIRECTION_MESSAGE        "Specify the direction for color to flow in linear gradient.\n" \
                                         "Allowed values are: `row` or `col`.\n" \
                                         "Usage:\n" \
@@ -275,7 +269,6 @@
                        ADD( LIST_COMPOSITION_MODES) \
                        ADD( LIST_BLEND_MODES      ) \
                        ADD( COMPOSITION_RULE      ) \
-                       ADD( COMPOSITION_IMAGE     ) \
                        ADD( DPI                   ) \
                        ADD( BACKGROUND_COLOR      ) \
                        ADD( LINE_HEIGHT           ) \

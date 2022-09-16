@@ -556,6 +556,7 @@ struct CompositionRule
   std::deque<BlendModel> b_models;
   Vec2D<float> position{};
   int 	   	   angle{};
+  std::string image;
 };
 
 CompositionRule::CompositionModel selectCompositionModel( std::string_view given);
@@ -564,7 +565,7 @@ std::deque<CompositionRule::BlendModel> selectBlendModels( std::string_view give
 
 std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel model);
 
-CompositionRule parseCompositionRule( std::string_view rule);
+std::vector<CompositionRule> parseCompositionRule( std::string_view rule);
 
 enum class OutputFormat
 {
