@@ -41,6 +41,7 @@
 #include "blend_defs.hpp"
 #include "geo_vector.hpp"
 #include "composition_defs.hpp"
+#include "timer.hpp"
 
 #define ALLOWANCE                      2
 #define MAX(x, y)                      ((x) ^ (((x) ^ (y)) & -((x) < (y))))
@@ -112,6 +113,8 @@
 
 #define STR_LIGHTER                    "lighter"
 #define STR_DARKER                     "darker"
+
+#define GLOBAL_TIME_ID                 0
 
 void spansCallback(int y, int count, const FT_Span *spans, void *user)
 {
@@ -349,7 +352,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
             max_ascent = (int)default_height;
         }
         max_row_box.y = max_ascent + max_descent + max_shadow_y + max_row_bounce;
-        row_details[ j].width = (int)max_row_box.x - max_shadow_y;
+        row_details[ j].width = (int)max_row_box.x + guide.pad.right + guide.pad.left - max_shadow_y;
         row_details[ j].max_shadow_y = max_shadow_y;
         if( max_row_box.y <= 0)
             continue;
@@ -359,6 +362,8 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
         row_details[ j].v_disp += box_size.y - row_line_height - max_shadow_y; // Offset at which each row should start
     }
 
+    std::clog << "Generated glyphs after: " << Timer::yield( GLOBAL_TIME_ID) << "s\n";
+
     box_size.x += guide.pad.left + guide.pad.right;
     box_size.y += guide.pad.top  + guide.pad.bottom;
     std::shared_ptr<uint32_t> pixel(( uint32_t *)malloc( sizeof( uint32_t) * box_size.x * box_size.y),
@@ -366,9 +371,14 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
     std::fill_n( pixel.get(), box_size.x * box_size.y, guide.background_color.cast());
     auto buffer = FrameBuffer<uint32_t>{ pixel, static_cast<int32_t>( box_size.x), static_cast<int32_t>( box_size.y)};
 
+    printf( "Started Shadow %lus\n", Timer::yield( GLOBAL_TIME_ID));
     drawShadow( rasters, row_details, buffer, guide);
+    printf( "Finished Shadow %lus\n", Timer::yield( GLOBAL_TIME_ID));
+    printf( "Started Text Placement %lus\n", Timer::yield( GLOBAL_TIME_ID));
     draw( rasters, row_details, buffer, guide);
+    printf( "Ended Text Placement %lus\n", Timer::yield( GLOBAL_TIME_ID));
 
+    std::clog << "Writing to file after: " << Timer::yield( GLOBAL_TIME_ID) << "s\n";
     PropertyManager<FILE *> destination( stdout, []( FILE *maybe_destructible)
     {
         if( maybe_destructible != stdout)
@@ -383,7 +393,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
     else
     {
         if( guide.interpolation[ 0] && guide.interpolation[ 1])
-            resize( buffer, guide);
+            resize( buffer, guide.interpolation);
         if( guide.as_image && guide.src_filename)
     #if defined( JPG_SUPPORTED) && defined( PNG_SUPPORTED)
             ( guide.out_format == OutputFormat::JPEG ? writeJPEG : writePNG)
@@ -409,9 +419,34 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
 #endif
 }
 
+std::vector<float> makeEmboss( int width)
+{
+    auto size = width * width;
+    auto mid = size / 2;
+    std::vector<float> emboss( size);
+    emboss[ 0] = 1.8;
+//    emboss[ 1] = 1.5;
+//    emboss[ 1 * width] = 1.5;
+//    emboss[ 1 * width + 1] = 1.5;
+//    emboss[ ( width - 2) * width + width - 2] = -1.1;
+//    emboss[ ( width - 2) * width + width - 1] = -1.1;
+//    emboss[ size - 2] = -1.1;
+    emboss[ size - 1] = -1.1;
+
+    for ( int j = 0; j < width; ++j)
+    {
+        for ( int i = 0; i < width; ++i)
+            printf( "%f ", emboss[ j * width + i]);
+        putchar( '\n');
+    }
+
+    return emboss;
+}
+
 std::vector<float> makeGaussian( float radius)
 {
-    constexpr auto size = 51 * 51;
+    constexpr auto width = 13;
+    constexpr auto size = width * width;
     constexpr auto mid = size / 2;
     std::vector<float> result( size);
     auto scale = static_cast<float>( 1.f / ( radius * std::sqrt( 2.f * M_PI)));
@@ -427,37 +462,6 @@ std::vector<float> makeGaussian( float radius)
 template <typename Tp, typename = std::enable_if_t<std::is_integral_v<Tp>>>
 void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = nullptr)
 {
-/*   const size_t bk_size =  9,
-	  			ek_size = 25;
-   float basic_kernels[ FilterMode::B_FILTER_SENTINEL][ bk_size] =
-   {
-   		[ FilterMode::SHARPEN]       = {  0, -1,  0,
-									     -1,  5, -1,
-									      0, -1,  0},
-		[ FilterMode::BOX_BLUR]		 = { 1/9., 1/9., 1/9.,
-								         1/9., 1/9., 1/9.,
-										 1/9., 1/9., 1/9.},
-   		[ FilterMode::GAUSSIAN_BLUR] = { 1/16., 2/16., 1/16.,
-									     2/16., 4/16., 2/16.,
-									     1/16., 2/16., 1/16.},
-   };
-
-   float extended_kernels[ FilterMode::E_FILTER_SENTINEL][ ek_size] =
-   {
-   		[ FilterMode::GAUSSIAN_BLUR_x5 - B_FILTER_SENTINEL - 1] = { 1/256., 4/256., 6/256., 4/256., 1/256.,
-																    4/256., 16/256., 24/256., 16/256., 4/256.,
-																    6/256., 24/256., 36/256., 24/256., 6/256.,
-																    4/256., 16/256., 24/256., 16/256., 4/256.,
-																    1/256., 4/256., 6/256., 4/256., 1/256.}
-   };
-
-  if( filter >= FilterMode::E_FILTER_SENTINEL)
-	return;
-
-  const auto k_width = filter < FilterMode::B_FILTER_SENTINEL ? 3 : 5;
-  const auto k_size = k_width > 3 ? ek_size : bk_size;
-  auto kernel = filter < FilterMode::B_FILTER_SENTINEL ? basic_kernels[ filter]
-													   : extended_kernels[ filter - FilterMode::B_FILTER_SENTINEL - 1];*/
     if( ENUM_CAST( effect) < ENUM_CAST( SpecialEffect::RequiresKernelSentinel))
     {
         auto kernel = *( const std::vector<float> *)extras;
@@ -469,7 +473,7 @@ void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = n
             mid     = k_width / 2;
         std::shared_ptr<Tp> dest(( Tp *)calloc( width * height  * n_channel, sizeof( Tp)), []( auto *p){ free( p);});
         auto buffer   = frame.buffer.get(),
-                d_buffer = dest.get();
+             d_buffer = dest.get();
         for( int j = 0; j < height; ++j)
         {
             for( int i = 0; i < width; ++i)
@@ -477,8 +481,8 @@ void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = n
                 double red{}, green{}, blue{}, alpha{};
                 for( int k = 0; k < k_size; ++k)
                 {
-                    int row = k / k_width - mid + j,
-                        col = k % k_width - mid + i;
+                    int row = ( k_width - k / k_width + 1) - mid + j,
+                        col = ( k_width - k % k_width - 1) - mid + i;
                     if( row >= 0 && row < height && col >= 0 && col < width)
                     {
                         size_t index = row * width * n_channel + col * n_channel;
@@ -499,15 +503,19 @@ void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = n
                         }
                     }
                 }
+                red = clamp( red, 0, RGB_SCALE);
+                green = clamp( green, 0, RGB_SCALE);
+                blue = clamp( blue, 0, RGB_SCALE);
+                alpha = clamp( alpha, 0, RGB_SCALE);
                 if constexpr ( sizeof( Tp) == 4)
-                    d_buffer[ j * width + i] =  RGBA( red, green, blue, alpha);
+                    d_buffer[ j * width + i] =  RGBA( red, green, blue, ALPHA( buffer[ j * width + i]));
                 else
                 {
                     auto index = j * width * n_channel + i * n_channel;
                     d_buffer[ index]    = red;
                     d_buffer[ index + 1] = green;
                     d_buffer[ index + 2] = blue;
-                    d_buffer[ index + 3] = alpha;
+                    d_buffer[ index + 3] = ALPHA( buffer[ index + 3]);
                 }
             }
         }
@@ -567,6 +575,7 @@ void drawShadow( const MonoGlyphs &rasters, RowDetails &row_details,
     for( auto& raster : rasters)
     {
         auto& [ main, outline] = raster.spans;
+        std::clog << "RasterIDX: " << raster.level << ", n_points: " << outline.size() <<'\n';
         auto& rect  = raster.bbox;
         int width   = raster.is_graph ? raster.bbox.width()  : raster.advance.x,
             height  = raster.is_graph ? raster.bbox.height() : raster.advance.y;
@@ -613,7 +622,7 @@ void drawShadow( const MonoGlyphs &rasters, RowDetails &row_details,
     for( auto& raster : rasters)
         memset( &row_details[ raster.level].pen, 0, sizeof( FT_Vector));
 
-//    auto kernel = makeGaussian( 500);
+//    auto kernel = makeGaussian( 8);
 //    applyEffect( frame, SpecialEffect::GaussianBlur, &kernel);
 }
 
@@ -1504,15 +1513,17 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
     return selector[ ENUM_CAST( model)];
 }
 
-void resize( FrameBuffer<uint32_t> &frame, ApplicationHyperparameters &guide)
+template <typename Tp>
+void resize( FrameBuffer<Tp> &frame, int *interpolation)
 {
     std::array<int, 2> neighbours = { 9, 16};
 
-    auto new_width  = guide.interpolation[ 0],
-         new_height = guide.interpolation[ 1],
+    auto n_channel = std::max( frame.n_channel, 1);
+    auto new_width  = interpolation[ 0],
+         new_height = interpolation[ 1],
          o_width    = frame.width,
          o_height   = frame.height,
-         o_size     = frame.width * frame.height;
+         o_size     = frame.width * frame.height * n_channel;
 
     auto adjust = [ &]( auto& side, auto other, bool is_width = true)
     {
@@ -1528,11 +1539,11 @@ void resize( FrameBuffer<uint32_t> &frame, ApplicationHyperparameters &guide)
     auto w_scale = static_cast<float>( o_width) / static_cast<float>( new_width),
          h_scale = static_cast<float>( o_height) / static_cast<float>( new_height);
 
-    auto n_neighbour = static_cast<float>( neighbours[ guide.interpolation[ 2]]);
+    auto n_neighbour = static_cast<float>( neighbours[ interpolation[ 2]]);
     auto n_size  = static_cast<int>( n_neighbour),
          n_width = static_cast<int>( std::sqrt( n_size)),
          mid      = n_width / 2;
-    std::shared_ptr<uint32_t> dest(( uint32_t *)malloc( new_width * new_height * sizeof( uint32_t)),
+    std::shared_ptr<Tp> dest(( Tp *)calloc( new_width * new_height * n_channel, sizeof( Tp)),
                                    []( auto *p){ free( p);});
     auto s_buffer = frame.buffer.get();
     auto d_buffer = dest.get();
@@ -1547,20 +1558,41 @@ void resize( FrameBuffer<uint32_t> &frame, ApplicationHyperparameters &guide)
                     col = k % n_width - mid + i,
                     a_row = static_cast<int>( row * h_scale),
                     a_col = static_cast<int>( col * w_scale);
-                auto index = a_row * o_width + a_col;
+                auto index = a_row * o_width * n_channel + a_col * n_channel;
                 if( a_row >= 0 && a_col >= 0 && index >= 0 && index < o_size)
                 {
                     auto color = s_buffer[ index];
-                    red += RED( color);
-                    green += GREEN( color);
-                    blue += BLUE( color);
-                    alpha += ALPHA( color);
+                    if constexpr ( sizeof( Tp) == 4)
+                    {
+                        red += RED( color);
+                        green += GREEN( color);
+                        blue += BLUE( color);
+                        alpha += ALPHA( color);
+                    }
+                    else
+                    {
+                        red += s_buffer[ index];
+                        green += s_buffer[ index + 1];
+                        blue += s_buffer[ index + 2];
+                        alpha += s_buffer[ index + 3];
+                    }
                 }
             }
-            d_buffer[ j * new_width + i] = RGBA(( red / n_neighbour),
-                                                 ( green / n_neighbour),
-                                                 ( blue / n_neighbour),
-                                                 ( alpha / n_neighbour));
+            if constexpr ( sizeof( Tp) == 4)
+            {
+                d_buffer[ j * new_width * n_channel + i * n_channel] = RGBA(( red / n_neighbour),
+                                                                            ( green / n_neighbour),
+                                                                            ( blue / n_neighbour),
+                                                                            ( alpha / n_neighbour));
+            }
+            else
+            {
+                auto base_index = j * new_width * n_channel + i * n_channel;
+                d_buffer[ base_index]     = red / n_neighbour;
+                d_buffer[ base_index + 1] = green / n_neighbour;
+                d_buffer[ base_index + 2] = blue / n_neighbour;
+                d_buffer[ base_index + 3] = alpha / n_neighbour;
+            }
         }
     }
     frame.width  = new_width;
@@ -1586,7 +1618,16 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 
    if( d_frame.buffer == nullptr)
      return;
-   
+
+   auto emboss = makeEmboss( 9);
+   auto gaussian = makeGaussian( 30);
+
+   int interpolation[ 3] = { s_frame.width >= s_frame.height ? s_frame.width : -1,
+                             s_frame.height >= s_frame.width ? s_frame.height : -1, 0};
+   resize( d_frame, interpolation);
+//   applyEffect( s_frame, SpecialEffect::Emboss, &emboss);
+//   applyEffect( s_frame, SpecialEffect::GaussianBlur, &gaussian);
+
    int32_t dwidth  = d_frame.width,
    		   dheight = d_frame.height;
    auto swidth     = s_frame.width,
@@ -2026,7 +2067,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
   models[ ENUM_CAST( c_rule.c_model)]( Default());
 
   if( guide.interpolation[ 0] && guide.interpolation[ 1])
-      resize( image, guide);
+      resize( image, guide.interpolation);
 #if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
     ( guide.out_format == OutputFormat::JPEG ? writeJPEG : writePNG)( guide.src_filename, image, guide.image_quality);
 #elif defined( PNG_SUPPORTED)
@@ -3107,15 +3148,13 @@ void setColor( const char *& rule, BKNode *bkroot, PropertyProxy<uint64_t> &colo
     }
     if( ltrim( rule) && effect != 0)
     {
-        float factor = 0.5;
+        auto factor = 2.f;
         if( *rule == ',' && ltrim( ++rule))
-            factor = parseFloats<1>( rule)[ 0];
-        int sign = factor < 0 ? -1 : +1;
+            factor = static_cast<int>( parseFloats<1>( rule)[ 0]);
         // Make sure annotation of `Lighter` are values below 1 and those annotated `Darker` are values above 1.
-        factor = (( effect == -1 && int( std::abs( factor)) == 0) || ( effect == 1 && int( std::abs( factor)) != 0)) ?
-                 ( float)(( effect == -1) * 1.5 + ( effect == 1) * .5) : factor;
-        color = MAKE_QWORD( tintColor( HIGH_DWORD( color), std::abs( factor), sign == 1),
-                            tintColor( LOW_DWORD( color), std::abs( factor),  sign == 1));
+        factor = effect == -1 ? factor : 1.f / factor;
+        color = MAKE_QWORD( tintColor( HIGH_DWORD( color), std::abs( factor)),
+                            tintColor( LOW_DWORD( color), std::abs( factor)));
         if( *rule != ')')
         {
             fprintf( stderr, "Expected `)` to match %s", prev);
@@ -3693,14 +3732,13 @@ void testColor( const char *rule, BKNode *bkroot)
     }
 }
 
-uint32_t tintColor( uint32_t color, float factor, bool include_alpha)
+uint32_t tintColor( uint32_t color, float factor)
 {
     uint8_t red   = clamp( RED( color) * factor, 0, RGB_SCALE),
             green = clamp( GREEN( color) * factor, 0, RGB_SCALE),
-            blue  = clamp( BLUE( color) * factor, 0, RGB_SCALE),
-            alpha = include_alpha ? clamp( ALPHA( color) * factor, 0, RGB_SCALE) : ALPHA( color);
+            blue  = clamp( BLUE( color) * factor, 0, RGB_SCALE);
 
-    return RGBA( red, green, blue, alpha);
+    return RGBA( red, green, blue, ALPHA( color));
 }
 
 uint32_t editDistance( std::string_view main, std::string_view ref)
@@ -4453,6 +4491,7 @@ std::pair<int64_t, std::unique_ptr<uint8_t, DeleterType>> useInstalledFont( std:
 
 int main( int ac, char *av[])
 {
+   Timer::start();
    ApplicationHyperparameters business_rules;
    
   auto& kdroot = business_rules.kdroot;

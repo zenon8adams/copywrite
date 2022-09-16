@@ -458,7 +458,7 @@ std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot);
 
 void testColor( const char *rule, BKNode *bkroot);
 
-uint32_t tintColor( uint32_t color, float factor = 0, bool include_alpha = true);
+uint32_t tintColor( uint32_t color, float factor);
 
 uint64_t extractColor(const char *&rule, BKNode *bkroot);
 
@@ -595,7 +595,7 @@ struct ApplicationHyperparameters
   bool 					  as_image{ false};
   bool                    ease_col{ false};
   bool                    shadow_present{ false};
-  int                     interpolation[ 3]{};
+  int                     interpolation[ 3]{};  //[0] - width, [1] - height, [2] -> { 0 - bilinear, 1 - bicubic}
   int                     image_quality{ 100},
                           dpi{ 120};
   Padding                 pad{};
@@ -614,6 +614,7 @@ enum class SpecialEffect
 {
     Sharpen,
     BoxBlur,
+    Emboss,
     GaussianBlur,
     RequiresKernelSentinel,
     GrayScale,
@@ -625,7 +626,8 @@ bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test);
 
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
 
-void resize( FrameBuffer<uint32_t> &buffer, ApplicationHyperparameters &guide);
+template <typename Tp>
+void resize( FrameBuffer<Tp> &frame, int *interpolation);
 
 void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame);
 
