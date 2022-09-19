@@ -101,7 +101,7 @@ if(EXISTS "${FREETYPE_INCLUDE_PATH}/freetype2")
 endif()
 
 add_executable( ${PROJECT_NAME} copywrite.cpp copywrite.hpp colors_defs.hpp easing_defs.hpp
-                                geo_vector.cpp geo_vector.hpp composition_defs.hpp blend_defs.hpp timer.hpp)
+                                geo_vector.cpp geo_vector.hpp composition_defs.hpp blend_defs.hpp timer.hpp special_effects.hpp)
 
 if(CUSTOM_FONT_SUPPORTED)
     find_library(ZIP_LIB_PATH NAMES zip libzip)

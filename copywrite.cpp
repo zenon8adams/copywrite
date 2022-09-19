@@ -37,9 +37,11 @@
 #include <string>
 #include <iomanip>
 #include <numeric>
+#include <random>
 #include "colors_defs.hpp"
 #include "easing_defs.hpp"
 #include "blend_defs.hpp"
+#include "special_effects.hpp"
 #include "geo_vector.hpp"
 #include "composition_defs.hpp"
 #include "timer.hpp"
@@ -424,8 +426,8 @@ std::vector<float> makeEmboss( int width)
     auto size = width * width;
     auto mid = size / 2;
     std::vector<float> emboss( size);
-    emboss[ 0] = 1.5;
-    emboss[ size - 1] = -1.7;
+    emboss[ 0] = 1.7;
+    emboss[ size - 1] = -1.5;
 
     for ( int j = 0; j < width; ++j)
     {
@@ -451,6 +453,25 @@ std::vector<float> makeGaussian( float radius)
         sum += result[ i];
     }
     return result;
+}
+
+float gaussianNoise()
+{
+    static auto rd = std::mt19937_64( std::random_device()());
+    static std::uniform_real_distribution<float> dist( 0, 1);
+
+    float s, u_one, u_two, v_one, v_two;
+    do
+    {
+        u_one = dist( rd);
+        u_two = dist( rd);
+        v_one = 2 * u_one - 1;
+        v_two = 2 * u_two - 1;
+        s     = v_one * v_one + v_two * v_two;
+    }
+    while( s >= 1);
+
+    return std::sqrt( -2 * std::log( s) / s) * v_one * 7;
 }
 
 template <typename Tp, typename = std::enable_if_t<std::is_integral_v<Tp>>>
@@ -520,14 +541,19 @@ void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = n
         auto buffer = frame.buffer.get();
         auto size = frame.width * frame.height;
         constexpr auto color_change_freq = 8;
+        int grainy_increment = extras == nullptr ? 1 : std::sqrt( std::max( 1, *( int *)extras));
         for( size_t i = 0; i < size; ++i)
         {
             if constexpr( sizeof( Tp) == 4)
             {
-                if( effect == SpecialEffect::Grainy && rand() % 4 == 0)
+                if( effect == SpecialEffect::Grainy)
                 {
-                    buffer[ i] = rand() % color_change_freq == 0 ? RGBA( 0x9a, 0x9a, 0x90, ALPHA( buffer[ i]))
-                                                                 : RGBA( 0xa9, 0xa9, 0x90, ALPHA( buffer[ i]));
+                    auto& pixel = buffer[ i];
+                    auto noise_value = gaussianNoise() * grainy_increment;
+                    auto red   = clamp( RED( pixel) + noise_value, 0, RGB_SCALE),
+                         green = clamp( GREEN( pixel) + noise_value, 0, RGB_SCALE),
+                         blue  = clamp( BLUE( pixel) + noise_value, 0, RGB_SCALE);
+                    pixel = RGBA( red, green, blue, ALPHA( pixel));
                 }
                 else if( effect == SpecialEffect::GrayScale)
                 {
@@ -1139,10 +1165,10 @@ uint32_t rgbaToHsla( uint32_t rgba)
          delta = ( uint8_t)( c_max - c_min);
 
     float hue {}, lum = ( float)( c_max + c_min) / ( 2 * RGB_SCALE),
-                  sat = delta == 0 ? 0 : delta / (( 1 - std::abs( 2 * lum - 1)) * RGB_SCALE);
+                  sat = delta == 0 ? 0 : ( float)delta / (( 1 - std::abs( 2 * lum - 1)) * RGB_SCALE);
     if( c_max == red)
     {
-        auto segment = ( float)( green - blue) / delta,
+        auto segment = ( float)( green - blue) / ( float)delta,
              shift   = 0.0f;
              if( segment < 0)
                  shift = 360.f / 60.f;
@@ -1150,13 +1176,13 @@ uint32_t rgbaToHsla( uint32_t rgba)
     }
     else if( c_max == green)
     {
-        auto segment = ( float)( blue - red) / delta,
+        auto segment = ( float)( blue - red) / ( float)delta,
              shift = 120.f / 60.f;
         hue = segment + shift;
     }
     else if( c_max == blue)
     {
-        auto segment = ( float)( red - green) / delta,
+        auto segment = ( float)( red - green) / ( float)delta,
              shift = 240.f / 60.f;
         hue = segment + shift;
     }
@@ -1186,12 +1212,12 @@ uint32_t hslaToRgba( uint32_t hsla)
           s = SAT( hsla) / 100.f,
           l = LUMIN( hsla) / 100.f;
     if( ZERO( s))
-        return RGBA( l * RGB_SCALE, l * RGB_SCALE, l * RGB_SCALE, ALPHA( hsla));
+        return RGBA(( l * RGB_SCALE), ( l * RGB_SCALE), ( l * RGB_SCALE), ALPHA( hsla));
 
     float q = l < .5f ? l * ( 1 + s) : l + s - l * s;
     float p =  2 * l - q;
-    return RGBA( hueToSpace( p, q, h + 1./3) * RGB_SCALE, hueToSpace( p, q, h) * RGB_SCALE,
-                 hueToSpace( p, q, h - 1./3) * RGB_SCALE, ALPHA( hsla));
+    return RGBA(( hueToSpace( p, q, h + 1./3) * RGB_SCALE), ( hueToSpace( p, q, h) * RGB_SCALE),
+                ( hueToSpace( p, q, h - 1./3) * RGB_SCALE), ALPHA( hsla));
 }
 
 std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel model)
@@ -1597,8 +1623,8 @@ void resize( FrameBuffer<Tp> &frame, int *interpolation)
 
 void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame)
 {
-    auto emboss = makeEmboss( 17);
-    applyEffect( s_frame, SpecialEffect::Emboss, &emboss);
+//    auto emboss = makeEmboss( 17);
+//    applyEffect( s_frame, SpecialEffect::Emboss, &emboss);
    auto c_rules = parseCompositionRule( guide.composition_rule);
    auto frame_buffer = FrameBuffer<uint32_t>();
    auto cur_layer = 1;
@@ -1708,8 +1734,8 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
            final_height = dheight;
        }
 
-       frame_buffer.buffer = std::shared_ptr<uint32_t>(( uint32_t *)calloc( final_width * final_height, sizeof( uint32_t)),
-                                                       []( auto *p) { free( p);});
+       frame_buffer.buffer = std::shared_ptr<uint32_t>(( uint32_t *)calloc( final_width * final_height,
+                                                       sizeof( uint32_t)), []( auto *p) { free( p);});
        auto out_buffer   = frame_buffer.buffer.get();
        frame_buffer.width = final_width,
        frame_buffer.height = final_height;
@@ -1813,7 +1839,6 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
                                        for( auto& blendFn : blendFns)
                                            top = blendFn( top, base);
                                    }
-
                                    out_buffer[ j * final_width + i] = top;
                                }
                            }
@@ -2077,6 +2102,43 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
        s_frame.width  = frame_buffer.width;
        s_frame.height = frame_buffer.height;
        ++cur_layer;
+
+       for( auto& effect : c_rule.s_effects)
+       {
+           switch ( effect.first)
+           {
+               case SpecialEffect::Blur:
+               {
+                   auto kernel = makeGaussian( std::max<float>( effect.second, 10));
+                   applyEffect( s_frame, SpecialEffect::Blur, &kernel);
+                   break;
+               }
+               case SpecialEffect::Sharpen:
+               {
+                   break;
+               }
+               case SpecialEffect::Emboss:
+               {
+                   auto emboss = makeEmboss( 10);
+                   applyEffect( s_frame, SpecialEffect::Emboss, &emboss);
+                   break;
+               }
+               case SpecialEffect::RequiresKernelSentinel:
+                   break;
+               case SpecialEffect::GrayScale:
+                   applyEffect( s_frame, SpecialEffect::GrayScale);
+                   break;
+               case SpecialEffect::Grainy:
+//                   for( int i = 1, end = std::max<int>( 1, effect.second); i <= end; ++i)
+                   applyEffect( s_frame, SpecialEffect::Grainy, &effect.second);
+                   break;
+               case SpecialEffect::Twirl:
+                   break;
+           }
+       }
+
+       if( c_rule.interpolation[ 0] && c_rule.interpolation[ 1])
+           resize( s_frame, c_rule.interpolation);
    }
 
    if( s_frame.buffer == nullptr)
@@ -2084,6 +2146,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
   if( guide.interpolation[ 0] && guide.interpolation[ 1])
       resize( s_frame, guide.interpolation);
 
+//    applyEffect( s_frame, SpecialEffect::Grainy);
   std::clog << "Writing to file after: " << Timer::yield( GLOBAL_TIME_ID) << "s\n";
 #if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
     ( guide.out_format == OutputFormat::JPEG ? writeJPEG : writePNG)( guide.src_filename, s_frame, guide.image_quality);
@@ -4178,6 +4241,48 @@ std::deque<CompositionRule::BlendModel> selectBlendModels( std::string_view give
     return models;
 }
 
+std::deque<std::pair<SpecialEffect, int>> extractEffects( std::string_view given)
+{
+    if( given.empty())
+        return {};
+    auto parts = partition( given, R"(\s*\|\s*)");
+    if( parts.empty())
+        parts.emplace_back( given.data());
+    static const std::unordered_map<std::string_view, SpecialEffect> possibilities
+    {
+        { SE_BLUR,      SpecialEffect::Blur},
+        { SE_SHARPEN,   SpecialEffect::Sharpen},
+        { SE_EMBOSS,    SpecialEffect::Emboss},
+        { SE_GRAYSCALE, SpecialEffect::GrayScale},
+        { SE_GRAINY,    SpecialEffect::Grainy},
+        { SE_TWIRL,     SpecialEffect::Twirl}
+    };
+
+    std::deque<std::pair<SpecialEffect, int>> effects;
+    std::smatch sm;
+    std::regex key( R"(\(([a-z]+),\s*(\d+)\))", std::regex_constants::icase);
+    for( auto& part : parts)
+    {
+        std::transform( part.cbegin(), part.cend(), part.begin(), tolower);
+        std::string effect_name;
+        SpecialEffect effect;
+        auto weight = 0;
+        if( std::regex_match( part.cbegin(), part.cend(), sm, key))
+        {
+            effect_name = sm[ 1].str();
+            weight = std::stoi( sm[ 2].str());
+        }
+
+        auto pos = possibilities.find( effect_name.empty() ? part : effect_name);
+        if( pos == possibilities.cend())
+            continue;
+
+        effects.emplace_front( pos->second, weight);
+    }
+
+    return effects;
+}
+
 std::vector<CompositionRule> parseCompositionRule( std::string_view rule)
 {
   using namespace std::string_literals;
@@ -4187,10 +4292,12 @@ std::vector<CompositionRule> parseCompositionRule( std::string_view rule)
   //2. from 30deg, at .5, 0.45, mode=source-over
   //3. mode=source-over or mode=lighter
   //4. blend=dissolve or blend
-  std::string_view base( R"((?:from\s+([+-]?\d{1,3})deg(?:\s+at\s+([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))"
+  std::string_view base( R"((?:\s*from\s+([+-]?\d{1,3})deg(?:\s+at\s+([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))"
                          R"(,\s*([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))?,\s*)?\s*)"
                          R"(layer=(.+?)\s*,\s*mode=([a-z]+(?:-[a-z]+)?))"
-                         R"((?:,\s*blend=([a-z]+(?:-[a-z]+)?(?:\s*\|\s*[a-z]+(?:-[a-z]+)?)*))?)");
+                         R"((?:,\s*blend=([a-z]+(?:-[a-z]+)?(?:\s*\|\s*[a-z]+(?:-[a-z]+)?)*))?)"
+                         R"((?:,\s*effect=((?:[a-z]+|\(.+?\))(?:\s*\|\s*(?:[a-z]+|\(.+?\)))*))?)"
+                         R"((?:,\s*size=(.+?))?)");
   auto parts = partition( rule, R"(;(?=\[))");
   if( parts.empty())
       parts.push_back( rule.data());
@@ -4209,17 +4316,49 @@ std::vector<CompositionRule> parseCompositionRule( std::string_view rule)
                angle    = match_results[1].str();
           c_rules.push_back(
           {
-              .c_model  = selectCompositionModel( match_results[ 5].str()),
+              .c_model   = selectCompositionModel( match_results[ 5].str()),
               .b_models  = selectBlendModels( match_results[ 6].str()),
-              .position = Vec2D( x_origin.size() ? std::stof( x_origin, nullptr) : 0.f,
+              .position  = Vec2D( x_origin.size() ? std::stof( x_origin, nullptr) : 0.f,
                                  y_origin.size() ? std::stof( y_origin, nullptr) : 0.f),
-              .angle    = angle.size() ? std::stoi( angle, nullptr, 10) : 0,
-              .image    = match_results[ 4].str()
+              .angle     = angle.size() ? std::stoi( angle, nullptr, 10) : 0,
+              .image     = match_results[ 4].str(),
+              .s_effects = extractEffects( match_results[ 7].str())
           });
+          parseFinalSize( match_results[ 8].str().data(), c_rules.back().interpolation);
       }
   }
 
   return c_rules;
+}
+
+void parseFinalSize( std::string_view rule, int *interpolation)
+{
+    std::cmatch cm;
+    std::regex key( R"(\s*(?:(\d+)(w|h)|(\d+)\s*[x]\s*(\d+))\s*(bi(?:-)?linear|bi(?:-)?cubic)?\s*)",
+                    std::regex_constants::icase);
+    if( std::regex_search( rule.cbegin(), rule.cend(), cm, key))
+    {
+        constexpr auto size  = 1,
+                side  = size + 1,
+                width  = side + 1,
+                height = width + 1,
+                interp = height + 1;
+        constexpr const char *cubic = "cubic";
+        auto auto_scale = cm[ size].matched;
+        if( cm[ width].matched || auto_scale)
+        {
+            auto selection = std::tolower( cm[ side].str()[ 0]);
+            interpolation[ size - 1]  = auto_scale ? selection == 'h' ? -1 :
+                                        std::stoi( cm[ size].str()) : std::stoi( cm[ width].str());
+            interpolation[ side - 1] = auto_scale ? selection == 'w' ? -1 :
+                                       std::stoi( cm[ size].str()) : std::stoi( cm[ height].str());
+            if( cm[ interp].matched)
+            {
+                auto s_rep = cm[ interp].str();
+                interpolation[ side] = FOUND_STRING( strcasestr( s_rep.data(), cubic));
+            }
+        }
+    }
 }
 
 void requestFontList()
@@ -5256,34 +5395,7 @@ int main( int ac, char *av[])
         business_rules.image_quality = strtol( image_quality, nullptr, 10);
 
     if( ACCESSIBLE( final_size))
-    {
-        std::cmatch cm;
-        std::regex key( R"(^\s*(?:(\d+)(w|h)|(\d+)\s*[x]\s*(\d+))\s*(bi(?:-)?linear|bi(?:-)?cubic)?\s*$)",
-                        std::regex_constants::icase);
-        if( std::regex_match( final_size, cm, key))
-        {
-            constexpr auto size  = 1,
-                           side  = size + 1,
-                           width  = side + 1,
-                           height = width + 1,
-                           interp = height + 1;
-            constexpr const char *cubic = "cubic";
-            auto auto_scale = cm[ size].matched;
-            if( cm[ width].matched || auto_scale)
-            {
-                auto selection = std::tolower( cm[ side].str()[ 0]);
-                business_rules.interpolation[ size - 1]  = auto_scale ? selection == 'h' ? -1 :
-                                                            std::stoi( cm[ size].str()) : std::stoi( cm[ width].str());
-                business_rules.interpolation[ side - 1] = auto_scale ? selection == 'w' ? -1 :
-                                                            std::stoi( cm[ size].str()) : std::stoi( cm[ height].str());
-                if( cm[ interp].matched)
-                {
-                    auto s_rep = cm[ interp].str();
-                    business_rules.interpolation[ side] = FOUND_STRING( strcasestr( s_rep.data(), cubic));
-                }
-            }
-        }
-    }
+        parseFinalSize( final_size, business_rules.interpolation);
 #endif
     if( ACCESSIBLE(  background_color))
         business_rules.background_color = extractColor( background_color, business_rules.bkroot.get());

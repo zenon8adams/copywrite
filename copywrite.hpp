@@ -505,6 +505,8 @@ std::unordered_map<std::string_view, uint32_t>& colorCodeLookup();
 
 std::string_view getColorNameAt( size_t pos);
 
+enum class SpecialEffect;
+
 struct CompositionRule
 {
   enum class CompositionModel
@@ -557,15 +559,21 @@ struct CompositionRule
   Vec2D<float> position{};
   int 	   	   angle{};
   std::string image;
+  std::deque<std::pair<SpecialEffect, int>> s_effects;
+  int         interpolation[ 3]{};
 };
 
 CompositionRule::CompositionModel selectCompositionModel( std::string_view given);
 
 std::deque<CompositionRule::BlendModel> selectBlendModels( std::string_view given);
 
+std::deque<std::pair<SpecialEffect, int>> extractEffects( std::string_view given);
+
 std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel model);
 
 std::vector<CompositionRule> parseCompositionRule( std::string_view rule);
+
+void parseFinalSize( std::string_view rule, int *interpolation);
 
 enum class OutputFormat
 {
@@ -613,10 +621,9 @@ void draw( const MonoGlyphs &rasters, RowDetails& row_details,
 
 enum class SpecialEffect
 {
+    Blur,
     Sharpen,
-    BoxBlur,
     Emboss,
-    GaussianBlur,
     RequiresKernelSentinel,
     GrayScale,
     Grainy,
