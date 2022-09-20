@@ -42,6 +42,7 @@
 #include "easing_defs.hpp"
 #include "blend_defs.hpp"
 #include "special_effects.hpp"
+#include "snap_defs.hpp"
 #include "geo_vector.hpp"
 #include "composition_defs.hpp"
 #include "timer.hpp"
@@ -1645,22 +1646,43 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
        if( d_frame.buffer == nullptr)
            continue;
 
-//   auto emboss = makeEmboss( 17);
-//   auto gaussian = makeGaussian( 30);
-//   int interpolation[ 3] = { s_frame.width >= s_frame.height ? s_frame.width : -1,
-//                             s_frame.height >= s_frame.width ? s_frame.height : -1, 0};
-//   resize( d_frame, interpolation);
-//   applyEffect( s_frame, SpecialEffect::Emboss, &emboss);
-//   applyEffect( s_frame, SpecialEffect::GaussianBlur, &gaussian);
-
        int32_t dwidth  = d_frame.width,
                dheight = d_frame.height;
        auto swidth     = s_frame.width,
             sheight    = s_frame.height;
 
-       auto pos    = Vec2D<float>( c_rule.position.x * ( dwidth - 1)  + ( 1 - c_rule.position.x) * - swidth  + 1,
-                                   c_rule.position.y * ( dheight - 1) + ( 1 - c_rule.position.y) * - sheight + 1),
-            center = Vec2D<float>( pos.x + swidth / 2.f, pos.y + sheight / 2.f);
+       auto position = c_rule.position;
+       bool needs_adjustment = false;
+       if( position.x == INFINITY)
+       {
+           position = { 0, 0};
+           if( c_rule.snap.x != INFINITY)
+           {
+               position = c_rule.snap;
+               needs_adjustment = true;
+           }
+       }
+
+       auto pos    = Vec2D<float>( position.x * ( dwidth - 1)  + ( 1 - position.x) * - swidth  + 1,
+                                   position.y * ( dheight - 1) + ( 1 - position.y) * - sheight + 1);
+       if( needs_adjustment)
+       {
+           if( !EQUAL( position.x, .5))
+           {
+               if( position.x > .5)
+                   pos.x -= swidth;
+               else
+                   pos.x += swidth;
+           }
+           if( !EQUAL( position.y, .5))
+           {
+               if( position.y > .5)
+                   pos.y -= sheight;
+               else
+                   pos.y += sheight;
+           }
+       }
+       auto center = Vec2D<float>( pos.x + swidth / 2.f, pos.y + sheight / 2.f);
 
        // Defines the rotated corners of the given image.
        std::array<Vec2D<float>, 4> corners = {
@@ -4294,6 +4316,7 @@ std::vector<CompositionRule> parseCompositionRule( std::string_view rule)
   //4. blend=dissolve or blend
   std::string_view base( R"((?:\s*from\s+([+-]?\d{1,3})deg(?:\s+at\s+([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))"
                          R"(,\s*([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))?,\s*)?\s*)"
+                         R"((?:snap=([a-z]+(?:-[a-z]+)?),\s*)?)"
                          R"(layer=(.+?)\s*,\s*mode=([a-z]+(?:-[a-z]+)?))"
                          R"((?:,\s*blend=([a-z]+(?:-[a-z]+)?(?:\s*\|\s*[a-z]+(?:-[a-z]+)?)*))?)"
                          R"((?:,\s*effect=((?:[a-z]+|\(.+?\))(?:\s*\|\s*(?:[a-z]+|\(.+?\)))*))?)"
@@ -4311,24 +4334,53 @@ std::vector<CompositionRule> parseCompositionRule( std::string_view rule)
           part.erase( part.size() - 1, 1);
       if( std::regex_match( part.cbegin(), part.cend(), match_results, matcher))
       {
-          auto x_origin = match_results[2].str(),
-               y_origin = match_results[3].str(),
-               angle    = match_results[1].str();
+          auto x_origin = match_results[ 2].str(),
+               y_origin = match_results[ 3].str(),
+               angle    = match_results[ 1].str();
           c_rules.push_back(
           {
-              .c_model   = selectCompositionModel( match_results[ 5].str()),
-              .b_models  = selectBlendModels( match_results[ 6].str()),
-              .position  = Vec2D( x_origin.size() ? std::stof( x_origin, nullptr) : 0.f,
-                                 y_origin.size() ? std::stof( y_origin, nullptr) : 0.f),
+              .c_model   = selectCompositionModel( match_results[ 6].str()),
+              .b_models  = selectBlendModels( match_results[ 7].str()),
+              .position  = Vec2D( x_origin.size() ? std::stof( x_origin, nullptr) : INFINITY,
+                                 y_origin.size() ? std::stof( y_origin, nullptr) : INFINITY),
+              .snap      = getSnapPosition( match_results[ 4].str()),
               .angle     = angle.size() ? std::stoi( angle, nullptr, 10) : 0,
-              .image     = match_results[ 4].str(),
-              .s_effects = extractEffects( match_results[ 7].str())
+              .image     = match_results[ 5].str(),
+              .s_effects = extractEffects( match_results[ 8].str())
           });
-          parseFinalSize( match_results[ 8].str().data(), c_rules.back().interpolation);
+          parseFinalSize( match_results[ 9].str().data(), c_rules.back().interpolation);
       }
   }
 
   return c_rules;
+}
+
+Vec2D<float> getSnapPosition( std::string_view given)
+{
+    size_t view_size = given.size();
+    if( !view_size)
+        return { INFINITY, INFINITY};
+
+    static const std::unordered_map<std::string_view, Vec2D<float>> possibilities
+    {
+        { SNAP_TOP_LEFT,       { 0.f,  0.f}},
+        { SNAP_TOP_CENTER ,    { .5f,  0.f}},
+        { SNAP_TOP_RIGHT ,     { 1.f,  0.f}},
+        { SNAP_LEFT_CENTER ,   { 0.f,  .5f}},
+        { SNAP_CENTER ,        { 0.5f, .5f}},
+        { SNAP_RIGHT_CENTER ,  { 1.f,  .5f}},
+        { SNAP_BOTTOM_LEFT ,   { 0.f,  1.f}},
+        { SNAP_BOTTOM_CENTER , { 0.5f, 1.f}},
+        { SNAP_BOTTOM_RIGHT ,  { 1.f,  1.f}},
+    };
+
+    std::string clone( view_size, 0);
+    std::transform( given.cbegin(), given.cend(), clone.begin(), tolower);
+    auto index = possibilities.find( clone);
+    if( index == possibilities.cend())
+        return { INFINITY, INFINITY};
+
+    return index->second;
 }
 
 void parseFinalSize( std::string_view rule, int *interpolation)

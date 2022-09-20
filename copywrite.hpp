@@ -524,7 +524,7 @@ struct CompositionRule
 	SourceOver,
 	SourceOut,
 	Xor
-  }			   c_model{ CompositionModel::NotApplicable};
+  }	        c_model{ CompositionModel::NotApplicable};
   enum class BlendModel
   {
     Normal = 0,
@@ -555,12 +555,25 @@ struct CompositionRule
     Color,
     Luminosity
   };
-  std::deque<BlendModel> b_models;
-  Vec2D<float> position{};
-  int 	   	   angle{};
-  std::string image;
+  std::deque<BlendModel>                    b_models;
+  Vec2D<float>                              position{ INFINITY, INFINITY};
+  enum class SnapPosition
+  {
+      TopLeft,
+      TopCenter,
+      TopRight,
+      LeftCenter,
+      Center,
+      RightCenter,
+      BottomLeft,
+      BottomCenter,
+      BottomRight
+  };
+  Vec2D<float>                              snap;
+  int 	   	                                angle{};
+  std::string                               image;
   std::deque<std::pair<SpecialEffect, int>> s_effects;
-  int         interpolation[ 3]{};
+  int                                       interpolation[ 3]{};
 };
 
 CompositionRule::CompositionModel selectCompositionModel( std::string_view given);
@@ -572,6 +585,8 @@ std::deque<std::pair<SpecialEffect, int>> extractEffects( std::string_view given
 std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel model);
 
 std::vector<CompositionRule> parseCompositionRule( std::string_view rule);
+
+Vec2D<float> getSnapPosition( std::string_view given);
 
 void parseFinalSize( std::string_view rule, int *interpolation);
 
