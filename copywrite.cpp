@@ -440,19 +440,48 @@ std::vector<float> makeEmboss( int width)
     return emboss;
 }
 
+// Implementation of guassian filter using erf as cdf
+// References:
+//[1] https://stackoverflow.com/questions/809362/how-to-calculate-cumulative-normal-distribution
 std::vector<float> makeGaussian( float radius)
 {
-    constexpr auto width = 13;
+
+    constexpr auto min_ex_radius = 1.f,
+                   max_ex_radius = 200.f,
+                   min_radius = .5f,
+                   max_radius = 10.f;
+    radius = clamp( radius, min_ex_radius, max_ex_radius);
+    auto eff_radius = max_radius - (( radius - min_ex_radius) / ( max_ex_radius - min_ex_radius))
+                                 * ( max_radius - min_radius);
+    constexpr auto width = 15;
     constexpr auto size = width * width;
-    constexpr auto mid = size / 2;
+    auto root_two = std::sqrt( 2.0);
     std::vector<float> result( size);
-    auto scale = static_cast<float>( 1.f / ( radius * std::sqrt( 2.f * M_PI)));
-    float sum = 0;
-    for( short i = 0; i < size; ++i)
+    std::vector<float> interm( width + 1);
+    for( int i = 0, i_size = width + 1; i < i_size; ++i)
     {
-        result[ i] = scale * ( 1.f / std::exp((( i - mid) * ( i - mid)) / ( 2.f * radius * radius)));
-        sum += result[ i];
+        auto value = -eff_radius + ( float)i * ( float)( 2 * eff_radius) / ( float) width;
+        // Calculate the cumulative frequency distribution
+        interm[ i] = static_cast<float>( 1.0 + std::erf( value / root_two)) / 2.f;
+        if( i == 0)
+            continue;
+        // Compute discrete difference
+        interm[ i - 1] = interm[ i] - interm[ i - 1];
     }
+    auto sum = 0.f;
+    for( int j = 0; j < width; ++j)
+    {
+        for( int i = 0; i < width; ++i)
+        {
+            auto value = interm[ i] * interm[ j];
+            result[ j * width + i] = value;
+            sum += value;
+        }
+    }
+
+    for( auto& each : result)
+        each /= sum;
+
     return result;
 }
 
@@ -565,14 +594,12 @@ void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = n
             else
             {
                 auto index = i * frame.n_channel;
-                if( effect == SpecialEffect::Grainy && rand() % 4 == 0)
+                if( effect == SpecialEffect::Grainy)
                 {
-                    uint32_t color = rand() % color_change_freq == 0 ? RGBA( 0x9a, 0x9a, 0x90, ALPHA( buffer[ index]))
-                                                                     : RGBA( 0xa9, 0xa9, 0x90, ALPHA( buffer[ index]));
-                    buffer[ index + 0] = RED( color);
-                    buffer[ index + 1] = GREEN( color);
-                    buffer[ index + 2] = BLUE( color);
-                    buffer[ index + 3] = ALPHA( color);
+                    auto noise_value = gaussianNoise() * grainy_increment;
+                    buffer[ index + 0] = clamp( buffer[ index + 0] + noise_value, 0, RGB_SCALE);
+                    buffer[ index + 1] = clamp( buffer[ index + 1] + noise_value, 0, RGB_SCALE);
+                    buffer[ index + 2] = clamp( buffer[ index + 2] + noise_value, 0, RGB_SCALE);
                 }
                 else if( effect == SpecialEffect::GrayScale)
                 {
@@ -1589,23 +1616,26 @@ void resize( FrameBuffer<Tp> &frame, int *interpolation)
                         red += RED( color);
                         green += GREEN( color);
                         blue += BLUE( color);
-                        alpha += ALPHA( color);
+                        if( row - j == 0 && col - i == 0)
+                            alpha = ALPHA( color);
                     }
                     else
                     {
                         red += s_buffer[ index];
                         green += s_buffer[ index + 1];
                         blue += s_buffer[ index + 2];
-                        alpha += s_buffer[ index + 3];
+                        if( row - j == 0 && col - i == 0)
+                            alpha = s_buffer[ index + 3];
                     }
                 }
             }
             if constexpr ( sizeof( Tp) == 4)
             {
-                d_buffer[ j * new_width * n_channel + i * n_channel] = RGBA(( red / n_neighbour),
-                                                                            ( green / n_neighbour),
-                                                                            ( blue / n_neighbour),
-                                                                            ( alpha / n_neighbour));
+                auto index = j * new_width * n_channel + i * n_channel;
+                d_buffer[ index] = RGBA(( red / n_neighbour),
+                                        ( green / n_neighbour),
+                                        ( blue / n_neighbour),
+                                        alpha);
             }
             else
             {
@@ -1613,7 +1643,7 @@ void resize( FrameBuffer<Tp> &frame, int *interpolation)
                 d_buffer[ base_index]     = red / n_neighbour;
                 d_buffer[ base_index + 1] = green / n_neighbour;
                 d_buffer[ base_index + 2] = blue / n_neighbour;
-                d_buffer[ base_index + 3] = alpha / n_neighbour;
+                d_buffer[ base_index + 3] = alpha;
             }
         }
     }
@@ -1622,14 +1652,69 @@ void resize( FrameBuffer<Tp> &frame, int *interpolation)
     frame.buffer = dest;
 }
 
+template <typename Tp>
+FrameBuffer<Tp> clone( FrameBuffer<Tp> & src)
+{
+    auto n_channel = std::max( src.n_channel, 1);
+    auto n_bytes = src.width * src.height * sizeof( Tp) * n_channel;
+    FrameBuffer<Tp> dst = {
+        std::shared_ptr<Tp>(( Tp *) malloc( n_bytes)),
+        src.width,
+        src.height
+    };
+    memcpy( dst.buffer.get(), src.buffer.get(), n_bytes);
+    return dst;
+}
+
+template <typename Tp>
+void useEffectsOn( FrameBuffer<Tp> &frame, const CompositionRule& c_rule, CompositionRule::StickyArena pos)
+{
+    for( auto& effect : c_rule.s_effects)
+    {
+        if( std::get<1>( effect) != pos)
+            continue;
+        switch ( std::get<0>( effect))
+        {
+            case SpecialEffect::Blur:
+            {
+                auto kernel = makeGaussian( static_cast<float>( std::get<2>( effect)));
+                applyEffect( frame, SpecialEffect::Blur, &kernel);
+                break;
+            }
+            case SpecialEffect::Sharpen:
+            {
+                break;
+            }
+            case SpecialEffect::Emboss:
+            {
+                auto emboss = makeEmboss( 10);
+                applyEffect( frame, SpecialEffect::Emboss, &emboss);
+                break;
+            }
+            case SpecialEffect::RequiresKernelSentinel:
+                break;
+            case SpecialEffect::GrayScale:
+                applyEffect( frame, SpecialEffect::GrayScale);
+                break;
+            case SpecialEffect::Grainy:
+            {
+                auto value = std::get<2>( effect);
+                applyEffect( frame, SpecialEffect::Grainy, &value);
+                break;
+            }
+            case SpecialEffect::Twirl:
+                break;
+        }
+    }
+}
+
 void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame)
 {
 //    auto emboss = makeEmboss( 17);
 //    applyEffect( s_frame, SpecialEffect::Emboss, &emboss);
    auto c_rules = parseCompositionRule( guide.composition_rule);
    auto frame_buffer = FrameBuffer<uint32_t>();
-   auto cur_layer = 1;
-   for( auto& c_rule : c_rules)
+    for( auto& c_rule : c_rules)
    {
        if( c_rule.c_model == MODEL_ENUM( NotApplicable))
            continue;
@@ -1645,6 +1730,9 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 
        if( d_frame.buffer == nullptr)
            continue;
+
+        useEffectsOn( s_frame, c_rule, CompositionRule::StickyArena::Top);
+        useEffectsOn( d_frame, c_rule, CompositionRule::StickyArena::Base);
 
        int32_t dwidth  = d_frame.width,
                dheight = d_frame.height;
@@ -1665,6 +1753,7 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
 
        auto pos    = Vec2D<float>( position.x * ( dwidth - 1)  + ( 1 - position.x) * - swidth  + 1,
                                    position.y * ( dheight - 1) + ( 1 - position.y) * - sheight + 1);
+       // Adjust in case the positioning given by the user is a `snapping` type.
        if( needs_adjustment)
        {
            if( !EQUAL( position.x, .5))
@@ -2118,46 +2207,12 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
                    models[ ENUM_CAST( MODEL_ENUM( DestinationOver))]( Top());
                }
        };
-//  applyEffect( d_frame, SpecialEffect::Grainy);
        models[ ENUM_CAST( c_rule.c_model)]( Default());
        s_frame.buffer = std::move( frame_buffer.buffer);
        s_frame.width  = frame_buffer.width;
        s_frame.height = frame_buffer.height;
-       ++cur_layer;
 
-       for( auto& effect : c_rule.s_effects)
-       {
-           switch ( effect.first)
-           {
-               case SpecialEffect::Blur:
-               {
-                   auto kernel = makeGaussian( std::max<float>( effect.second, 10));
-                   applyEffect( s_frame, SpecialEffect::Blur, &kernel);
-                   break;
-               }
-               case SpecialEffect::Sharpen:
-               {
-                   break;
-               }
-               case SpecialEffect::Emboss:
-               {
-                   auto emboss = makeEmboss( 10);
-                   applyEffect( s_frame, SpecialEffect::Emboss, &emboss);
-                   break;
-               }
-               case SpecialEffect::RequiresKernelSentinel:
-                   break;
-               case SpecialEffect::GrayScale:
-                   applyEffect( s_frame, SpecialEffect::GrayScale);
-                   break;
-               case SpecialEffect::Grainy:
-//                   for( int i = 1, end = std::max<int>( 1, effect.second); i <= end; ++i)
-                   applyEffect( s_frame, SpecialEffect::Grainy, &effect.second);
-                   break;
-               case SpecialEffect::Twirl:
-                   break;
-           }
-       }
+       useEffectsOn( s_frame, c_rule, CompositionRule::StickyArena::Both);
 
        if( c_rule.interpolation[ 0] && c_rule.interpolation[ 1])
            resize( s_frame, c_rule.interpolation);
@@ -2168,7 +2223,6 @@ void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_fram
   if( guide.interpolation[ 0] && guide.interpolation[ 1])
       resize( s_frame, guide.interpolation);
 
-//    applyEffect( s_frame, SpecialEffect::Grainy);
   std::clog << "Writing to file after: " << Timer::yield( GLOBAL_TIME_ID) << "s\n";
 #if defined( PNG_SUPPORTED) && defined( JPG_SUPPORTED)
     ( guide.out_format == OutputFormat::JPEG ? writeJPEG : writePNG)( guide.src_filename, s_frame, guide.image_quality);
@@ -3266,7 +3320,6 @@ void setColor( const char *& rule, BKNode *bkroot, PropertyProxy<uint64_t> &colo
     }
 }
 
-// Format example: [1..2:10-20-10 -ease-in-sine]{(Black:ff + Green::50) -> (Brown:ff:30 + Red:4f:50) -ease-in-out-sine}
 std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot)
 {
     const char *prev = nullptr;
@@ -4263,7 +4316,7 @@ std::deque<CompositionRule::BlendModel> selectBlendModels( std::string_view give
     return models;
 }
 
-std::deque<std::pair<SpecialEffect, int>> extractEffects( std::string_view given)
+std::deque<std::tuple<SpecialEffect, CompositionRule::StickyArena, int>> extractEffects( std::string_view given)
 {
     if( given.empty())
         return {};
@@ -4280,26 +4333,32 @@ std::deque<std::pair<SpecialEffect, int>> extractEffects( std::string_view given
         { SE_TWIRL,     SpecialEffect::Twirl}
     };
 
-    std::deque<std::pair<SpecialEffect, int>> effects;
+    std::deque<std::tuple<SpecialEffect, CompositionRule::StickyArena, int>> effects;
     std::smatch sm;
-    std::regex key( R"(\(([a-z]+),\s*(\d+)\))", std::regex_constants::icase);
+    std::regex key( R"(\(([a-z]+),(?:\s*(top|base|both),)?\s*(\d+)\))", std::regex_constants::icase);
     for( auto& part : parts)
     {
         std::transform( part.cbegin(), part.cend(), part.begin(), tolower);
-        std::string effect_name;
+        std::string effect_name, side_name;
         SpecialEffect effect;
         auto weight = 0;
+        CompositionRule::StickyArena side;
         if( std::regex_match( part.cbegin(), part.cend(), sm, key))
         {
             effect_name = sm[ 1].str();
-            weight = std::stoi( sm[ 2].str());
+            side_name = sm[ 2].str();
+            std::transform( side_name.cbegin(), side_name.cend(), side_name.begin(), tolower);
+            weight = std::stoi( sm[ 3].str());
+            side  =  side_name == "both" ? CompositionRule::StickyArena::Both
+                   : side_name == "top" ? CompositionRule::StickyArena::Top
+                   : CompositionRule::StickyArena::Base;
         }
 
         auto pos = possibilities.find( effect_name.empty() ? part : effect_name);
         if( pos == possibilities.cend())
             continue;
 
-        effects.emplace_front( pos->second, weight);
+        effects.emplace_front( pos->second, side, weight);
     }
 
     return effects;
@@ -5573,11 +5632,13 @@ int main( int ac, char *av[])
     std::unique_ptr<uint8_t, DeleterType> custom_profile(( uint8_t *)nullptr, []( auto *p){ if( p) free( p);});
     if( strrchr( font_profile, '.') == nullptr)
     {
+#if defined( CUSTOM_FONT_SUPPORTED)
         int64_t size;
         std::tie( size, custom_profile) = useInstalledFont( font_profile);
         if( !UNSET( size))
             error = FT_New_Memory_Face( library.get(), ( const FT_Byte *)custom_profile.get(), size, 0, &face.get());
         else
+#endif
         {
             auto file = getFontFile( font_profile);
             if( file.empty())

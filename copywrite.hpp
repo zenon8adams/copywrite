@@ -507,6 +507,7 @@ std::string_view getColorNameAt( size_t pos);
 
 enum class SpecialEffect;
 
+
 struct CompositionRule
 {
   enum class CompositionModel
@@ -524,7 +525,7 @@ struct CompositionRule
 	SourceOver,
 	SourceOut,
 	Xor
-  }	        c_model{ CompositionModel::NotApplicable};
+  }	                      c_model{ CompositionModel::NotApplicable};
   enum class BlendModel
   {
     Normal = 0,
@@ -555,8 +556,9 @@ struct CompositionRule
     Color,
     Luminosity
   };
-  std::deque<BlendModel>                    b_models;
-  Vec2D<float>                              position{ INFINITY, INFINITY};
+  enum class StickyArena { Top, Base, Both};
+  std::deque<BlendModel>                                  b_models;
+  Vec2D<float>                                            position{ INFINITY, INFINITY};
   enum class SnapPosition
   {
       TopLeft,
@@ -569,18 +571,18 @@ struct CompositionRule
       BottomCenter,
       BottomRight
   };
-  Vec2D<float>                              snap;
-  int 	   	                                angle{};
-  std::string                               image;
-  std::deque<std::pair<SpecialEffect, int>> s_effects;
-  int                                       interpolation[ 3]{};
+  Vec2D<float>                                            snap;
+  int 	   	                                              angle{};
+  std::string                                             image;
+  std::deque<std::tuple<SpecialEffect, StickyArena, int>> s_effects;
+  int                                                     interpolation[ 3]{};
 };
 
 CompositionRule::CompositionModel selectCompositionModel( std::string_view given);
 
 std::deque<CompositionRule::BlendModel> selectBlendModels( std::string_view given);
 
-std::deque<std::pair<SpecialEffect, int>> extractEffects( std::string_view given);
+std::deque<std::tuple<SpecialEffect, CompositionRule::StickyArena, int>> extractEffects( std::string_view given);
 
 std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel model);
 
@@ -651,6 +653,12 @@ bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test);
 
 template <typename Tp>
 void resize( FrameBuffer<Tp> &frame, int *interpolation);
+
+template <typename Tp>
+FrameBuffer<Tp> clone( FrameBuffer<Tp> & src);
+
+template <typename Tp>
+void useEffectsOn( FrameBuffer<Tp> &frame, const CompositionRule& c_rule, CompositionRule::StickyArena pos);
 
 void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame);
 

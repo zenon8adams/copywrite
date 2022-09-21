@@ -29,9 +29,10 @@ project(copywrite)
 
 set(CMAKE_CXX_STANDARD 17)
 # set(CMAKE_CXX_FLAGS -fcoroutines)
-option(CUSTOM_FONT_SUPPORTED OFF CACHE)
-option(PNG_SUPPORTED OFF)
-option(JPG_SUPPORTED OFF)
+option(CUSTOM_FONT_SUPPORTED "Install and Uninstall fonts locally" OFF)
+option(PNG_SUPPORTED "Export design as PNG" OFF)
+option(JPG_SUPPORTED "Export design as JPG" OFF)
+option(TESTS "Compile and make test" ON)
 set(OPERATING_SYSTEM "${CMAKE_SYSTEM_NAME}")
 if(CMAKE_SYSTEM_NAME MATCHES Linux)
     set(IS_LINUX ON)
@@ -101,7 +102,8 @@ if(EXISTS "${FREETYPE_INCLUDE_PATH}/freetype2")
 endif()
 
 add_executable( ${PROJECT_NAME} copywrite.cpp copywrite.hpp colors_defs.hpp easing_defs.hpp
-                                geo_vector.cpp geo_vector.hpp composition_defs.hpp blend_defs.hpp timer.hpp special_effects.hpp snap_defs.hpp)
+                                geo_vector.cpp geo_vector.hpp composition_defs.hpp blend_defs.hpp
+                                timer.hpp special_effects.hpp snap_defs.hpp)
 
 if(CUSTOM_FONT_SUPPORTED)
     find_library(ZIP_LIB_PATH NAMES zip libzip)
@@ -117,3 +119,7 @@ target_include_directories( ${PROJECT_NAME} PRIVATE ${FONTCONFIG_INCLUDE_PATH}
         ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries( ${PROJECT_NAME} PUBLIC ${FONTCONFIG_LIB_PATH} ${FREETYPE_LIB_PATH}
         ${PNG_LIB_PATH} ${JPG_LIB_PATH} ${ZIP_LIB_PATH})
+
+if( TESTS)
+    add_subdirectory(tests)
+endif()
