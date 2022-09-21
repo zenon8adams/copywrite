@@ -153,8 +153,11 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
     auto rules = color_rule == nullptr ? std::vector<std::shared_ptr<ColorRule>>{}
                                        : map( color_rule, guide.bkroot.get());
     auto general = std::make_shared<ColorRule>();
-    auto [ text_rows, max_length]= expand( text, guide.j_mode);
-    MonoGlyphs rasters( text_rows.size() * max_length);
+    auto [ text_rows, _] = expand( text, guide.j_mode, false);
+    auto total_length = 0;
+    for( auto& row : text_rows)
+        total_length += row.size();
+    MonoGlyphs rasters( total_length/*text_rows.size() * max_length*/);
     RowDetails row_details( text_rows.size());
     FT_Glyph o_glyph;
     FT_Stroker stroker;
@@ -163,14 +166,15 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
     FT_Stroker_Set( stroker, guide.thickness << 6,
                     FT_STROKER_LINECAP_BUTT, FT_STROKER_LINEJOIN_MITER, 0);
     FT_Vector box_size{ 0, 0};
-    for( size_t j = 0, t_row = text_rows.size(); j < t_row; ++j)
+    for( size_t j = 0, t_row = text_rows.size(), index = 0; j < t_row; ++j)
     {
         FT_Int max_ascent{};
         FT_Vector max_row_box{ 0, 0}, adjustment;
         auto &baseline = row_details[ j].baseline,
              &max_descent = row_details[ j].max_descent;
+        row_details[ j].length = text_rows[ j].size();
         auto line_height = 0, max_shadow_y = 0, max_row_bounce = 0;
-        for( size_t i = 0, t_len = text_rows[ i].length(); i < t_len; ++i)
+        for( size_t i = 0, t_len = text_rows[ j].length(); i < t_len; ++i, ++index)
         {
             auto c_char = text_rows[ j][ i];
             auto best = general;
@@ -206,7 +210,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
             {
                 auto start = Vec2D<int>( i + 1 - best->start.x, j + 1 - best->start.y),
                      end   = Vec2D<int>( UNSET( best->end.x)
-                                         ? std::max( max_length - 1, 1) : best->end.x - best->start.x,
+                                         ? std::max<int>( total_length - 1, 1) : best->end.x - best->start.x,
                                          UNSET( best->end.y)
                                          ? std::max<int>( t_row - 1, 1) : best->end.y - best->start.y);
 
@@ -238,7 +242,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
              */
             FT_Glyph_StrokeBorder( &o_glyph, stroker, false, true);
 
-            auto& raster = rasters[ j * max_length + i];
+            auto& raster = rasters[ index];
             renderSpans( library, &reinterpret_cast<FT_OutlineGlyph>( o_glyph)->outline,
                          &raster.spans.second);
             raster.match = best;
@@ -350,7 +354,7 @@ void render( FT_Library library, FT_Face face, std::wstring_view text, Applicati
                 auto c_char = text_rows[ j][ i];
                 if( !std::isspace( c_char))
                     continue;
-                auto& raster = rasters[ j * max_length + i];
+                auto& raster = rasters[ index];
                 raster.advance.y = default_height;
             }
             max_ascent = (int)default_height;
@@ -448,8 +452,8 @@ std::vector<float> makeGaussian( float radius)
 
     constexpr auto min_ex_radius = 1.f,
                    max_ex_radius = 200.f,
-                   min_radius = .5f,
-                   max_radius = 10.f;
+                   min_radius = .05f,
+                   max_radius = 20.f;
     radius = clamp( radius, min_ex_radius, max_ex_radius);
     auto eff_radius = max_radius - (( radius - min_ex_radius) / ( max_ex_radius - min_ex_radius))
                                  * ( max_radius - min_radius);
@@ -603,12 +607,10 @@ void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = n
                 }
                 else if( effect == SpecialEffect::GrayScale)
                 {
-                    auto avg = .2126 * buffer[ index] + .7152 * buffer[ index + 1]
-                               + .0722 * buffer[ index + 2];
+                    auto avg = .2126 * buffer[ index] + .7152 * buffer[ index + 1] + .0722 * buffer[ index + 2];
                     buffer[ index + 0] = avg;
                     buffer[ index + 1] = avg;
                     buffer[ index + 2] = avg;
-                    buffer[ index + 3] = buffer[ i + 3];
                 }
             }
         }
@@ -656,10 +658,12 @@ void drawShadow( const MonoGlyphs &rasters, RowDetails &row_details,
                            + guide.pad.left + ( match->shadow.x >= 0) * match->shadow.x;
         for ( auto& s: outline)
         {
+            auto intensity_scaling = static_cast<float>( s.coverage) / static_cast<float>( RGB_SCALE);
             for ( int w = 0; w < s.width; ++w)
             {
                 frame.buffer.get()[ (( v_offset + height - 1 - ( s.y - rect.ymin) + pen.y)
-                                     * frame.width + s.x - rect.xmin + w + h_offset + pen.x)] = match->shadow_color;
+                                     * frame.width + s.x - rect.xmin + w + h_offset + pen.x)]
+                                     = tintColor( match->shadow_color, intensity_scaling);
             }
         }
 
@@ -680,6 +684,9 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
     auto n_glyphs = rasters.size();
     auto n_levels = row_details.size();
     int acc_dim{};
+    auto iter = std::max_element( row_details.cbegin(), row_details.cend(),
+                                  []( auto& left, auto& right){ return right.length > left.length; });
+    auto max_length = iter != row_details.cend() ? iter->length : 0;
     for( auto& raster : rasters)
      {
         auto& [ main, outline] = raster.spans;
@@ -753,11 +760,11 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
         }
         int v_offset = row_detail.v_disp - height - row_detail.max_descent - rect.ymin + guide.pad.top - bounce_disp,
             h_offset = (int)( ENUM_CAST( guide.j_mode) > 0)
-                           * (( frame.width - row_detail.width) / ENUM_CAST( guide.j_mode))
-                           + guide.pad.left;
+                           * (( frame.width - row_detail.width) / ENUM_CAST( guide.j_mode)) + guide.pad.left;
         auto buffer = frame.buffer.get();
          for ( auto& s: outline)
         {
+             auto intensity_scaling = static_cast<float>( s.coverage) / static_cast<float>( RGB_SCALE);
             for ( int w = 0; w < s.width; ++w)
             {
                 auto& dest = buffer[ (( v_offset + height - 1 - ( s.y - rect.ymin) + pen.y)
@@ -771,14 +778,16 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
                     {
                         // Paint outline
                         if( match->gradient->gradient_type == GradientType::Linear)
-                            dest = match->soak ? HIGH_DWORD( row_colors.get()[ color_index]) : outline_color;
+                            dest = tintColor( match->soak ? HIGH_DWORD( row_colors.get()[ color_index])
+                                              : outline_color, intensity_scaling);
                         else
-                            dest = easeColor( raster, row_detail, Vec2D<int>( n_glyphs / n_levels, n_levels),
-                                              { i, height - 1 - j}, pen,
-                                              { HIGH_DWORD( match->scolor), HIGH_DWORD( match->ecolor)}, true);
+                            dest = tintColor( easeColor( raster, row_detail, Vec2D<int>( max_length, n_levels),
+                                              { i + h_offset, height - 1 - j}, pen,
+                                              { HIGH_DWORD( match->scolor), HIGH_DWORD( match->ecolor)}, true),
+                                              intensity_scaling);
                     }
                     else
-                        dest = outline_color;
+                        dest = tintColor( outline_color, intensity_scaling);
                 }
                 if( i >= guide.thickness && i < ( width - guide.thickness)) // Paint fill
                 {
@@ -790,14 +799,17 @@ void draw( const MonoGlyphs &rasters, RowDetails &row_details,
                             if ( match->color_easing_fn)
                             {
                                 if ( match->gradient->gradient_type == GradientType::Linear)
-                                    dest = match->soak ? LOW_DWORD( row_colors.get()[ color_index]) : inner_color;
+                                    dest = tintColor( match->soak ? LOW_DWORD( row_colors.get()[ color_index])
+                                                      : inner_color, intensity_scaling);
                                 else
-                                    dest = easeColor( raster, row_detail, Vec2D<int>( n_glyphs / n_levels, n_levels),
-                                                      { i, height - 1 - j}, pen,
-                                                      { LOW_DWORD( match->scolor), LOW_DWORD( match->ecolor)}, false);
+                                    dest = tintColor( easeColor( raster, row_detail,
+                                                      Vec2D<int>( max_length, n_levels),
+                                                      { i + h_offset, height - 1 - j}, pen,
+                                                      { LOW_DWORD( match->scolor), LOW_DWORD( match->ecolor)}, false),
+                                                      intensity_scaling);
                             }
                             else
-                                dest = inner_color;
+                                dest = tintColor( inner_color, intensity_scaling);
                         }
                     }
                 }
@@ -858,7 +870,8 @@ std::wstring toWString( std::string str)
 }
 
 template <typename T>
-std::pair<std::vector<std::basic_string<T>>, int> expand( std::basic_string_view<T> provision, Justification mode)
+std::pair<std::vector<std::basic_string<T>>, int> expand( std::basic_string_view<T> provision,
+                                                          Justification mode, bool pad)
 {
     std::vector<std::basic_string<T>> parts;
     int j = 0, max_length = 0, prev = '\0';
@@ -876,13 +889,16 @@ std::pair<std::vector<std::basic_string<T>>, int> expand( std::basic_string_view
     }
     parts.emplace_back( provision.substr( j));
     max_length = std::max<int>( parts.back().length(), max_length);
-    for( auto& line : parts)
+    if( pad)
     {
-        int rem  = max_length - line.length(),
+        for( auto& line : parts)
+        {
+            int rem   = max_length - line.length(),
                 left  = rem / ENUM_CAST( mode),
                 right = rem - ( left = ( left > 0) * left);
-        line.insert( 0, std::basic_string<T>( left, ' '));
-        line.append( std::basic_string<T>( right, ' '));
+            line.insert( 0, std::basic_string<T>( left, ' '));
+            line.append( std::basic_string<T>( right, ' '));
+        }
     }
     return { parts, max_length};
 }
@@ -891,6 +907,7 @@ uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<
                     Vec2D<int> pos, FT_Vector pen, Vec2D<uint32_t> color_shift, bool is_outline)
 {
     auto& match = raster.match;
+    auto length = row_detail.length;
     auto glyph_width = raster.bbox.width();
     auto glyph_height = raster.bbox.height();
     auto color = is_outline ? HIGH_DWORD( match->scolor) : LOW_DWORD( match->scolor);
@@ -931,13 +948,12 @@ uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<
         Vec2D<float> center( cwidth / 2.f, cheight / 2.f);
         if( gradient->origin.changed()) // Explicit access is needed is `origin` object is not copy assigned
             center = Vec2D<float>( origin.x * ( cwidth - 1), origin.y * ( cheight - 1));
-        auto diff = ( Vec2D<float>( match->soak ? pos.x + pen.x : start.x,
+        auto diff = ( Vec2D<float>( match->soak ? pos.x + pen.x
+                                    : ( static_cast<float>( start.x) / static_cast<float>( length))  * size.x,
                                     match->soak ? pos.y + pen.y + row_detail.v_disp - glyph_height : start.y)
                       - center);
         float angle = diff.angle();
         auto stops = gradient->color_variations;
-        auto red   = std::pair{ 0xff0000ff, 0};
-        auto dummy = std::pair{ 0x000000ff, 0};
         if( !stops.empty())
         {
             auto cur_stop = *stops.cbegin(), next_stop = cur_stop;
@@ -959,8 +975,7 @@ uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<
             {
                 if( cur_stop.second == next_stop.second)
                     return is_outline ? HIGH_DWORD( cur_stop.first) : LOW_DWORD( cur_stop.first);
-                auto fraction = ( angle - cur_stop.second)
-                        / std::abs(( float)( next_stop.second - cur_stop.second));
+                auto fraction = ( angle - cur_stop.second) / std::abs(( float)( next_stop.second - cur_stop.second));
                 if( match->color_easing_fn)
                     fraction = match->color_easing_fn( fraction);
                 return is_outline ? colorLerp( HIGH_DWORD( cur_stop.first), HIGH_DWORD( next_stop.first), fraction)
@@ -1694,6 +1709,7 @@ void useEffectsOn( FrameBuffer<Tp> &frame, const CompositionRule& c_rule, Compos
             case SpecialEffect::RequiresKernelSentinel:
                 break;
             case SpecialEffect::GrayScale:
+                printf( "GrayScale Called!\n");
                 applyEffect( frame, SpecialEffect::GrayScale);
                 break;
             case SpecialEffect::Grainy:
@@ -4335,25 +4351,25 @@ std::deque<std::tuple<SpecialEffect, CompositionRule::StickyArena, int>> extract
 
     std::deque<std::tuple<SpecialEffect, CompositionRule::StickyArena, int>> effects;
     std::smatch sm;
-    std::regex key( R"(\(([a-z]+),(?:\s*(top|base|both),)?\s*(\d+)\))", std::regex_constants::icase);
+    std::regex key( R"(\(([a-z]+)(?:,\s*(top|base|both))?(?:,\s*(\d+))?\))", std::regex_constants::icase);
     for( auto& part : parts)
     {
         std::transform( part.cbegin(), part.cend(), part.begin(), tolower);
-        std::string effect_name, side_name;
+        std::string effect_name, side_name, weight_str;
         SpecialEffect effect;
         auto weight = 0;
-        CompositionRule::StickyArena side;
+        auto side{ CompositionRule::StickyArena::Base};
         if( std::regex_match( part.cbegin(), part.cend(), sm, key))
         {
             effect_name = sm[ 1].str();
             side_name = sm[ 2].str();
+            weight_str = sm[ 3].str();
             std::transform( side_name.cbegin(), side_name.cend(), side_name.begin(), tolower);
-            weight = std::stoi( sm[ 3].str());
+            weight = weight_str.empty() ? 0 : std::stoi( weight_str);
             side  =  side_name == "both" ? CompositionRule::StickyArena::Both
                    : side_name == "top" ? CompositionRule::StickyArena::Top
                    : CompositionRule::StickyArena::Base;
         }
-
         auto pos = possibilities.find( effect_name.empty() ? part : effect_name);
         if( pos == possibilities.cend())
             continue;

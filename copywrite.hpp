@@ -130,7 +130,8 @@ typedef std::vector<MonoGlyph> MonoGlyphs;
 struct RowDetail
 {
     int baseline{ INT_MAX}, v_disp{},
-            max_descent{}, width{}, max_shadow_y{};
+            max_descent{}, width{},
+            max_shadow_y{}, length{};
     FT_Vector pen{ 0, 0};
 };
 typedef std::vector<RowDetail> RowDetails;
@@ -152,7 +153,8 @@ enum class Justification
 };
 
 template <typename T>
-std::pair<std::vector<std::basic_string<T>>, int> expand( std::basic_string_view<T> provision, Justification mode);
+std::pair<std::vector<std::basic_string<T>>, int> expand( std::basic_string_view<T> provision,
+                                                          Justification mode, bool pad = true);
 uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<int> size,
                     Vec2D<int> pos, FT_Vector pen, Vec2D<uint32_t> color_shift, bool is_outline);
 
