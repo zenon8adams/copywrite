@@ -74,7 +74,10 @@
 #define DEG_MAX                        360
 #define HALF_RGB_SCALE                 128
 #define DEG_SCALE					   180.f / M_PI
-#define ENUM_CAST( idx)					( static_cast<uint8_t>( idx))
+#define RAD_SCALE                      M_PI / 180.f
+#define ENUM_CAST( idx)				   ( static_cast<uint8_t>( idx))
+#define FLOAT_CAST( value)             ( static_cast<float>( value))
+#define INT_CAST( value)               ( static_cast<int>( value))
 #define MODEL_ENUM( mode)			   CompositionRule::CompositionModel::mode
 #define BLEND_ENUM( mode)              CompositionRule::BlendModel::mode
 /*
@@ -447,9 +450,8 @@ std::vector<float> makeEmboss( int width)
 // Implementation of guassian filter using erf as cdf
 // References:
 //[1] https://stackoverflow.com/questions/809362/how-to-calculate-cumulative-normal-distribution
-std::vector<float> makeGaussian( float radius)
+std::vector<float> makeGaussian( float radius, size_t width)
 {
-
     constexpr auto min_ex_radius = 1.f,
                    max_ex_radius = 200.f,
                    min_radius = .05f,
@@ -457,14 +459,13 @@ std::vector<float> makeGaussian( float radius)
     radius = clamp( radius, min_ex_radius, max_ex_radius);
     auto eff_radius = max_radius - (( radius - min_ex_radius) / ( max_ex_radius - min_ex_radius))
                                  * ( max_radius - min_radius);
-    constexpr auto width = 15;
-    constexpr auto size = width * width;
+    auto size = width * width;
     auto root_two = std::sqrt( 2.0);
     std::vector<float> result( size);
     std::vector<float> interm( width + 1);
     for( int i = 0, i_size = width + 1; i < i_size; ++i)
     {
-        auto value = -eff_radius + ( float)i * ( float)( 2 * eff_radius) / ( float) width;
+        auto value = -eff_radius + FLOAT_CAST( i) * FLOAT_CAST( 2 * eff_radius) / FLOAT_CAST( width);
         // Calculate the cumulative frequency distribution
         interm[ i] = static_cast<float>( 1.0 + std::erf( value / root_two)) / 2.f;
         if( i == 0)
@@ -509,73 +510,201 @@ float gaussianNoise()
 }
 
 template <typename Tp, typename = std::enable_if_t<std::is_integral_v<Tp>>>
-void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = nullptr)
+void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, const SpecialEffectArgs& extras = {})
 {
+    int n_channel = std::max( frame.n_channel, 1);
+    auto width    = frame.width,
+         height   = frame.height;
+    auto x_extent = extras.extent.x != -1 ? extras.extent.x : width,
+         y_extent = extras.extent.y != -1 ? extras.extent.y : height;
     if( ENUM_CAST( effect) < ENUM_CAST( SpecialEffect::RequiresKernelSentinel))
     {
-        auto kernel = *( const std::vector<float> *)extras;
-        int n_channel = std::max( frame.n_channel, 1);
-        auto width   = frame.width,
-                height  = frame.height;
-        int k_size  = kernel.size(),
-            k_width = std::sqrt( k_size),
-            mid     = k_width / 2;
-        std::shared_ptr<Tp> dest(( Tp *)calloc( width * height  * n_channel, sizeof( Tp)), []( auto *p){ free( p);});
+        auto kernel  = extras.kernel;
+        int k_size   = INT_CAST( kernel.size()),
+            k_width  = INT_CAST( std::sqrt( k_size)),
+            mid      = k_width / 2,
+            j_offset = extras.start.y,
+            i_offset = extras.start.x;
+        auto inplace = extras.inplace;
+
+        std::shared_ptr<Tp> dest;
+        if( inplace)
+            dest = frame.buffer;
+        else
+            dest.reset( ( Tp *)calloc( width * height  * n_channel, sizeof( Tp)), []( auto *p){ free( p);});
+
         auto buffer   = frame.buffer.get(),
              d_buffer = dest.get();
-        for( int j = 0; j < height; ++j)
+
+        if( effect == SpecialEffect::Oil)
         {
-            for( int i = 0; i < width; ++i)
+            int intensity = extras.oil_intensity, level = 200;
+            for( int j = j_offset; j < height; ++j)
             {
-                double red{}, green{}, blue{}, alpha{};
-                for( int k = 0; k < k_size; ++k)
+                for( int i = i_offset; i < width; ++i)
                 {
-                    int row = ( k_width - k / k_width + 1) - mid + j,
-                        col = ( k_width - k % k_width - 1) - mid + i;
-                    if( row >= 0 && row < height && col >= 0 && col < width)
+                    double red{}, green{}, blue{};
+                    if( i < x_extent && j < y_extent)
                     {
-                        size_t index = row * width * n_channel + col * n_channel;
+                        int max_intensity = 0, max_intensity_index = 0, intensity_freq[ level],
+                                avg_r[ level], avg_g[ level], avg_b[ level];
+                        memset( intensity_freq, 0, sizeof( intensity_freq));
+                        memset( avg_r, 0, sizeof( avg_r));
+                        memset( avg_g, 0, sizeof( avg_g));
+                        memset( avg_b, 0, sizeof( avg_b));
+                        for( int k = 0; k < k_size; ++k)
+                        {
+                            int row = ( k_width - k / k_width + 1) - mid + j,
+                                    col = ( k_width - k % k_width - 1) - mid + i;
+                            if( row >= 0 && row < height && col >= 0 && col < width)
+                            {
+                                size_t index = row * width * n_channel + col * n_channel;
+                                auto pixel = buffer[ index];
+                                uint8_t r{}, g{}, b{};
+                                if constexpr ( sizeof( Tp) == 4)
+                                {
+                                    r = RED( pixel);
+                                    g = GREEN( pixel);
+                                    b = BLUE( pixel);
+                                }
+                                else
+                                {
+                                    r = pixel;
+                                    g = buffer[ index + 1];
+                                    b = buffer[ index + 2];
+                                }
+
+                                int cur_intensity = INT_CAST(( FLOAT_CAST(( r + g + b) * level) / 3.f) / RGB_SCALE);
+                                ++intensity_freq[ cur_intensity];
+                                avg_r[ cur_intensity] += r;
+                                avg_g[ cur_intensity] += g;
+                                avg_b[ cur_intensity] += b;
+                                if( intensity_freq[ cur_intensity] > max_intensity)
+                                {
+                                    max_intensity = intensity_freq[ cur_intensity];
+                                    max_intensity_index = cur_intensity;
+                                }
+                            }
+                        }
+                        red   = colorClamp( FLOAT_CAST( avg_r[ max_intensity_index])
+                                            / FLOAT_CAST( max_intensity));
+                        green = colorClamp( FLOAT_CAST( avg_g[ max_intensity_index])
+                                            / FLOAT_CAST( max_intensity));
+                        blue  = colorClamp( FLOAT_CAST( avg_b[ max_intensity_index])
+                                            / FLOAT_CAST( max_intensity));
+                    }
+                    else
+                    {
+                        size_t index = j * width * n_channel + i * n_channel;
+                        auto pixel = buffer[ index];
                         if constexpr ( sizeof( Tp) == 4)
                         {
-                            auto pixel = buffer[ index];
-                            red   += kernel[ k] * RED( pixel);
-                            green += kernel[ k] * GREEN( pixel);
-                            blue  += kernel[ k] * BLUE( pixel);
-                            alpha += kernel[ k] * ALPHA( pixel);
+                            red = RED( pixel);
+                            green = GREEN( pixel);
+                            blue = BLUE( pixel);
                         }
                         else
                         {
-                            red   += kernel[ k] * buffer[ index];
-                            green += kernel[ k] * buffer[ index + 1];
-                            blue  += kernel[ k] * buffer[ index + 2];
-                            alpha += kernel[ k] * buffer[ index + 3];
+                            red = pixel;
+                            green = buffer[ index + 1];
+                            blue = buffer[ index + 2];
                         }
                     }
-                }
-                red = clamp( red, 0, RGB_SCALE);
-                green = clamp( green, 0, RGB_SCALE);
-                blue = clamp( blue, 0, RGB_SCALE);
-                alpha = clamp( alpha, 0, RGB_SCALE);
-                if constexpr ( sizeof( Tp) == 4)
-                    d_buffer[ j * width + i] =  RGBA( red, green, blue, ALPHA( buffer[ j * width + i]));
-                else
-                {
-                    auto index = j * width * n_channel + i * n_channel;
-                    d_buffer[ index]    = red;
-                    d_buffer[ index + 1] = green;
-                    d_buffer[ index + 2] = blue;
-                    d_buffer[ index + 3] = ALPHA( buffer[ index + 3]);
+
+                    if constexpr ( sizeof( Tp) == 4)
+                        d_buffer[ j * width + i] =  RGBA( red, green, blue, ALPHA( buffer[ j * width + i]));
+                    else
+                    {
+                        auto index = j * width * n_channel + i * n_channel;
+                        d_buffer[ index]    = red;
+                        d_buffer[ index + 1] = green;
+                        d_buffer[ index + 2] = blue;
+                        d_buffer[ index + 3] = ALPHA( buffer[ index + 3]);
+                    }
                 }
             }
         }
-        frame.buffer = dest;
+        else
+        {
+            for( int j = j_offset; j < height; ++j)
+            {
+                for( int i = i_offset; i < width; ++i)
+                {
+                    double red{}, green{}, blue{};
+                    if( i < x_extent && j < y_extent)
+                    {
+                        for( int k = 0; k < k_size; ++k)
+                        {
+                            int row = ( k_width - k / k_width + 1) - mid + j,
+                                    col = ( k_width - k % k_width - 1) - mid + i;
+                            if( row >= 0 && row < height && col >= 0 && col < width)
+                            {
+                                size_t index = row * width * n_channel + col * n_channel;
+                                auto pixel = buffer[ index];
+                                uint8_t r{}, g{}, b{};
+                                if constexpr ( sizeof( Tp) == 4)
+                                {
+                                    r = RED( pixel);
+                                    g = GREEN( pixel);
+                                    b = BLUE( pixel);
+                                }
+                                else
+                                {
+                                    r = pixel;
+                                    g = buffer[ index + 1];
+                                    b = buffer[ index + 2];
+                                }
+
+                                red   += FLOAT_CAST( r) * kernel[ k];
+                                green += FLOAT_CAST( g) * kernel[ k];
+                                blue  += FLOAT_CAST( b) * kernel[ k];
+                            }
+                        }
+                        red = colorClamp( FLOAT_CAST( red));
+                        green = colorClamp( FLOAT_CAST( green));
+                        blue = colorClamp( FLOAT_CAST( blue));
+                    }
+                    else
+                    {
+                        size_t index = j * width * n_channel + i * n_channel;
+                        auto pixel = buffer[ index];
+                        if constexpr ( sizeof( Tp) == 4)
+                        {
+                            red = RED( pixel);
+                            green = GREEN( pixel);
+                            blue = BLUE( pixel);
+                        }
+                        else
+                        {
+                            red = pixel;
+                            green = buffer[ index + 1];
+                            blue = buffer[ index + 2];
+                        }
+                    }
+
+                    if constexpr ( sizeof( Tp) == 4)
+                        d_buffer[ j * width + i] =  RGBA( red, green, blue, ALPHA( buffer[ j * width + i]));
+                    else
+                    {
+                        auto index = j * width * n_channel + i * n_channel;
+                        d_buffer[ index]    = red;
+                        d_buffer[ index + 1] = green;
+                        d_buffer[ index + 2] = blue;
+                        d_buffer[ index + 3] = ALPHA( buffer[ index + 3]);
+                    }
+                }
+            }
+        }
+        if( !inplace)
+            frame.buffer = dest;
     }
     else if( effect == SpecialEffect::GrayScale || effect == SpecialEffect::Grainy)
     {
         auto buffer = frame.buffer.get();
         auto size = frame.width * frame.height;
         constexpr auto color_change_freq = 8;
-        int grainy_increment = extras == nullptr ? 1 : std::sqrt( std::max( 1, *( int *)extras));
+
+        int grainy_increment = FLOAT_CAST( std::sqrt( std::max( 1, extras.grain_multiplicity)));
         for( size_t i = 0; i < size; ++i)
         {
             if constexpr( sizeof( Tp) == 4)
@@ -584,9 +713,9 @@ void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = n
                 {
                     auto& pixel = buffer[ i];
                     auto noise_value = gaussianNoise() * grainy_increment;
-                    auto red   = clamp( RED( pixel) + noise_value, 0, RGB_SCALE),
-                         green = clamp( GREEN( pixel) + noise_value, 0, RGB_SCALE),
-                         blue  = clamp( BLUE( pixel) + noise_value, 0, RGB_SCALE);
+                    auto red   = colorClamp( RED( pixel) + noise_value),
+                         green = colorClamp( GREEN( pixel) + noise_value),
+                         blue  = colorClamp( BLUE( pixel) + noise_value);
                     pixel = RGBA( red, green, blue, ALPHA( pixel));
                 }
                 else if( effect == SpecialEffect::GrayScale)
@@ -601,9 +730,9 @@ void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = n
                 if( effect == SpecialEffect::Grainy)
                 {
                     auto noise_value = gaussianNoise() * grainy_increment;
-                    buffer[ index + 0] = clamp( buffer[ index + 0] + noise_value, 0, RGB_SCALE);
-                    buffer[ index + 1] = clamp( buffer[ index + 1] + noise_value, 0, RGB_SCALE);
-                    buffer[ index + 2] = clamp( buffer[ index + 2] + noise_value, 0, RGB_SCALE);
+                    buffer[ index + 0] = colorClamp( buffer[ index + 0] + noise_value);
+                    buffer[ index + 1] = colorClamp( buffer[ index + 1] + noise_value);
+                    buffer[ index + 2] = colorClamp( buffer[ index + 2] + noise_value);
                 }
                 else if( effect == SpecialEffect::GrayScale)
                 {
@@ -614,6 +743,59 @@ void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, void *extras = n
                 }
             }
         }
+    }
+    else if( effect == SpecialEffect::Twirl)
+    {
+        std::shared_ptr<Tp> dest(( Tp *)calloc( width * height  * n_channel, sizeof( Tp)), []( auto *p){ free( p);});
+        auto d_buffer = dest.get();
+        auto s_buffer = frame.buffer.get();
+        size_t radius = extras.twirl_radius;
+        auto r       = FLOAT_CAST( std::log( 2)) * FLOAT_CAST( radius) / 5.f;
+        auto center = Vec2D<float>( FLOAT_CAST( width)  * extras.twirl_center.x,
+                                    FLOAT_CAST( height) * extras.twirl_center.y);
+        auto strength = extras.twirl_strength;
+        auto rotation = extras.twirl_rotation;
+        for( size_t j = 0; j < height; ++j)
+        {
+            for( size_t i = 0; i < width; ++i)
+            {
+                auto dx      = FLOAT_CAST( i) - center.x,
+                     dy      = FLOAT_CAST( j) - center.y;
+                auto theta   = atan2( dy, dx);
+                auto dist    = std::sqrt( dx * dx + dy * dy);
+                auto spin    = FLOAT_CAST( strength) * std::exp( -dist / r);
+                auto n_theta = rotation + spin + theta;
+                auto x_dist  = FLOAT_CAST( dist * std::cos( n_theta));
+                auto y_dist  = FLOAT_CAST( dist * std::sin( n_theta));
+                auto x       = INT_CAST( center.x + x_dist),
+                     y       = INT_CAST( center.y + y_dist);
+                int d_index = j * width * n_channel + i * n_channel, s_index = 0;
+                if( x >= 0 && x < width && y >= 0 && y < height)
+                    s_index = y * width * n_channel + x * n_channel;
+
+                if constexpr( sizeof( Tp) == 4)
+                {
+                    auto pixel = s_buffer[ s_index];
+                    d_buffer[ d_index] = RGBA( RED( pixel), GREEN( pixel), BLUE( pixel), ALPHA( pixel));
+                }
+                else
+                {
+                    d_buffer[ d_index]     = s_buffer[ s_index];
+                    d_buffer[ d_index + 1] = s_buffer[ s_index + 1];
+                    d_buffer[ d_index + 2] = s_buffer[ s_index + 2];
+                    d_buffer[ d_index + 3] = s_buffer[ s_index + 3];
+                }
+            }
+        }
+        frame.buffer = dest;
+        /*SpecialEffectArgs args;
+        args.inplace = true;
+        args.start.x  = INT_CAST(( center.x - coverage) < 0 ? 0 : center.x - coverage);
+        args.start.y  = INT_CAST(( center.y - coverage) < 0 ? 0 : center.y - coverage);
+        args.extent.x = ( args.start.x + coverage * 2) >  width ?  width : args.start.x + coverage * 2;
+        args.extent.y = ( args.start.y + coverage * 2) > height ? height : args.start.y + coverage * 2;
+        args.kernel = makeGaussian( 200, 11);
+        applyEffect( frame, SpecialEffect::Blur, args);*/
     }
 }
 
@@ -1000,6 +1182,11 @@ float clamp( float x, float lowerlimit, float upperlimit)
   return x < lowerlimit ? lowerlimit : x > upperlimit ? upperlimit : x;
 }
 
+uint8_t colorClamp( float color)
+{
+    return color < 0 ? 0 : color > RGB_SCALE ? RGB_SCALE : color;
+}
+
 uint32_t hsvaToRgba( uint32_t hsv)
 {
     uint32_t region, p, q, t, remainder,
@@ -1292,22 +1479,22 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
         [ ENUM_CAST( BLEND_ENUM( ColorBurn))]    = []( auto top, auto base)
         {
             uint8_t red   = RED( top) == 0 ? 0 :
-                            clamp( ( 1.f - (( RGB_SCALE - RED( base)) / RED( top))) * RGB_SCALE, 0, RGB_SCALE),
+                            colorClamp( ( 1.f - (( RGB_SCALE - RED( base)) / RED( top))) * RGB_SCALE),
                     green = GREEN( top) == 0 ? 0 :
-                            clamp( ( 1.f - (( RGB_SCALE - GREEN( base)) / GREEN( top))) * RGB_SCALE, 0, RGB_SCALE),
+                            colorClamp( ( 1.f - (( RGB_SCALE - GREEN( base)) / GREEN( top))) * RGB_SCALE),
                     blue  = BLUE( top) == 0 ? 0 :
-                            clamp( ( 1.f - (( RGB_SCALE - BLUE( base)) / BLUE( top))) * RGB_SCALE, 0, RGB_SCALE),
+                            colorClamp( ( 1.f - (( RGB_SCALE - BLUE( base)) / BLUE( top))) * RGB_SCALE),
                     alpha = ALPHA( top) == 0 ? 0 :
-                            clamp( ( 1.f - (( RGB_SCALE - ALPHA( base)) / ALPHA( top))) * RGB_SCALE, 0, RGB_SCALE);
+                            colorClamp( ( 1.f - (( RGB_SCALE - ALPHA( base)) / ALPHA( top))) * RGB_SCALE);
 
             return RGBA( red, green, blue, alpha);
         },
         [ ENUM_CAST( BLEND_ENUM( LinearBurn))]   = []( auto top, auto base)
         {
-            uint8_t red_sum   = clamp(( int16_t)RED( base) + RED( top) - RGB_SCALE, 0, RGB_SCALE),
-                    green_sum = clamp(( int16_t)GREEN( base) + GREEN( top) - RGB_SCALE, 0, RGB_SCALE),
-                    blue_sum  = clamp(( int16_t)BLUE( base) + BLUE( top) - RGB_SCALE, 0, RGB_SCALE),
-                    alpha_sum = clamp(( int16_t)ALPHA( base) + ALPHA( top) - RGB_SCALE, 0, RGB_SCALE);
+            uint8_t red_sum   = colorClamp(( int16_t)RED( base) + RED( top) - RGB_SCALE),
+                    green_sum = colorClamp(( int16_t)GREEN( base) + GREEN( top) - RGB_SCALE),
+                    blue_sum  = colorClamp(( int16_t)BLUE( base) + BLUE( top) - RGB_SCALE),
+                    alpha_sum = colorClamp(( int16_t)ALPHA( base) + ALPHA( top) - RGB_SCALE);
 
             return RGBA( red_sum, green_sum, blue_sum, alpha_sum);
         },
@@ -1315,10 +1502,10 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
         {
             constexpr auto factor = .5f;
             return ALPHA( top) > 180 ?
-                   RGBA( clamp( RED( top) * factor, 0, RGB_SCALE), clamp( GREEN( top) * factor, 0, RGB_SCALE),
-                         clamp( BLUE( top) * factor, 0, RGB_SCALE), ALPHA( top))
-                   : RGBA( clamp( RED( base) * factor, 0, RGB_SCALE), clamp( GREEN( base) * factor, 0, RGB_SCALE),
-                           clamp( BLUE( base) * factor, 0, RGB_SCALE), ALPHA( base));
+                   RGBA( colorClamp( RED( top) * factor), colorClamp( GREEN( top) * factor),
+                         colorClamp( BLUE( top) * factor), ALPHA( top))
+                   : RGBA( colorClamp( RED( base) * factor), colorClamp( GREEN( base) * factor),
+                           colorClamp( BLUE( base) * factor), ALPHA( base));
         },
         [ ENUM_CAST( BLEND_ENUM( Lighten))]      = []( auto top, auto base)
         {
@@ -1345,10 +1532,10 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
         },
         [ ENUM_CAST( BLEND_ENUM( LinearDodge))]  = []( auto top, auto base)
         {
-            uint8_t red_sum   = clamp(( int16_t)RED( base) + RED( top), 0, RGB_SCALE),
-                    green_sum = clamp(( int16_t)GREEN( base) + GREEN( top), 0, RGB_SCALE),
-                    blue_sum  = clamp(( int16_t)BLUE( base) + BLUE( top), 0, RGB_SCALE),
-                    alpha_sum = clamp(( int16_t)ALPHA( base) + ALPHA( top), 0, RGB_SCALE);
+            uint8_t red_sum   = colorClamp(( int16_t)RED( base) + RED( top)),
+                    green_sum = colorClamp(( int16_t)GREEN( base) + GREEN( top)),
+                    blue_sum  = colorClamp(( int16_t)BLUE( base) + BLUE( top)),
+                    alpha_sum = colorClamp(( int16_t)ALPHA( base) + ALPHA( top));
 
             return RGBA( red_sum, green_sum, blue_sum, alpha_sum);
         },
@@ -1356,10 +1543,10 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
         {
             constexpr auto factor = 2.f;
             return ALPHA( top) > 180 ?
-                   RGBA( clamp( RED( top) * factor, 0, RGB_SCALE), clamp( GREEN( top) * factor, 0, RGB_SCALE),
-                         clamp( BLUE( top) * factor, 0, RGB_SCALE), ALPHA( top))
-                   : RGBA( clamp( RED( base) * factor, 0, RGB_SCALE), clamp( GREEN( base) * factor, 0, RGB_SCALE),
-                           clamp( BLUE( base) * factor, 0, RGB_SCALE), ALPHA( base));
+                   RGBA( colorClamp( RED( top) * factor), colorClamp( GREEN( top) * factor),
+                         colorClamp( BLUE( top) * factor), ALPHA( top))
+                   : RGBA( colorClamp( RED( base) * factor), colorClamp( GREEN( base) * factor),
+                           colorClamp( BLUE( base) * factor), ALPHA( base));
         },
         [ ENUM_CAST( BLEND_ENUM( Overlay))]      = []( auto top, auto base)
         {
@@ -1503,7 +1690,7 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
             uint8_t red   = std::abs(( int16_t)RED( base) - ( int8_t)RED( top)),
                     green = std::abs(( int16_t)GREEN( base) - ( int8_t)GREEN( top)),
                     blue  = std::abs(( int16_t)BLUE( base) - ( int8_t)BLUE( top)),
-                    alpha = clamp(( uint16_t)ALPHA( base) + ALPHA( top), 0, RGB_SCALE);
+                    alpha = colorClamp(( uint16_t)ALPHA( base) + ALPHA( top));
 
             return RGBA( red, green, blue, alpha);
         },
@@ -1531,14 +1718,10 @@ std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::Ble
         },
         [ ENUM_CAST( BLEND_ENUM( Divide))]       = []( auto top, auto base)
         {
-            uint8_t red   = RED( base) == 0 ? RGB_SCALE : clamp(( float)RED( top) * RGB_SCALE / RED( base),
-                                                                0, RGB_SCALE),
-                    green = GREEN( base) == 0 ? RGB_SCALE : clamp(( float)GREEN( top) * RGB_SCALE / GREEN( base),
-                                                                0, RGB_SCALE),
-                    blue  = BLUE( base) == 0 ? RGB_SCALE : clamp(( float)BLUE( top) * RGB_SCALE / BLUE( base),
-                                                                0, RGB_SCALE),
-                    alpha = ALPHA( base) == 0 ? RGB_SCALE : clamp(( float)ALPHA( top) * RGB_SCALE / ALPHA( base),
-                                                                0, RGB_SCALE);
+            uint8_t red   = RED( base) == 0 ? RGB_SCALE : colorClamp(( float)RED( top) * RGB_SCALE / RED( base)),
+                    green = GREEN( base) == 0 ? RGB_SCALE : colorClamp(( float)GREEN( top) * RGB_SCALE / GREEN( base)),
+                    blue  = BLUE( base) == 0 ? RGB_SCALE : colorClamp(( float)BLUE( top) * RGB_SCALE / BLUE( base)),
+                    alpha = ALPHA( base) == 0 ? RGB_SCALE : colorClamp(( float)ALPHA( top) * RGB_SCALE / ALPHA( base));
 
             return RGBA( red, green, blue, alpha);
         },
@@ -1688,12 +1871,15 @@ void useEffectsOn( FrameBuffer<Tp> &frame, const CompositionRule& c_rule, Compos
     {
         if( std::get<1>( effect) != pos)
             continue;
+
+        SpecialEffectArgs extras;
         switch ( std::get<0>( effect))
         {
             case SpecialEffect::Blur:
             {
-                auto kernel = makeGaussian( static_cast<float>( std::get<2>( effect)));
-                applyEffect( frame, SpecialEffect::Blur, &kernel);
+                auto kernel = makeGaussian( FLOAT_CAST( std::get<2>( effect)));
+                extras.kernel = kernel;
+                applyEffect( frame, SpecialEffect::Blur, extras);
                 break;
             }
             case SpecialEffect::Sharpen:
@@ -1703,22 +1889,51 @@ void useEffectsOn( FrameBuffer<Tp> &frame, const CompositionRule& c_rule, Compos
             case SpecialEffect::Emboss:
             {
                 auto emboss = makeEmboss( 10);
-                applyEffect( frame, SpecialEffect::Emboss, &emboss);
+                extras.kernel = emboss;
+                applyEffect( frame, SpecialEffect::Emboss, extras);
                 break;
+            }
+            case SpecialEffect::Oil:
+            {
+                applyEffect( frame, SpecialEffect::Oil, extras);
             }
             case SpecialEffect::RequiresKernelSentinel:
                 break;
             case SpecialEffect::GrayScale:
-                printf( "GrayScale Called!\n");
                 applyEffect( frame, SpecialEffect::GrayScale);
                 break;
             case SpecialEffect::Grainy:
             {
-                auto value = std::get<2>( effect);
-                applyEffect( frame, SpecialEffect::Grainy, &value);
+                extras.grain_multiplicity = std::get<2>( effect);
+                applyEffect( frame, SpecialEffect::Grainy, extras);
                 break;
             }
             case SpecialEffect::Twirl:
+            {
+                auto radius = std::get<2>( effect);
+                extras.twirl_radius = std::max( radius, extras.twirl_radius);
+                std::string other_args = std::get<3>( effect);
+                if( !other_args.empty())
+                {
+                    std::smatch sm;
+                    std::regex key( R"(\s*(\d+)?(?:,\s*(\d+)deg)?(?:,\s*([a-z]+(?:-[a-z]+)?))?\s*)",
+                                    std::regex_constants::icase);
+                    if( std::regex_match( other_args.cbegin(), other_args.cend(), sm, key))
+                    {
+                        auto s_twirl_strength  = sm[ 1].str();
+                        auto s_twirl_rotation  = sm[ 2].str();
+                        auto s_twirl_position  = sm[ 3].str();
+                        extras.twirl_strength = s_twirl_strength.empty() ? extras.twirl_strength
+                                                : std::stoi( s_twirl_strength);
+                        extras.twirl_rotation = s_twirl_rotation.empty() ? extras.twirl_rotation
+                                                : FLOAT_CAST( std::stoi( s_twirl_rotation) * RAD_SCALE);
+                        extras.twirl_center   = s_twirl_position.empty() ? extras.twirl_center
+                                                : getSnapCoordinate( s_twirl_position);
+                    }
+                }
+
+                applyEffect( frame, SpecialEffect::Twirl, extras);
+            }
                 break;
         }
     }
@@ -3905,9 +4120,9 @@ void testColor( const char *rule, BKNode *bkroot)
 
 uint32_t tintColor( uint32_t color, float factor)
 {
-    uint8_t red   = clamp( RED( color) * factor, 0, RGB_SCALE),
-            green = clamp( GREEN( color) * factor, 0, RGB_SCALE),
-            blue  = clamp( BLUE( color) * factor, 0, RGB_SCALE);
+    uint8_t red   = colorClamp( RED( color) * factor),
+            green = colorClamp( GREEN( color) * factor),
+            blue  = colorClamp( BLUE( color) * factor);
 
     return RGBA( red, green, blue, ALPHA( color));
 }
@@ -4332,7 +4547,7 @@ std::deque<CompositionRule::BlendModel> selectBlendModels( std::string_view give
     return models;
 }
 
-std::deque<std::tuple<SpecialEffect, CompositionRule::StickyArena, int>> extractEffects( std::string_view given)
+std::deque<std::tuple<SpecialEffect, StickyArena, int, std::string>> extractEffects( std::string_view given)
 {
     if( given.empty())
         return {};
@@ -4344,18 +4559,19 @@ std::deque<std::tuple<SpecialEffect, CompositionRule::StickyArena, int>> extract
         { SE_BLUR,      SpecialEffect::Blur},
         { SE_SHARPEN,   SpecialEffect::Sharpen},
         { SE_EMBOSS,    SpecialEffect::Emboss},
+        { SE_OIL,       SpecialEffect::Oil},
         { SE_GRAYSCALE, SpecialEffect::GrayScale},
         { SE_GRAINY,    SpecialEffect::Grainy},
         { SE_TWIRL,     SpecialEffect::Twirl}
     };
 
-    std::deque<std::tuple<SpecialEffect, CompositionRule::StickyArena, int>> effects;
+    std::deque<std::tuple<SpecialEffect, StickyArena, int, std::string>> effects;
     std::smatch sm;
-    std::regex key( R"(\(([a-z]+)(?:,\s*(top|base|both))?(?:,\s*(\d+))?\))", std::regex_constants::icase);
+    std::regex key( R"(\(([a-z]+)(?:,\s*(top|base|both))?(?:,\s*(\d+))?(?:,\s*(.+))?\))", std::regex_constants::icase);
     for( auto& part : parts)
     {
         std::transform( part.cbegin(), part.cend(), part.begin(), tolower);
-        std::string effect_name, side_name, weight_str;
+        std::string effect_name, side_name, weight_str, other_params;
         SpecialEffect effect;
         auto weight = 0;
         auto side{ CompositionRule::StickyArena::Base};
@@ -4369,12 +4585,13 @@ std::deque<std::tuple<SpecialEffect, CompositionRule::StickyArena, int>> extract
             side  =  side_name == "both" ? CompositionRule::StickyArena::Both
                    : side_name == "top" ? CompositionRule::StickyArena::Top
                    : CompositionRule::StickyArena::Base;
+            other_params = sm[ 4].str();
         }
         auto pos = possibilities.find( effect_name.empty() ? part : effect_name);
         if( pos == possibilities.cend())
             continue;
 
-        effects.emplace_front( pos->second, side, weight);
+        effects.emplace_front( pos->second, side, weight, other_params);
     }
 
     return effects;
@@ -4387,8 +4604,12 @@ std::vector<CompositionRule> parseCompositionRule( std::string_view rule)
   //Match any of the following:
   //1. from 30deg, mode=source-over
   //2. from 30deg, at .5, 0.45, mode=source-over
-  //3. mode=source-over or mode=lighter
-  //4. blend=dissolve or blend
+  //3. snap=top-left|top-right|top-center| ...|bottom-right
+  //4. layer=top|left|both
+  //5. mode=source-over or mode=lighter
+  //6. blend=dissolve or blend
+  //7. effect=blur|(twirl, top, 30, 20, 20deg, top-left)
+  //8. size=300w bicubic
   std::string_view base( R"((?:\s*from\s+([+-]?\d{1,3})deg(?:\s+at\s+([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))"
                          R"(,\s*([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))?,\s*)?\s*)"
                          R"((?:snap=([a-z]+(?:-[a-z]+)?),\s*)?)"
@@ -4398,7 +4619,7 @@ std::vector<CompositionRule> parseCompositionRule( std::string_view rule)
                          R"((?:,\s*size=(.+?))?)");
   auto parts = partition( rule, R"(;(?=\[))");
   if( parts.empty())
-      parts.push_back( rule.data());
+      parts.emplace_back( rule.data());
   std::regex matcher( base.data(), std::regex_constants::icase);
   std::vector<CompositionRule> c_rules;
   for( auto& part : parts)
@@ -4418,7 +4639,7 @@ std::vector<CompositionRule> parseCompositionRule( std::string_view rule)
               .b_models  = selectBlendModels( match_results[ 7].str()),
               .position  = Vec2D( x_origin.size() ? std::stof( x_origin, nullptr) : INFINITY,
                                  y_origin.size() ? std::stof( y_origin, nullptr) : INFINITY),
-              .snap      = getSnapPosition( match_results[ 4].str()),
+              .snap      = getSnapCoordinate( match_results[ 4].str()),
               .angle     = angle.size() ? std::stoi( angle, nullptr, 10) : 0,
               .image     = match_results[ 5].str(),
               .s_effects = extractEffects( match_results[ 8].str())
@@ -4430,7 +4651,7 @@ std::vector<CompositionRule> parseCompositionRule( std::string_view rule)
   return c_rules;
 }
 
-Vec2D<float> getSnapPosition( std::string_view given)
+Vec2D<float> getSnapCoordinate( std::string_view given)
 {
     size_t view_size = given.size();
     if( !view_size)
@@ -4454,6 +4675,34 @@ Vec2D<float> getSnapPosition( std::string_view given)
     auto index = possibilities.find( clone);
     if( index == possibilities.cend())
         return { INFINITY, INFINITY};
+
+    return index->second;
+}
+
+SnapPosition getSnapPosition( std::string_view given)
+{
+    size_t view_size = given.size();
+    if( !view_size)
+        return SnapPosition::Center;
+
+    static const std::unordered_map<std::string_view, SnapPosition> possibilities
+    {
+        { SNAP_TOP_LEFT,       SnapPosition::TopLeft},
+        { SNAP_TOP_CENTER ,    SnapPosition::TopCenter},
+        { SNAP_TOP_RIGHT ,     SnapPosition::TopRight},
+        { SNAP_LEFT_CENTER ,   SnapPosition::LeftCenter},
+        { SNAP_CENTER ,        SnapPosition::Center},
+        { SNAP_RIGHT_CENTER ,  SnapPosition::RightCenter},
+        { SNAP_BOTTOM_LEFT ,   SnapPosition::BottomLeft},
+        { SNAP_BOTTOM_CENTER , SnapPosition::BottomCenter},
+        { SNAP_BOTTOM_RIGHT ,  SnapPosition::BottomRight},
+    };
+
+    std::string clone( view_size, 0);
+    std::transform( given.cbegin(), given.cend(), clone.begin(), tolower);
+    auto index = possibilities.find( clone);
+    if( index == possibilities.cend())
+        return SnapPosition::Center;
 
     return index->second;
 }
@@ -4587,7 +4836,7 @@ std::string getFontFile( std::string_view font)
                 if( font_manager.get() == nullptr)
                     continue;
                 auto *filename = strchr( font_manager.get(), '/');
-                if( strcasestr( filename, style) == 0)
+                if( strcasestr( filename, style) == nullptr)
                     return filename;
             }
             while( ++i < font_set->nfont);
@@ -4624,9 +4873,10 @@ std::pair<std::string, std::string> requestFontInfo( std::string_view font_file)
 void installFont( std::string_view font_file)
 {
     int code;
+    zip_int64_t response_code;
     zip_error_t zip_error;
     zip_error_init( &zip_error);
-    PropertyManager<zip_error_t *>( &zip_error, zip_error_fini);
+    [[ maybe_unused]] PropertyManager<zip_error_t *> deleter( &zip_error, zip_error_fini);
     PropertyManager<zip_t *> zipper( zip_open( FONT_ARCHIVE, ZIP_CREATE | ZIP_CHECKCONS, &code),
                                      []( auto *zipper) { if( ACCESSIBLE(  zipper)) zip_close( zipper);});
     if( code == -1)
@@ -4635,8 +4885,8 @@ void installFont( std::string_view font_file)
     if( font_family.empty() || font_style.empty())
         return;
 
-    code = zip_dir_add( zipper.get(), font_family.c_str(), ZIP_FL_ENC_GUESS);
-    if( code == -1 && zip_error.zip_err != ZIP_ER_EXISTS)
+    response_code = zip_dir_add( zipper.get(), font_family.c_str(), ZIP_FL_ENC_GUESS);
+    if( response_code == -1 && zip_error.zip_err != ZIP_ER_EXISTS)
         return;
 
     PropertyManager<zip_source *> src( zip_source_file_create( font_file.data(), 0, -1, &zip_error),
@@ -4670,8 +4920,8 @@ void installFont( std::string_view font_file)
 
     file.append( "/");
     file.append( modified_font_filename);
-    code = zip_file_add( zipper.get(), file.c_str(), src.get(), ZIP_FL_ENC_GUESS);
-    if( code == -1 && zip_error.zip_err == ZIP_ER_EXISTS)
+    response_code = zip_file_add( zipper.get(), file.c_str(), src.get(), ZIP_FL_ENC_GUESS);
+    if( response_code == -1 && zip_error.zip_err == ZIP_ER_EXISTS)
     {
         printf( "Font file already exists do you want to overwrite(yes/no/y/n)? ");
         std::string reply;
@@ -4679,8 +4929,8 @@ void installFont( std::string_view font_file)
         std::transform( reply.begin(), reply.end(), reply.begin(), tolower);
         if( compareOr<std::equal_to<std::string>>( reply, "yes", "no", "y", "n"))
         {
-            code = zip_file_add( zipper.get(), file.c_str(), src.get(), ZIP_FL_OVERWRITE);
-            if( code == -1)
+            response_code = zip_file_add( zipper.get(), file.c_str(), src.get(), ZIP_FL_OVERWRITE);
+            if( response_code == -1)
             {
                 fprintf( stderr, "Unable to add font file: (An error occurred!\n");
                 return;

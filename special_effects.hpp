@@ -4,6 +4,7 @@
 #define SE_BLUR      "blur"
 #define SE_SHARPEN   "sharpen"
 #define SE_EMBOSS    "emboss"
+#define SE_OIL       "oily"
 #define SE_GRAYSCALE "grayscale"
 #define SE_GRAINY    "grainy"
 #define SE_TWIRL     "twirl"

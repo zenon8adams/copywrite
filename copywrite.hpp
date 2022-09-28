@@ -323,6 +323,8 @@ struct BKNode
 
 float clamp(float x, float lowerlimit, float upperlimit);
 
+uint8_t colorClamp( float color);
+
 float smoothstep( float left, float right, float x);
 
 template<typename Resource>
@@ -422,11 +424,10 @@ struct FrameBuffer
 {
   std::shared_ptr<Size_Class>buffer;
   int32_t width, height, n_channel;
-  PropertyManager<void *> metadata;
+  std::vector<float> metadata;
   FrameBuffer( std::shared_ptr<Size_Class> buffer = nullptr,
                int32_t width = {}, int32_t height = {}, int32_t bit_depth = {})
   : buffer( buffer), width( width), height( height), n_channel( bit_depth)
-    , metadata( ( void *)nullptr, []( auto *p){ if( p) free( p);})
   {
   }
 };
@@ -439,7 +440,7 @@ struct ApplicationHyperparameters;
 
 void write( FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destination, KDNode *root);
 
-std::vector<float> makeGaussian( float radius);
+std::vector<float> makeGaussian( float radius, size_t width = 17);
 
 static size_t byteCount( uint8_t c );
 
@@ -509,6 +510,18 @@ std::string_view getColorNameAt( size_t pos);
 
 enum class SpecialEffect;
 
+enum class SnapPosition
+{
+    TopLeft,
+    TopCenter,
+    TopRight,
+    LeftCenter,
+    Center,
+    RightCenter,
+    BottomLeft,
+    BottomCenter,
+    BottomRight
+};
 
 struct CompositionRule
 {
@@ -561,36 +574,28 @@ struct CompositionRule
   enum class StickyArena { Top, Base, Both};
   std::deque<BlendModel>                                  b_models;
   Vec2D<float>                                            position{ INFINITY, INFINITY};
-  enum class SnapPosition
-  {
-      TopLeft,
-      TopCenter,
-      TopRight,
-      LeftCenter,
-      Center,
-      RightCenter,
-      BottomLeft,
-      BottomCenter,
-      BottomRight
-  };
   Vec2D<float>                                            snap;
   int 	   	                                              angle{};
   std::string                                             image;
-  std::deque<std::tuple<SpecialEffect, StickyArena, int>> s_effects;
+  std::deque<std::tuple<SpecialEffect, StickyArena, int, std::string>> s_effects;
   int                                                     interpolation[ 3]{};
 };
+
+using StickyArena = CompositionRule::StickyArena;
 
 CompositionRule::CompositionModel selectCompositionModel( std::string_view given);
 
 std::deque<CompositionRule::BlendModel> selectBlendModels( std::string_view given);
 
-std::deque<std::tuple<SpecialEffect, CompositionRule::StickyArena, int>> extractEffects( std::string_view given);
+std::deque<std::tuple<SpecialEffect, StickyArena, int, std::string>> extractEffects( std::string_view given);
 
 std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel model);
 
 std::vector<CompositionRule> parseCompositionRule( std::string_view rule);
 
-Vec2D<float> getSnapPosition( std::string_view given);
+Vec2D<float> getSnapCoordinate( std::string_view given);
+
+SnapPosition getSnapPosition( std::string_view given);
 
 void parseFinalSize( std::string_view rule, int *interpolation);
 
@@ -643,10 +648,22 @@ enum class SpecialEffect
     Blur,
     Sharpen,
     Emboss,
+    Oil,
     RequiresKernelSentinel,
     GrayScale,
     Grainy,
     Twirl
+};
+
+struct SpecialEffectArgs
+{
+    std::vector<float> kernel;
+    Vec2D<int> start{ 0, 0}, extent{ -1, -1};
+    Vec2D<float> twirl_center{ .5f, .5f};
+    int twirl_strength{ 10}, twirl_radius{ 10};
+    float twirl_rotation{};
+    int oil_intensity{ 1}, grain_multiplicity{ 1};
+    bool inplace{};
 };
 
 bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test);
