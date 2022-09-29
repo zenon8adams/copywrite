@@ -45,6 +45,18 @@
     #include <unistd.h>
 #endif
 
+#if defined( __GNUC__) || defined( __clang__)
+    #define popcount8( x) __builtin_popcount( x)
+#else
+    #define popcount8(x)                                 \
+        do {                                             \
+              uint8_t v = x;                             \
+              v = ( v & 0x55) << 1 | (( v >> 1) & 0x55); \
+              v = ( v & 0x33) << 1 | (( v >> 1) & 0x33); \
+              v = ( v & 0x0F) << 1 | (( v >> 1) & 0x0F); \
+        }while( 0);
+#endif
+
 #if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
     #if defined( __GNUC__) || defined( __clang__)
         #define swap32( x) __builtin_bswap32( x)
@@ -136,27 +148,12 @@ struct RowDetail
 };
 typedef std::vector<RowDetail> RowDetails;
 
-/*
- * Each row of the output is a span.
- * The `count` argument defines the number of pixels that should be painted `coverage
- * starting from `spans[i].x`
- */
-void spansCallback( int y, int count, const FT_Span * spans, void * user);
-
-void renderSpans( FT_Library library, FT_Outline * outline, Spans *spans);
-
 enum class Justification
 {
     Left   = -1,
     Right  = 01,
     Center = 02
 };
-
-template <typename T>
-std::pair<std::vector<std::basic_string<T>>, int> expand( std::basic_string_view<T> provision,
-                                                          Justification mode, bool pad = true);
-uint32_t easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<int> size,
-                    Vec2D<int> pos, FT_Vector pen, Vec2D<uint32_t> color_shift, bool is_outline);
 
 enum class GradientType { Linear, Radial, Conic};
 
@@ -319,13 +316,7 @@ struct BKNode
   : word( word), group( group)
   {
   }
-};
-
-float clamp(float x, float lowerlimit, float upperlimit);
-
-uint8_t colorClamp( float color);
-
-float smoothstep( float left, float right, float x);
+};;
 
 template<typename Resource>
 class PropertyManager
@@ -371,18 +362,6 @@ class PropertyManager
   Resource resource;
   std::function<void( Resource)> destructor;
 };
-
-template<typename Pred, typename First, typename... Others>
-bool compareAnd( First base, Others... others)
-{
-  return ( ... && Pred()( base, others));
-}
-
-template<typename Pred, typename First, typename... Others>
-bool compareOr( First base, Others... others)
-{
-  return ( ... || Pred()( base, others));
-}
 
 /*
  * Glyph: Structural representation of a character
@@ -432,81 +411,34 @@ struct FrameBuffer
   }
 };
 
-struct ApplicationHyperparameters;
-
 /*
  * Display the monochrome canvas into stdout
  */
 
-void write( FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destination, KDNode *root);
+namespace ColorUtil
+{
+    void insert( std::shared_ptr<KDNode>& node, Color color, size_t index = 0, uint8_t depth = 0);
 
-std::vector<float> makeGaussian( float radius, size_t width = 17);
+    std::unordered_map<std::string_view, uint32_t>& colorCodeLookup();
 
-static size_t byteCount( uint8_t c );
+    uint32_t decodeColorName( const char *&ctx, BKNode *bkroot);
 
-static uint32_t collate( uint8_t *str, size_t idx, uint8_t count);
+    uint64_t extractColor( const char *&rule, BKNode *bkroot);
 
-std::wstring toWString( std::string str);
+    uint32_t sumMix(uint32_t lcolor, uint32_t rcolor);
 
-template <size_t count>
-std::array<float, count> parseFloats( const char *&rule);
+    static uint32_t subMix( uint32_t lcolor, uint32_t rcolor);
 
-std::vector<std::string> partition( std::string_view provision, std::string_view regexpr);
+    uint64_t mixColor( const char *&ctx, BKNode *bkroot);
 
-ConicGradient generateConicGradient( const char *&rule, const ColorRule& color_rule, BKNode *bkroot);
+    uint8_t colorClamp( float color);
 
-void setColor( const char *& rule, BKNode *bkroot, PropertyProxy<uint64_t> &color);
+    uint32_t colorLerp( uint32_t lcolor, uint32_t rcolor, float progress);
 
-std::vector<ColorRule> parseColorRule( const char *rule, BKNode *bkroot);
+    uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, float progress);
 
-void testColor( const char *rule, BKNode *bkroot);
-
-uint32_t tintColor( uint32_t color, float factor);
-
-uint64_t extractColor(const char *&rule, BKNode *bkroot);
-
-uint64_t mixColor( const char *&ctx, BKNode *bkroot);
-
-uint32_t sumMix(uint32_t lcolor, uint32_t rcolor);
-
-uint32_t subMix( uint32_t lcolor, uint32_t rcolor);
-
-void fillEasingMode( std::function<float(float)> &function, const char *&rule, BKNode *bkroot, char eoc);
-
-uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, float progress);
-
-uint32_t decodeColorName( const char *&ctx, BKNode *bkroot);
-
-uint32_t rgbaToHsva( uint32_t rgb);
-
-uint32_t hsvaToRgba( uint32_t hsv);
-
-uint32_t colorLerp( uint32_t lcolor, uint32_t rcolor, float progress);
-
-XyZColor xyzFromRgb( uint32_t color);
-
-uint32_t xyzToRgb( XyZColor color);
-
-KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0);
-
-uint32_t editDistance( std::string_view main, std::string_view ref);
-
-void insert( std::shared_ptr<KDNode> &node, Color color, size_t index = 0, uint8_t depth = 0);
-
-void insert( std::shared_ptr<BKNode> &node, std::string_view word, BKNode::Group word_group);
-
-void findWordMatch( BKNode *node, std::string_view word, BKNode::Group word_group,
-				   int threshold, std::vector<std::string> &matches);
-
-std::vector<std::string> findWordMatch( BKNode *node, std::string_view word, BKNode::Group word_group, int threshold);
-
-bool ltrim( const char*& p);
-
-uint64_t getNumber( const char *&ctx, uint8_t base = 10);
-
-std::unordered_map<std::string_view, uint32_t>& colorCodeLookup();
-
-std::string_view getColorNameAt( size_t pos);
+    uint32_t tintColor( uint32_t color, float factor);
+}
 
 enum class SpecialEffect;
 
@@ -583,22 +515,6 @@ struct CompositionRule
 
 using StickyArena = CompositionRule::StickyArena;
 
-CompositionRule::CompositionModel selectCompositionModel( std::string_view given);
-
-std::deque<CompositionRule::BlendModel> selectBlendModels( std::string_view given);
-
-std::deque<std::tuple<SpecialEffect, StickyArena, int, std::string>> extractEffects( std::string_view given);
-
-std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel model);
-
-std::vector<CompositionRule> parseCompositionRule( std::string_view rule);
-
-Vec2D<float> getSnapCoordinate( std::string_view given);
-
-SnapPosition getSnapPosition( std::string_view given);
-
-void parseFinalSize( std::string_view rule, int *interpolation);
-
 enum class OutputFormat
 {
     PNG,
@@ -610,38 +526,6 @@ struct Padding
     int left{}, right{},
         top{}, bottom{};
 };
-
-struct ApplicationHyperparameters
-{
-  const char 			 *raster_glyph{ "\u2589"},
-             			 *color_rule{ nullptr},
-             			 *composition_rule{ nullptr},
-             			 *src_filename{ nullptr},
-    				     *dest_filename{ nullptr};
-  std::shared_ptr<KDNode> kdroot;
-  std::shared_ptr<BKNode> bkroot;
-  size_t 				  font_size{ 10},
-                          thickness{ 0};
-  float                   line_height{ 1.15f};
-  Justification           j_mode{ Justification::Left};
-  PropertyProxy<uint32_t> background_color{};
-  bool 					  as_image{ false};
-  bool                    ease_col{ false};
-  bool                    shadow_present{ false};
-  int                     interpolation[ 3]{};  //[0] - width, [1] - height, [2] -> { 0 - bilinear, 1 - bicubic}
-  int                     image_quality{ 100},
-                          dpi{ 120};
-  Padding                 pad{};
-  OutputFormat            out_format{ OutputFormat::PNG};
-};
-
-void render( FT_Library library, FT_Face face, std::wstring_view text, ApplicationHyperparameters& guide);
-
-void drawShadow( const MonoGlyphs &rasters, RowDetails& row_details,
-           FrameBuffer<uint32_t> &frame, ApplicationHyperparameters& guide);
-
-void draw( const MonoGlyphs &rasters, RowDetails& row_details,
-           FrameBuffer<uint32_t> &frame, ApplicationHyperparameters& guide);
 
 enum class SpecialEffect
 {
@@ -666,48 +550,7 @@ struct SpecialEffectArgs
     bool inplace{};
 };
 
-bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test);
-
-#if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
-
-template <typename Tp>
-void resize( FrameBuffer<Tp> &frame, int *interpolation);
-
-template <typename Tp>
-FrameBuffer<Tp> clone( FrameBuffer<Tp> & src);
-
-template <typename Tp>
-void useEffectsOn( FrameBuffer<Tp> &frame, const CompositionRule& c_rule, CompositionRule::StickyArena pos);
-
-void composite( ApplicationHyperparameters &guide, FrameBuffer<uint32_t> &s_frame);
-
-#endif
-
-#if defined( JPG_SUPPORTED)
-
-bool isJPEG( std::string_view filename);
-
-FrameBuffer<uint8_t> readJPEG( std::string_view filename);
-
-void writeJPEG( std::string filename, FrameBuffer<uint32_t> &frame, int quality);
-
-#endif
-
-#if defined( PNG_SUPPORTED)
-
-FrameBuffer<uint8_t> readPNG( std::string_view filename);
-
-void writePNG( std::string filename, FrameBuffer<uint32_t> &frame, int quality);
-
-#endif
-
-void requestFontList();
-
-#if defined( CUSTOM_FONT_SUPPORTED)
-
-std::pair<std::string, std::string> requestFontInfo( std::string_view font_file);
-
-void installFont( std::string_view font_file);
+#if CUSTOM_FONT_SUPPORTED
 
 enum class FontActivity
 {
@@ -715,14 +558,53 @@ enum class FontActivity
     Delete
 };
 
-void executeActionOnFont( std::string_view font_name, FontActivity mode, std::function<void( std::vector<void *>)> fn);
-
-void uninstallFont( std::string_view font);
-
-std::pair<int64_t, std::unique_ptr<uint8_t, DeleterType>> useInstalledFont( std::string_view font_name);
-
 #endif
 
-std::string getFontFile( std::string_view font);
+namespace Util
+{
+    template <typename T>
+    std::pair<std::vector<std::basic_string<T>>, int> expand( std::basic_string_view<T> provision,
+                                                              Justification mode, bool pad = true);
 
+    template<typename Pred, typename First, typename... Others>
+    bool compareAnd( First base, Others... others)
+    {
+        return ( ... && Pred()( base, others));
+    }
+
+    template<typename Pred, typename First, typename... Others>
+    bool compareOr( First base, Others... others)
+    {
+        return ( ... || Pred()( base, others));
+    }
+
+
+    Vec2D<float> getSnapCoordinate( std::string_view given);
+
+    float clamp( float x, float lowerlimit, float upperlimit);
+
+    float smoothstep( float left, float right, float x);
+
+    void insert( std::shared_ptr<BKNode> &node, std::string_view word, BKNode::Group word_group);
+
+    void write( FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destination, KDNode *root);
+
+    std::vector<std::string> partition( std::string_view provision, std::string_view regexpr);
+
+    KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0);
+
+    uint32_t editDistance( std::string_view main, std::string_view ref);
+
+    std::vector<std::string> findWordMatch( BKNode *node, std::string_view word,
+                                            BKNode::Group word_group, int threshold);
+
+    bool ltrim( const char*& p);
+
+    uint64_t getNumber( const char *&ctx, uint8_t base = 10);
+
+    void requestFontList();
+
+    std::string getFontFile( std::string_view font);
+
+}
 #endif //COPYWRITE_HPP

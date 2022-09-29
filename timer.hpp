@@ -13,10 +13,37 @@ public:
         std::clog <<"Started timer with ID: " << epochs.size() -1 <<'\n';
     }
 
-    template<typename Tp = std::chrono::seconds>
-    static std::size_t yield( std::size_t id)
+    static std::string yield( std::size_t id)
     {
-        return std::chrono::duration_cast<Tp>( std::chrono::system_clock::now() - epochs[ id]).count();
+        auto time_value     = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::system_clock::now() - epochs[ id]).count();
+        size_t minutes      = time_value / ( 1000 * 60),
+               seconds      = ( time_value - minutes * 1000 * 60) / 1000,
+               milliseconds = ( time_value - seconds * 1000 - minutes * 1000 * 60);
+        std::stringstream out;
+        if( minutes != 0)
+        {
+            out << minutes << " minute";
+            if( minutes > 1)
+                out << "s";
+        }
+
+        if( seconds != 0)
+        {
+            if( minutes)
+                out << ", " << seconds << " second";
+            else
+                out << seconds << " second";
+            if( seconds > 1)
+                out << "s";
+        }
+
+        if( minutes != 0 || seconds != 0)
+            out << ", " << milliseconds << " millisecond";
+        if( milliseconds > 1)
+            out << "s";
+
+        return out.str();
     }
 private:
     static std::vector<std::chrono::time_point<std::chrono::system_clock>> epochs;

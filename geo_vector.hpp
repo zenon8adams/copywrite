@@ -104,7 +104,7 @@ struct Vec2D
     return 90 + ( std::atan2( y, x) * DEG_SCALE);
   }
   
-  [[nodiscard]] auto rotate( int angle) const
+  [[nodiscard]] auto rotate( float angle) const
   {
     auto rad = static_cast<float>( -angle * RAD_SCALE);
     return Vec2D<float>{

@@ -1,0 +1,301 @@
+/*
+ * List of colors used for ColorRule verification
+ */
+{
+        ColorUtil::insert( kdroot, { RED( COLORHEX_ALICEBLUE), GREEN( COLORHEX_ALICEBLUE),
+                          BLUE( COLORHEX_ALICEBLUE)}, 0);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_ANTIQUEWHITE), GREEN( COLORHEX_ANTIQUEWHITE),
+                          BLUE( COLORHEX_ANTIQUEWHITE)}, 1);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_AQUA), GREEN( COLORHEX_AQUA),
+                          BLUE( COLORHEX_AQUA)}, 2);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_AQUAMARINE), GREEN( COLORHEX_AQUAMARINE),
+                          BLUE( COLORHEX_AQUAMARINE)}, 3);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_AZURE), GREEN( COLORHEX_AZURE),
+                          BLUE( COLORHEX_AZURE)}, 4);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_BEIGE), GREEN( COLORHEX_BEIGE),
+                          BLUE( COLORHEX_BEIGE)}, 5);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_BISQUE), GREEN( COLORHEX_BISQUE),
+                          BLUE( COLORHEX_BISQUE)}, 6);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_BLACK), GREEN( COLORHEX_BLACK),
+                          BLUE( COLORHEX_BLACK)}, 7);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_BLANCHEDALMOND), GREEN( COLORHEX_BLANCHEDALMOND),
+                          BLUE( COLORHEX_BLANCHEDALMOND)}, 8);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_BLUE), GREEN( COLORHEX_BLUE),
+                          BLUE( COLORHEX_BLUE)}, 9);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_BLUEVIOLET), GREEN( COLORHEX_BLUEVIOLET),
+                          BLUE( COLORHEX_BLUEVIOLET)}, 10);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_BROWN), GREEN( COLORHEX_BROWN),
+                          BLUE( COLORHEX_BROWN)}, 11);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_BURLYWOOD), GREEN( COLORHEX_BURLYWOOD),
+                          BLUE( COLORHEX_BURLYWOOD)}, 12);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_CADETBLUE), GREEN( COLORHEX_CADETBLUE),
+                          BLUE( COLORHEX_CADETBLUE)}, 13);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_CHARTREUSE), GREEN( COLORHEX_CHARTREUSE),
+                          BLUE( COLORHEX_CHARTREUSE)}, 14);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_CHOCOLATE), GREEN( COLORHEX_CHOCOLATE),
+                          BLUE( COLORHEX_CHOCOLATE)}, 15);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_CORAL), GREEN( COLORHEX_CORAL),
+                          BLUE( COLORHEX_CORAL)}, 16);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_CORNFLOWERBLUE), GREEN( COLORHEX_CORNFLOWERBLUE),
+                          BLUE( COLORHEX_CORNFLOWERBLUE)}, 17);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_CORNSILK), GREEN( COLORHEX_CORNSILK),
+                          BLUE( COLORHEX_CORNSILK)}, 18);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_CRIMSON), GREEN( COLORHEX_CRIMSON),
+                          BLUE( COLORHEX_CRIMSON)}, 19);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_CYAN), GREEN( COLORHEX_CYAN),
+                          BLUE( COLORHEX_CYAN)}, 20);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKBLUE), GREEN( COLORHEX_DARKBLUE),
+                          BLUE( COLORHEX_DARKBLUE)}, 21);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKCYAN), GREEN( COLORHEX_DARKCYAN),
+                          BLUE( COLORHEX_DARKCYAN)}, 22);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKGOLDENROD), GREEN( COLORHEX_DARKGOLDENROD),
+                          BLUE( COLORHEX_DARKGOLDENROD)}, 23);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKGRAY), GREEN( COLORHEX_DARKGRAY),
+                          BLUE( COLORHEX_DARKGRAY)}, 24);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKGREY), GREEN( COLORHEX_DARKGREY),
+                          BLUE( COLORHEX_DARKGREY)}, 25);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKGREEN), GREEN( COLORHEX_DARKGREEN),
+                          BLUE( COLORHEX_DARKGREEN)}, 26);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKKHAKI), GREEN( COLORHEX_DARKKHAKI),
+                          BLUE( COLORHEX_DARKKHAKI)}, 27);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKMAGENTA), GREEN( COLORHEX_DARKMAGENTA),
+                          BLUE( COLORHEX_DARKMAGENTA)}, 28);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKOLIVEGREEN), GREEN( COLORHEX_DARKOLIVEGREEN),
+                          BLUE( COLORHEX_DARKOLIVEGREEN)}, 29);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKORANGE), GREEN( COLORHEX_DARKORANGE),
+                          BLUE( COLORHEX_DARKORANGE)}, 30);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKORCHID), GREEN( COLORHEX_DARKORCHID),
+                          BLUE( COLORHEX_DARKORCHID)}, 31);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKRED), GREEN( COLORHEX_DARKRED),
+                          BLUE( COLORHEX_DARKRED)}, 32);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKSALMON), GREEN( COLORHEX_DARKSALMON),
+                          BLUE( COLORHEX_DARKSALMON)}, 33);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKSEAGREEN), GREEN( COLORHEX_DARKSEAGREEN),
+                          BLUE( COLORHEX_DARKSEAGREEN)}, 34);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKSLATEBLUE), GREEN( COLORHEX_DARKSLATEBLUE),
+                          BLUE( COLORHEX_DARKSLATEBLUE)}, 35);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKSLATEGRAY), GREEN( COLORHEX_DARKSLATEGRAY),
+                          BLUE( COLORHEX_DARKSLATEGRAY)}, 36);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKSLATEGREY), GREEN( COLORHEX_DARKSLATEGREY),
+                          BLUE( COLORHEX_DARKSLATEGREY)}, 37);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKTURQUOISE), GREEN( COLORHEX_DARKTURQUOISE),
+                          BLUE( COLORHEX_DARKTURQUOISE)}, 38);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DARKVIOLET), GREEN( COLORHEX_DARKVIOLET),
+                          BLUE( COLORHEX_DARKVIOLET)}, 39);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DEEPPINK), GREEN( COLORHEX_DEEPPINK),
+                          BLUE( COLORHEX_DEEPPINK)}, 40);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DEEPSKYBLUE), GREEN( COLORHEX_DEEPSKYBLUE),
+                          BLUE( COLORHEX_DEEPSKYBLUE)}, 41);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DIMGRAY), GREEN( COLORHEX_DIMGRAY),
+                          BLUE( COLORHEX_DIMGRAY)}, 42);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DIMGREY), GREEN( COLORHEX_DIMGREY),
+                          BLUE( COLORHEX_DIMGREY)}, 43);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_DODGERBLUE), GREEN( COLORHEX_DODGERBLUE),
+                          BLUE( COLORHEX_DODGERBLUE)}, 44);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_FIREBRICK), GREEN( COLORHEX_FIREBRICK),
+                          BLUE( COLORHEX_FIREBRICK)}, 45);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_FLORALWHITE), GREEN( COLORHEX_FLORALWHITE),
+                          BLUE( COLORHEX_FLORALWHITE)}, 46);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_FORESTGREEN), GREEN( COLORHEX_FORESTGREEN),
+                          BLUE( COLORHEX_FORESTGREEN)}, 47);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_FUCHSIA), GREEN( COLORHEX_FUCHSIA),
+                          BLUE( COLORHEX_FUCHSIA)}, 48);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_GAINSBORO), GREEN( COLORHEX_GAINSBORO),
+                          BLUE( COLORHEX_GAINSBORO)}, 49);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_GHOSTWHITE), GREEN( COLORHEX_GHOSTWHITE),
+                          BLUE( COLORHEX_GHOSTWHITE)}, 50);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_GOLD), GREEN( COLORHEX_GOLD),
+                          BLUE( COLORHEX_GOLD)}, 51);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_GOLDENROD), GREEN( COLORHEX_GOLDENROD),
+                          BLUE( COLORHEX_GOLDENROD)}, 52);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_GRAY), GREEN( COLORHEX_GRAY),
+                          BLUE( COLORHEX_GRAY)}, 53);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_GREY), GREEN( COLORHEX_GREY),
+                          BLUE( COLORHEX_GREY)}, 54);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_GREEN), GREEN( COLORHEX_GREEN),
+                          BLUE( COLORHEX_GREEN)}, 55);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_GREENYELLOW), GREEN( COLORHEX_GREENYELLOW),
+                          BLUE( COLORHEX_GREENYELLOW)}, 56);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_HONEYDEW), GREEN( COLORHEX_HONEYDEW),
+                          BLUE( COLORHEX_HONEYDEW)}, 57);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_HOTPINK), GREEN( COLORHEX_HOTPINK),
+                          BLUE( COLORHEX_HOTPINK)}, 58);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_INDIANRED), GREEN( COLORHEX_INDIANRED),
+                          BLUE( COLORHEX_INDIANRED)}, 59);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_INDIGO), GREEN( COLORHEX_INDIGO),
+                          BLUE( COLORHEX_INDIGO)}, 60);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_IVORY), GREEN( COLORHEX_IVORY),
+                          BLUE( COLORHEX_IVORY)}, 61);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_KHAKI), GREEN( COLORHEX_KHAKI),
+                          BLUE( COLORHEX_KHAKI)}, 62);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LAVENDER), GREEN( COLORHEX_LAVENDER),
+                          BLUE( COLORHEX_LAVENDER)}, 63);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LAVENDERBLUSH), GREEN( COLORHEX_LAVENDERBLUSH),
+                          BLUE( COLORHEX_LAVENDERBLUSH)}, 64);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LAWNGREEN), GREEN( COLORHEX_LAWNGREEN),
+                          BLUE( COLORHEX_LAWNGREEN)}, 65);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LEMONCHIFFON), GREEN( COLORHEX_LEMONCHIFFON),
+                          BLUE( COLORHEX_LEMONCHIFFON)}, 66);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTBLUE), GREEN( COLORHEX_LIGHTBLUE),
+                          BLUE( COLORHEX_LIGHTBLUE)}, 67);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTCORAL), GREEN( COLORHEX_LIGHTCORAL),
+                          BLUE( COLORHEX_LIGHTCORAL)}, 68);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTCYAN), GREEN( COLORHEX_LIGHTCYAN),
+                          BLUE( COLORHEX_LIGHTCYAN)}, 69);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTGOLDENRODYELLOW), GREEN( COLORHEX_LIGHTGOLDENRODYELLOW),
+                          BLUE( COLORHEX_LIGHTGOLDENRODYELLOW)}, 70);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTGRAY), GREEN( COLORHEX_LIGHTGRAY),
+                          BLUE( COLORHEX_LIGHTGRAY)}, 71);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTGREY), GREEN( COLORHEX_LIGHTGREY),
+                          BLUE( COLORHEX_LIGHTGREY)}, 72);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTGREEN), GREEN( COLORHEX_LIGHTGREEN),
+                          BLUE( COLORHEX_LIGHTGREEN)}, 73);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTPINK), GREEN( COLORHEX_LIGHTPINK),
+                          BLUE( COLORHEX_LIGHTPINK)}, 74);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTSALMON), GREEN( COLORHEX_LIGHTSALMON),
+                          BLUE( COLORHEX_LIGHTSALMON)}, 75);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTSEAGREEN), GREEN( COLORHEX_LIGHTSEAGREEN),
+                          BLUE( COLORHEX_LIGHTSEAGREEN)}, 76);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTSKYBLUE), GREEN( COLORHEX_LIGHTSKYBLUE),
+                          BLUE( COLORHEX_LIGHTSKYBLUE)}, 77);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTSLATEGRAY), GREEN( COLORHEX_LIGHTSLATEGRAY),
+                          BLUE( COLORHEX_LIGHTSLATEGRAY)}, 78);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTSLATEGREY), GREEN( COLORHEX_LIGHTSLATEGREY),
+                          BLUE( COLORHEX_LIGHTSLATEGREY)}, 79);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTSTEELBLUE), GREEN( COLORHEX_LIGHTSTEELBLUE),
+                          BLUE( COLORHEX_LIGHTSTEELBLUE)}, 80);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIGHTYELLOW), GREEN( COLORHEX_LIGHTYELLOW),
+                          BLUE( COLORHEX_LIGHTYELLOW)}, 81);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIME), GREEN( COLORHEX_LIME),
+                          BLUE( COLORHEX_LIME)}, 82);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LIMEGREEN), GREEN( COLORHEX_LIMEGREEN),
+                          BLUE( COLORHEX_LIMEGREEN)}, 83);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_LINEN), GREEN( COLORHEX_LINEN),
+                          BLUE( COLORHEX_LINEN)}, 84);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MAGENTA), GREEN( COLORHEX_MAGENTA),
+                          BLUE( COLORHEX_MAGENTA)}, 85);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MAROON), GREEN( COLORHEX_MAROON),
+                          BLUE( COLORHEX_MAROON)}, 86);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MEDIUMAQUAMARINE), GREEN( COLORHEX_MEDIUMAQUAMARINE),
+                          BLUE( COLORHEX_MEDIUMAQUAMARINE)}, 87);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MEDIUMBLUE), GREEN( COLORHEX_MEDIUMBLUE),
+                          BLUE( COLORHEX_MEDIUMBLUE)}, 88);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MEDIUMORCHID), GREEN( COLORHEX_MEDIUMORCHID),
+                          BLUE( COLORHEX_MEDIUMORCHID)}, 89);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MEDIUMPURPLE), GREEN( COLORHEX_MEDIUMPURPLE),
+                          BLUE( COLORHEX_MEDIUMPURPLE)}, 90);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MEDIUMSEAGREEN), GREEN( COLORHEX_MEDIUMSEAGREEN),
+                          BLUE( COLORHEX_MEDIUMSEAGREEN)}, 91);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MEDIUMSLATEBLUE), GREEN( COLORHEX_MEDIUMSLATEBLUE),
+                          BLUE( COLORHEX_MEDIUMSLATEBLUE)}, 92);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MEDIUMSPRINGGREEN), GREEN( COLORHEX_MEDIUMSPRINGGREEN),
+                          BLUE( COLORHEX_MEDIUMSPRINGGREEN)}, 93);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MEDIUMTURQUOISE), GREEN( COLORHEX_MEDIUMTURQUOISE),
+                          BLUE( COLORHEX_MEDIUMTURQUOISE)}, 94);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MEDIUMVIOLETRED), GREEN( COLORHEX_MEDIUMVIOLETRED),
+                          BLUE( COLORHEX_MEDIUMVIOLETRED)}, 95);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MIDNIGHTBLUE), GREEN( COLORHEX_MIDNIGHTBLUE),
+                          BLUE( COLORHEX_MIDNIGHTBLUE)}, 96);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MINTCREAM), GREEN( COLORHEX_MINTCREAM),
+                          BLUE( COLORHEX_MINTCREAM)}, 97);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MISTYROSE), GREEN( COLORHEX_MISTYROSE),
+                          BLUE( COLORHEX_MISTYROSE)}, 98);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_MOCCASIN), GREEN( COLORHEX_MOCCASIN),
+                          BLUE( COLORHEX_MOCCASIN)}, 99);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_NAVAJOWHITE), GREEN( COLORHEX_NAVAJOWHITE),
+                          BLUE( COLORHEX_NAVAJOWHITE)}, 100);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_NAVY), GREEN( COLORHEX_NAVY),
+                          BLUE( COLORHEX_NAVY)}, 101);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_OLDLACE), GREEN( COLORHEX_OLDLACE),
+                          BLUE( COLORHEX_OLDLACE)}, 102);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_OLIVE), GREEN( COLORHEX_OLIVE),
+                          BLUE( COLORHEX_OLIVE)}, 103);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_OLIVEDRAB), GREEN( COLORHEX_OLIVEDRAB),
+                          BLUE( COLORHEX_OLIVEDRAB)}, 104);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_ORANGE), GREEN( COLORHEX_ORANGE),
+                          BLUE( COLORHEX_ORANGE)}, 105);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_ORANGERED), GREEN( COLORHEX_ORANGERED),
+                          BLUE( COLORHEX_ORANGERED)}, 106);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_ORCHID), GREEN( COLORHEX_ORCHID),
+                          BLUE( COLORHEX_ORCHID)}, 107);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_PALEGOLDENROD), GREEN( COLORHEX_PALEGOLDENROD),
+                          BLUE( COLORHEX_PALEGOLDENROD)}, 108);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_PALEGREEN), GREEN( COLORHEX_PALEGREEN),
+                          BLUE( COLORHEX_PALEGREEN)}, 109);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_PALETURQUOISE), GREEN( COLORHEX_PALETURQUOISE),
+                          BLUE( COLORHEX_PALETURQUOISE)}, 110);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_PALEVIOLETRED), GREEN( COLORHEX_PALEVIOLETRED),
+                          BLUE( COLORHEX_PALEVIOLETRED)}, 111);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_PAPAYAWHIP), GREEN( COLORHEX_PAPAYAWHIP),
+                          BLUE( COLORHEX_PAPAYAWHIP)}, 112);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_PEACHPUFF), GREEN( COLORHEX_PEACHPUFF),
+                          BLUE( COLORHEX_PEACHPUFF)}, 113);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_PERU), GREEN( COLORHEX_PERU),
+                          BLUE( COLORHEX_PERU)}, 114);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_PINK), GREEN( COLORHEX_PINK),
+                          BLUE( COLORHEX_PINK)}, 115);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_PLUM), GREEN( COLORHEX_PLUM),
+                          BLUE( COLORHEX_PLUM)}, 116);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_POWDERBLUE), GREEN( COLORHEX_POWDERBLUE),
+                          BLUE( COLORHEX_POWDERBLUE)}, 117);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_PURPLE), GREEN( COLORHEX_PURPLE),
+                          BLUE( COLORHEX_PURPLE)}, 118);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_REBECCAPURPLE), GREEN( COLORHEX_REBECCAPURPLE),
+                          BLUE( COLORHEX_REBECCAPURPLE)}, 119);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_RED), GREEN( COLORHEX_RED),
+                          BLUE( COLORHEX_RED)}, 120);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_ROSYBROWN), GREEN( COLORHEX_ROSYBROWN),
+                          BLUE( COLORHEX_ROSYBROWN)}, 121);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_ROYALBLUE), GREEN( COLORHEX_ROYALBLUE),
+                          BLUE( COLORHEX_ROYALBLUE)}, 122);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SADDLEBROWN), GREEN( COLORHEX_SADDLEBROWN),
+                          BLUE( COLORHEX_SADDLEBROWN)}, 123);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SALMON), GREEN( COLORHEX_SALMON),
+                          BLUE( COLORHEX_SALMON)}, 124);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SANDYBROWN), GREEN( COLORHEX_SANDYBROWN),
+                          BLUE( COLORHEX_SANDYBROWN)}, 125);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SEAGREEN), GREEN( COLORHEX_SEAGREEN),
+                          BLUE( COLORHEX_SEAGREEN)}, 126);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SEASHELL), GREEN( COLORHEX_SEASHELL),
+                          BLUE( COLORHEX_SEASHELL)}, 127);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SIENNA), GREEN( COLORHEX_SIENNA),
+                          BLUE( COLORHEX_SIENNA)}, 128);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SILVER), GREEN( COLORHEX_SILVER),
+                          BLUE( COLORHEX_SILVER)}, 129);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SKYBLUE), GREEN( COLORHEX_SKYBLUE),
+                          BLUE( COLORHEX_SKYBLUE)}, 130);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SLATEBLUE), GREEN( COLORHEX_SLATEBLUE),
+                          BLUE( COLORHEX_SLATEBLUE)}, 131);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SLATEGRAY), GREEN( COLORHEX_SLATEGRAY),
+                          BLUE( COLORHEX_SLATEGRAY)}, 132);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SLATEGREY), GREEN( COLORHEX_SLATEGREY),
+                          BLUE( COLORHEX_SLATEGREY)}, 133);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SNOW), GREEN( COLORHEX_SNOW),
+                          BLUE( COLORHEX_SNOW)}, 134);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_SPRINGGREEN), GREEN( COLORHEX_SPRINGGREEN),
+                          BLUE( COLORHEX_SPRINGGREEN)}, 135);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_STEELBLUE), GREEN( COLORHEX_STEELBLUE),
+                          BLUE( COLORHEX_STEELBLUE)}, 136);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_TAN), GREEN( COLORHEX_TAN),
+                          BLUE( COLORHEX_TAN)}, 137);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_TEAL), GREEN( COLORHEX_TEAL),
+                          BLUE( COLORHEX_TEAL)}, 138);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_THISTLE), GREEN( COLORHEX_THISTLE),
+                          BLUE( COLORHEX_THISTLE)}, 139);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_TOMATO), GREEN( COLORHEX_TOMATO),
+                          BLUE( COLORHEX_TOMATO)}, 140);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_TURQUOISE), GREEN( COLORHEX_TURQUOISE),
+                          BLUE( COLORHEX_TURQUOISE)}, 141);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_VIOLET), GREEN( COLORHEX_VIOLET),
+                          BLUE( COLORHEX_VIOLET)}, 142);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_WHEAT), GREEN( COLORHEX_WHEAT),
+                          BLUE( COLORHEX_WHEAT)}, 143);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_WHITE), GREEN( COLORHEX_WHITE),
+                          BLUE( COLORHEX_WHITE)}, 144);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_WHITESMOKE), GREEN( COLORHEX_WHITESMOKE),
+                          BLUE( COLORHEX_WHITESMOKE)}, 145);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_YELLOW), GREEN( COLORHEX_YELLOW),
+                          BLUE( COLORHEX_YELLOW)}, 146);
+        ColorUtil::insert( kdroot, { RED( COLORHEX_YELLOWGREEN), GREEN( COLORHEX_YELLOWGREEN),
+                          BLUE( COLORHEX_YELLOWGREEN)}, 147);
+    }

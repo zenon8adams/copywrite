@@ -1,12 +1,25 @@
-#cmakedefine CUSTOM_FONT_SUPPORTED
-#cmakedefine PNG_SUPPORTED
-#cmakedefine JPG_SUPPORTED
+#cmakedefine CUSTOM_FONT_SUPPORTED        1
+#cmakedefine PNG_SUPPORTED                1
+#cmakedefine JPG_SUPPORTED                1
 #cmakedefine IS_LINUX                     1
 #cmakedefine IS_WINDOWS                   1
 #cmakedefine HAVE_SYS_STAT_H              1
 
+#ifndef PNG_SUPPORTED
+    #define PNG_SUPPORTED                0
+#endif
+
+
+#ifndef JPG_SUPPORTED
+    #define JPG_SUPPORTED                0
+#endif
+
+
+
 #if defined( CUSTOM_FONT_SUPPORTED)
     #define FONT_ARCHIVE                  "copywrite-installed-fonts.zip"
+#else
+    #define CUSTOM_FONT_SUPPORTED         0
 #endif
 
 #define SHORT_OPTION_PREFIX               "-"
