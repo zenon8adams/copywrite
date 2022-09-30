@@ -26,7 +26,7 @@
 
 #include <cstdint>
 #include <iostream>
-#include "geo_vector.hpp"
+#include "geometry/geo_vector.hpp"
 
 Vec3D::Vec3D( float x, float y, float z)
     : x( x), y( y), z( z)

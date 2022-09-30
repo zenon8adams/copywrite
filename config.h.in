@@ -1,3 +1,6 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
 #cmakedefine CUSTOM_FONT_SUPPORTED        1
 #cmakedefine PNG_SUPPORTED                1
 #cmakedefine JPG_SUPPORTED                1
@@ -298,3 +301,5 @@
                        ADD( PADDING_BOTTOM        ) \
                        ADD( TEST_COLOR            ) \
                        END( HELP_PROMPT           )
+
+#endif

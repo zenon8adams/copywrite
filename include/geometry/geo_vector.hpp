@@ -27,11 +27,11 @@
 #ifndef COPYWRITE__GEO_VECTOR_HPP_
 #define COPYWRITE__GEO_VECTOR_HPP_
 
-#include <cmath>
 
 #define DEG_SCALE 180.f / M_PI
 #define RAD_SCALE M_PI / 180.f
 #define EPSILON	  1.e-7f
+#include <cmath>
 
 template <typename T = float, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 struct Vec2D

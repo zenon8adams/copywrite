@@ -48,16 +48,16 @@
 #if defined( __GNUC__) || defined( __clang__)
     #define popcount8( x) __builtin_popcount( x)
 #else
-    #define popcount8(x)                                 \
-        do {                                             \
-              uint8_t v = x;                             \
+    #define popcount8(x)                                \
+        do {                                            \
+              uint8_t v = x;                            \
               v = ( v & 0x55) << 1 | (( v >> 1) & 0x55); \
               v = ( v & 0x33) << 1 | (( v >> 1) & 0x33); \
               v = ( v & 0x0F) << 1 | (( v >> 1) & 0x0F); \
         }while( 0);
 #endif
 
-#if defined( PNG_SUPPORTED) || defined( JPG_SUPPORTED)
+#if PNG_SUPPORTED || JPG_SUPPORTED
     #if defined( __GNUC__) || defined( __clang__)
         #define swap32( x) __builtin_bswap32( x)
     #else
@@ -68,20 +68,113 @@
     #else
         #define PNG_ENDIAN( dword) dword
     #endif
-    #if defined( PNG_SUPPORTED)
-        #include <image.hpp>
+    #if PNG_SUPPORTED
+        #include <png++/rgba_pixel.hpp>
+        #include <png++/image.hpp>
     #endif
-    #if defined( JPG_SUPPORTED)
+    #if JPG_SUPPORTED
         #include <jpeglib.h>
     #endif
 #endif
 
-#if defined( CUSTOM_FONT_SUPPORTED)
+#if CUSTOM_FONT_SUPPORTED
 #include <zip.h>
 #endif
 
 #include FT_FREETYPE_H
-#include "geo_vector.hpp"
+
+#define ALLOWANCE                      2
+#define MAX(x, y)                      ((x) ^ (((x) ^ (y)) & -((x) < (y))))
+#define MIN(x, y)                      ((x) ^ (((x) ^ (y)) & -((x) > (y))))
+#define ZERO( fl)                      ( std::abs( fl) <= EPSILON)
+#define EQUAL( al, bl)                 ZERO( ( al) - ( bl))
+#define UNSET( x)                      (( x) == -1)
+#define ACCESSIBLE( ptr)               (( ptr) != nullptr)
+#define RED( color)                    (( uint8_t)(( color) >> 24u))
+#define GREEN( color)                  (( uint8_t)((( color) >> 16u) & 0xFFu))
+#define BLUE( color)                   (( uint8_t)((( color) >> 8u) & 0xFFu))
+#define ALPHA( color)                  (( uint8_t)(( color) & 0xFFu))
+#define RGBA( red, green, blue, alpha) (((( uint32_t)(( uint8_t)red))  << 24u) |\
+                                       ((( uint32_t)(( uint8_t)green)) << 16u) |\
+                                       ((( uint32_t)(( uint8_t)blue))  << 8u) | (( uint8_t)alpha))
+#define RGB( red, green, blue)         RGBA( red, green, blue, 0u)
+#define LUMIN( color)                  (( uint8_t)(( color) >> 8u)  & 0x7Fu)
+#define SAT( color)                    (( uint8_t)(( color) >> 15u) & 0x7Fu)
+#define HUE( color)                    (( uint16_t)(( color) >> 22u))
+#define HSLA( hue, sat, lum, alpha)    ((( uint32_t)( hue)) << 22u |\
+                                       (( uint32_t)( sat))  << 15u |\
+                                       (( uint32_t)( lum))  << 8u | alpha)
+#define SCALE_RGB( color, scale)       RGB( RED( color) * ( scale), GREEN( color) * ( scale), BLUE( color) * ( scale))
+#define XYZ_SCALE                      775
+#define RGB_SCALE                      255
+#define DEG_MAX                        360
+#define HALF_RGB_SCALE                 128
+#define ENUM_CAST( idx)				   ( static_cast<uint8_t>( idx))
+#define FLOAT_CAST( value)             ( static_cast<float>( value))
+#define INT_CAST( value)               ( static_cast<int>( value))
+#define From26Dot6( value)             (( value) / 64)
+#define To26Dot6( value)               (( value) * 64)
+#define MODEL_ENUM( mode)			   CompositionRule::CompositionModel::mode
+#define BLEND_ENUM( mode)              CompositionRule::BlendModel::mode
+/*
+ * The composition table is made up of 2 bit field
+ * per flag for CompositionModel.
+ * E.g Copy has an index of 1, and a value of 10.
+ * The lower zero from the right means that the size of the canvas should be maximum or minimum( 1 or 0).
+ * The rightmost zero indicates that if the first bit is maximum, then the size should be that
+ * of the source or destination( 1 or 0).
+ * The fields are:
+ * Clip 		   = 00,
+ * Copy            = 01
+ * DestinationAtop = 02,
+ * DestinationIn   = 03,
+ * DestinationOver = 04,
+ * DestinationOut  = 05,
+ * Lighter         = 06,
+ * NotApplicable   = 07,
+ * SourceAtop      = 08,
+ * SourceIn        = 09,
+ * SourceOver      = 10,
+ * SourceOut       = 11,
+ * Xor             = 12
+ * COMPOSITION_TABLE LAYOUT:
+ * 01 10 01 00 00 00 01 00 01 10 10 10 10
+ * 12 11 10 09 08 07 06 05 04 03 02 01 00
+ * 01 1001 0000 0001 0001 1010 1010
+ */
+#define COMPOSITION_TABLE		       0x19011AAU
+#define COMPOSITON_SIZE( idx)          (( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U)) & 1U)
+#define COMPOSITION_SIDE( idx)		   (( COMPOSITION_TABLE >> ( ENUM_CAST( idx) * 2U + 1U)) & 1U)
+#define LOW_BYTE( value)               (( uint8_t)(( value) & 0xFFu))
+#define HIGH_BYTE( value)              (( uint8_t)(( value) >> 8u))
+#define MAKE_WORD( high, low)          (( uint16_t)( high) << 8u | ( low))
+#define LOW_DWORD( value)              (( uint32_t)(( value) & 0xFFFFFFFFu))
+#define HIGH_DWORD( value)             (( uint32_t)(( value) >> 32u))
+#define MAKE_QWORD( high, low)         (( uint64_t)( high) << 32u | ( low))
+
+#define FOUND_STRING( xpr)             (( xpr) == 0)
+
+#define STR_LIGHTER                    "lighter"
+#define STR_DARKER                     "darker"
+
+#define GLOBAL_TIME_ID                 0
+
+/*
+ * CommandLineParser -> ApplicationDirector
+ * TextCodec
+ * TextColorizer
+ * TextRenderer
+ * LayerRenderer    <- Plugin
+ * ColorSpaceConverter
+ * LocalFontManager <- Plugin
+ * ImageManager     <- Plugin
+ */
+
+#define IMAGE_MANAGER                  "ImageManager"
+#define LOCAL_FONT_MANAGER             "LocalFontManager"
+#define LAYER_RENDERER                 "LayerRenderer"
+
+#include "geometry/geo_vector.hpp"
 
 #define MAX_DIFF_TOLERANCE 20
 
@@ -155,19 +248,69 @@ enum class Justification
     Center = 02
 };
 
+template <typename T, typename = void>
+class PropertyProxy
+{
+public:
+    template <typename = std::enable_if<std::is_default_constructible_v<T>>>
+    PropertyProxy()
+    {
+    }
+
+    explicit PropertyProxy( T value)
+            : value( value)
+    {
+    }
+
+    operator T() const
+    {
+        return value;
+    }
+
+    [[nodiscard]] T cast()
+    {
+        return value;
+    }
+
+    T operator=( T another)
+    {
+        if( state_change_callable)
+            std::invoke( state_change_callable, value);
+        changed_since_initialization = true;
+        return value = std::forward<T>( another);
+    }
+
+    [[nodiscard]] bool changed() const
+    {
+        return changed_since_initialization;
+    }
+private:
+    T value{};
+    std::function<void( T)> state_change_callable;
+    bool changed_since_initialization{ false};
+};
+
 enum class GradientType { Linear, Radial, Conic};
 
 struct BaseGradient
 {
-  int32_t startx{}, width{}, height{};
-  GradientType gradient_type{ GradientType::Linear};
+  int startx, width, height;
+  GradientType gradient_type;
+  BaseGradient( GradientType type = GradientType::Linear, int sx = {}, int w = {}, int h = {})
+  : startx( sx), width( w), height( h), gradient_type( type)
+  {
+  }
+
+  virtual ~BaseGradient()
+  {
+  }
 };
 
 struct RadialGradient : BaseGradient
 {
   Vec3D props;
-  explicit RadialGradient( float x, float y, float z)
-	  : props( x, y, z), BaseGradient{ .gradient_type = GradientType::Radial}
+  RadialGradient( float x, float y, float z)
+	  : BaseGradient( GradientType::Radial), props( x, y, z)
   {
   }
 };
@@ -176,46 +319,14 @@ struct LinearGradient : BaseGradient
 {
 };
 
-template <typename T, typename = void>
-class PropertyProxy
+
+struct ConicGradient : BaseGradient
 {
- public:
-  template <typename = std::enable_if<std::is_default_constructible_v<T>>>
-  PropertyProxy()
-  {
-  }
-
-  explicit PropertyProxy( T value)
-  : value( value)
-  {
-  }
-
-  operator T() const
-  {
-    return value;
-  }
-
-  [[nodiscard]] T cast()
-  {
-	return value;
-  }
-
-  T operator=( T another)
-  {
-    if( state_change_callable)
-      std::invoke( state_change_callable, value);
-    changed_since_initialization = true;
-     return value = std::forward<T>( another);
-  }
-
-  [[nodiscard]] bool changed() const
-  {
-    return changed_since_initialization;
-  }
-private:
-  T value{};
-  std::function<void( T)> state_change_callable;
-  bool changed_since_initialization{ false};
+    PropertyProxy<Vec2D<float>> origin{};
+    std::vector<std::pair<uint64_t, size_t>> color_variations;
+    ConicGradient() : BaseGradient( GradientType::Conic)
+    {
+    }
 };
 
 template <typename T>
@@ -287,14 +398,6 @@ struct XyZColor
     double x, y, z;
 };
 
-struct ConicGradient : BaseGradient
-{
-  PropertyProxy<Vec2D<float>> origin{};
-  std::vector<std::pair<uint64_t, size_t>> color_variations;
-  ConicGradient() : BaseGradient{ .gradient_type = GradientType::Conic}
-  {
-  }
-};
 
 struct KDNode
 {
@@ -415,31 +518,6 @@ struct FrameBuffer
  * Display the monochrome canvas into stdout
  */
 
-namespace ColorUtil
-{
-    void insert( std::shared_ptr<KDNode>& node, Color color, size_t index = 0, uint8_t depth = 0);
-
-    std::unordered_map<std::string_view, uint32_t>& colorCodeLookup();
-
-    uint32_t decodeColorName( const char *&ctx, BKNode *bkroot);
-
-    uint64_t extractColor( const char *&rule, BKNode *bkroot);
-
-    uint32_t sumMix(uint32_t lcolor, uint32_t rcolor);
-
-    static uint32_t subMix( uint32_t lcolor, uint32_t rcolor);
-
-    uint64_t mixColor( const char *&ctx, BKNode *bkroot);
-
-    uint8_t colorClamp( float color);
-
-    uint32_t colorLerp( uint32_t lcolor, uint32_t rcolor, float progress);
-
-    uint32_t interpolateColor( uint32_t scolor, uint32_t ecolor, float progress);
-
-    uint32_t tintColor( uint32_t color, float factor);
-}
-
 enum class SpecialEffect;
 
 enum class SnapPosition
@@ -550,61 +628,35 @@ struct SpecialEffectArgs
     bool inplace{};
 };
 
-#if CUSTOM_FONT_SUPPORTED
-
-enum class FontActivity
+struct ApplicationDirector
 {
-    Read,
-    Delete
+    const char 			   *raster_glyph{ "\u2589"},
+            *color_rule{ nullptr},
+            *composition_rule{ nullptr},
+            *src_filename{ nullptr};
+    std::string_view        font_profile;
+    std::string_view        text;
+    std::shared_ptr<KDNode> kdroot;
+    std::shared_ptr<BKNode> bkroot;
+    size_t 				    font_size{ 10},
+            thickness{ 0};
+    float                   line_height{ 1.15f};
+    Justification           j_mode{ Justification::Left};
+    PropertyProxy<uint32_t> background_color{};
+    bool 					as_image{ false};
+    bool                    ease_col{ false};
+    bool                    shadow_present{ false};
+    int                     interpolation[ 3]{};  //[0] - width, [1] - height, [2] -> { 0 - bilinear, 1 - bicubic}
+    int                     image_quality{ 100},
+            dpi{ 120};
+    Padding                 pad{};
+    OutputFormat            out_format{ OutputFormat::PNG};
 };
 
-#endif
-
-namespace Util
-{
-    template <typename T>
-    std::pair<std::vector<std::basic_string<T>>, int> expand( std::basic_string_view<T> provision,
-                                                              Justification mode, bool pad = true);
-
-    template<typename Pred, typename First, typename... Others>
-    bool compareAnd( First base, Others... others)
+    enum class FontActivity
     {
-        return ( ... && Pred()( base, others));
-    }
+        Read,
+        Delete
+    };
 
-    template<typename Pred, typename First, typename... Others>
-    bool compareOr( First base, Others... others)
-    {
-        return ( ... || Pred()( base, others));
-    }
-
-
-    Vec2D<float> getSnapCoordinate( std::string_view given);
-
-    float clamp( float x, float lowerlimit, float upperlimit);
-
-    float smoothstep( float left, float right, float x);
-
-    void insert( std::shared_ptr<BKNode> &node, std::string_view word, BKNode::Group word_group);
-
-    void write( FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destination, KDNode *root);
-
-    std::vector<std::string> partition( std::string_view provision, std::string_view regexpr);
-
-    KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0);
-
-    uint32_t editDistance( std::string_view main, std::string_view ref);
-
-    std::vector<std::string> findWordMatch( BKNode *node, std::string_view word,
-                                            BKNode::Group word_group, int threshold);
-
-    bool ltrim( const char*& p);
-
-    uint64_t getNumber( const char *&ctx, uint8_t base = 10);
-
-    void requestFontList();
-
-    std::string getFontFile( std::string_view font);
-
-}
 #endif //COPYWRITE_HPP

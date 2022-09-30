@@ -24,16 +24,40 @@
 #/*                                                                         */
 #/***************************************************************************/
 
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.5.0)
 project(copywrite)
 
-set(CMAKE_CXX_STANDARD 17)
-# set(CMAKE_CXX_FLAGS -fcoroutines)
+# Read the version information from the VERSION file
+file(STRINGS "${PROJECT_SOURCE_DIR}/VERSION" PACKAGE_VERSION)
+string(REGEX REPLACE "([0-9]+)\\.[0-9]+\\.[0-9]+.*" "\\1" CPACK_PACKAGE_VERSION_MAJOR ${PACKAGE_VERSION})
+string(REGEX REPLACE "[0-9]+\\.([0-9]+)\\.[0-9]+.*" "\\1" CPACK_PACKAGE_VERSION_MINOR ${PACKAGE_VERSION})
+string(REGEX REPLACE "[0-9]+\\.[0-9]+\\.([0-9]+).*" "\\1" CPACK_PACKAGE_VERSION_PATCH ${PACKAGE_VERSION})
+
+set(PROJECT_VERSION ${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH})
+
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+
+################################################################################################################
+# Setup C/C++ compiler options
+# C++17 compiler support
+################################################################################################################
+include(CXX17)
+check_for_cxx17_compiler( CXX17_COMPILER)
+
+if(CXX17_COMPILER)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+else()
+    message(FATAL_ERROR "Compiler does not support C++17.")
+endif()
+
 option(CUSTOM_FONT_SUPPORTED "Install and Uninstall fonts locally" OFF)
 option(PNG_SUPPORTED "Export design as PNG" OFF)
 option(JPG_SUPPORTED "Export design as JPG" OFF)
-option(TESTS "Compile and make test" ON)
+option(BUILD_TESTS "Compile and make test"  OFF)
+
 set(OPERATING_SYSTEM "${CMAKE_SYSTEM_NAME}")
+
 if(CMAKE_SYSTEM_NAME MATCHES Linux)
     set(IS_LINUX ON)
     include(CheckIncludeFiles)
@@ -98,12 +122,23 @@ if(EXISTS  "${FONTCONFIG_INCLUDE_PATH}/fontconfig")
 endif()
 
 if(EXISTS "${FREETYPE_INCLUDE_PATH}/freetype2")
-    set( FONTCONFIG_INCLUDE_PATH "${FREETYPE_INCLUDE_PATH}/freetype2/")
+    set( FREETYPE_INCLUDE_PATH "${FREETYPE_INCLUDE_PATH}/freetype2/")
 endif()
 
-add_executable( ${PROJECT_NAME} copywrite.cpp copywrite.hpp colors_defs.hpp easing_defs.hpp
-                                geo_vector.cpp geo_vector.hpp composition_defs.hpp blend_defs.hpp
-                                timer.hpp special_effects.hpp snap_defs.hpp)
+include(Macros)
+###################################################
+# Move through all directories in source all source
+# files, include files
+# and include paths into the following variables:
+# SOURCE_FILES
+# INCLUDE_FILES
+# INCLUDE_PATHS
+###################################################
+include_subdirs( "src")
+
+add_executable( ${PROJECT_NAME} src/copywrite.cpp include/copywrite.hpp ${SOURCE_FILES} ${INCLUDE_FILES})
+target_link_libraries( ${PROJECT_NAME} PUBLIC ${MODULES})
+target_include_directories( ${PROJECT_NAME} PUBLIC include ${INCLUDE_PATHS})
 
 if(CUSTOM_FONT_SUPPORTED)
     find_library(ZIP_LIB_PATH NAMES zip libzip)
@@ -114,12 +149,14 @@ if(CUSTOM_FONT_SUPPORTED)
 endif()
 
 configure_file(config.h.in config.h)
-target_include_directories( ${PROJECT_NAME} PRIVATE ${FONTCONFIG_INCLUDE_PATH}
+target_include_directories( ${PROJECT_NAME} PUBLIC ${FONTCONFIG_INCLUDE_PATH}
         ${FREETYPE_INCLUDE_PATH} ${PNG_INCLUDE_PATH} ${JPG_INCLUDE_PATH} ${ZIP_INCLUDE_PATH}
         ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries( ${PROJECT_NAME} PUBLIC ${FONTCONFIG_LIB_PATH} ${FREETYPE_LIB_PATH}
         ${PNG_LIB_PATH} ${JPG_LIB_PATH} ${ZIP_LIB_PATH})
 
-if( TESTS)
+if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
+
+print_configuration()
