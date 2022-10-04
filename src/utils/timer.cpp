@@ -11,8 +11,8 @@ void Timer::start()
 
 std::string Timer::yield( std::size_t id)
 {
-    auto time_value     = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - epochs[ id]).count();
+    auto current_time = std::chrono::system_clock::now();
+    auto time_value     = std::chrono::duration_cast<std::chrono::milliseconds>( current_time - epochs[ id]).count();
     size_t minutes      = time_value / ( 1000 * 60),
             seconds      = ( time_value - minutes * 1000 * 60) / 1000,
             milliseconds = ( time_value - seconds * 1000 - minutes * 1000 * 60);
@@ -36,9 +36,12 @@ std::string Timer::yield( std::size_t id)
 
     if( minutes != 0 || seconds != 0)
         out << ", " << milliseconds << " millisecond";
+    else
+        out << milliseconds << " millisecond";
     if( milliseconds > 1)
         out << "s";
 
+    epochs[ id] = current_time;
     return out.str();
 }
 

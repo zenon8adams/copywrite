@@ -896,15 +896,15 @@ std::deque<std::tuple<SpecialEffect, StickyArena, int, std::string>> RuleParser:
     if( parts.empty())
         parts.emplace_back( given.data());
     static const std::unordered_map<std::string_view, SpecialEffect> possibilities
-            {
-                    { SE_BLUR,      SpecialEffect::Blur},
-                    { SE_SHARPEN,   SpecialEffect::Sharpen},
-                    { SE_EMBOSS,    SpecialEffect::Emboss},
-                    { SE_OIL,       SpecialEffect::Oil},
-                    { SE_GRAYSCALE, SpecialEffect::GrayScale},
-                    { SE_GRAINY,    SpecialEffect::Grainy},
-                    { SE_TWIRL,     SpecialEffect::Twirl}
-            };
+    {
+        { SE_BLUR,      SpecialEffect::Blur},
+        { SE_SHARPEN,   SpecialEffect::Sharpen},
+        { SE_EMBOSS,    SpecialEffect::Emboss},
+        { SE_OIL,       SpecialEffect::Oil},
+        { SE_GRAYSCALE, SpecialEffect::GrayScale},
+        { SE_GRAINY,    SpecialEffect::Grainy},
+        { SE_TWIRL,     SpecialEffect::Twirl}
+    };
 
     std::deque<std::tuple<SpecialEffect, StickyArena, int, std::string>> effects;
     std::smatch sm;
