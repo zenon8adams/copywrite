@@ -7,9 +7,15 @@
 
 namespace Util
 {
+    /*
+     * Splits a given string into lines based on justification mode specified.
+     * The pad parameter specifies if the spaces should be added.
+     * NB! The pad parameter seems unnecessary in the context of splitting of the strings,
+     *     it is used inside the render function to indicate that only splitting is necessary.
+     */
     template <typename T>
     std::pair<std::vector<std::basic_string<T>>, int> expand( std::basic_string_view<T> provision,
-                                                              Justification mode, bool pad = true)
+                                                              Justification mode = Justification::Left, bool pad = true)
     {
         std::vector<std::basic_string<T>> parts;
         int j = 0, max_length = 0, prev = '\0';
@@ -32,8 +38,8 @@ namespace Util
             for( auto& line : parts)
             {
                 int rem   = max_length - line.length(),
-                        left  = rem / ENUM_CAST( mode),
-                        right = rem - ( left = ( left > 0) * left);
+                    left  = rem / ENUM_CAST( mode),
+                    right = rem - ( left = ( left > 0) * left);
                 line.insert( 0, std::basic_string<T>( left, ' '));
                 line.append( std::basic_string<T>( right, ' '));
             }
@@ -60,19 +66,40 @@ namespace Util
 
     float smoothstep( float left, float right, float x);
 
+    /*
+     * Build a BKTree with the given word into the word group.
+     */
     void insert( std::shared_ptr<BKNode> &node, std::string_view word, BKNode::Group word_group);
 
+    /*
+     *  Write the given text to the console using the specified color rules for adornment.
+     */
     void write( FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destination, KDNode *root);
 
-    std::vector<std::string> partition( std::string_view provision, std::string_view regexpr);
+    /*
+     * Split the given string `provision` based on the given regular expression.
+     */
+    std::vector<std::string> partition( std::string_view provision, std::string_view reg_expr);
 
+    /*
+     * Get the closest color to the one specified in `search`.
+     */
     KDNode *approximate( KDNode *node, Color search, double &ldist, KDNode *best = nullptr, uint8_t depth = 0);
 
+    /*
+     * Calculate the Levenshtein distance. Used as the norm in BKTrees.
+     */
     uint32_t editDistance( std::string_view main, std::string_view ref);
 
+    /*
+     * Search for a collection of the closest word match to the word.
+     */
     std::vector<std::string> findWordMatch( BKNode *node, std::string_view word,
                                             BKNode::Group word_group, int threshold);
 
+    /*
+     * Consumes white space up to a non-empty character.
+     */
     bool ltrim( const char*& p);
 
     uint64_t getNumber( const char *&ctx, uint8_t base = 10);

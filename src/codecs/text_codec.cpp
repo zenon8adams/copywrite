@@ -47,7 +47,7 @@ std::wstring TextCodec::toWString( std::string str)
     std::wstring wsRep;
     for( size_t i = 0uL; i < str.size(); )
     {
-        size_t byte_count = byteCount( str[i]);
+        size_t byte_count = byteCount( str[ i]);
         wsRep += static_cast<wchar_t>( collate( ( uint8_t *)&str[ 0], i, byte_count));
         i += byte_count;
     }

@@ -77,9 +77,6 @@ void TextColorizer::paintShadow( FrameBuffer<uint32_t> &frame)
     // Reset head of all pens to zero.
     for( auto& raster : rasters)
         memset( &row_details[ raster.level].pen, 0, sizeof( FT_Vector));
-
-//    auto kernel = makeGaussian( 8);
-//    applyEffect( frame, SpecialEffect::GaussianBlur, &kernel);
 }
 
 void TextColorizer::paintText( FrameBuffer<uint32_t> &frame)
@@ -97,7 +94,7 @@ void TextColorizer::paintText( FrameBuffer<uint32_t> &frame)
         auto& [ main, outline] = raster.spans;
         auto& rect  = raster.bbox;
         int width   = raster.is_graph ? raster.bbox.width()  : INT_CAST( raster.advance.x),
-                height  = raster.is_graph ? raster.bbox.height() : INT_CAST( raster.advance.y);
+            height  = raster.is_graph ? raster.bbox.height() : INT_CAST( raster.advance.y);
         auto length = app_manager_.ease_col ? height : width;
         auto& match = raster.match;
         auto& row_detail = row_details[ raster.level];
@@ -124,14 +121,14 @@ void TextColorizer::paintText( FrameBuffer<uint32_t> &frame)
             if( !match->soak)
             {
                 auto start = Vec2D<int>( raster.pos.x - match->start.x, raster.pos.y - match->start.y),
-                        end   = Vec2D<int>( UNSET( match->end.x)
-                                            ? std::max( INT_CAST( n_glyphs) / n_levels - 1, 1)
-                                            : match->end.x - match->start.x,
-                                            UNSET( match->end.y)
-                                            ? std::max( n_levels - 1, 1) : match->end.y - match->start.y);
+                     end   = Vec2D<int>( UNSET( match->end.x)
+                                         ? std::max( INT_CAST( n_glyphs) / n_levels - 1, 1)
+                                         : match->end.x - match->start.x,
+                                         UNSET( match->end.y)
+                                         ? std::max( n_levels - 1, 1) : match->end.y - match->start.y);
                 auto fraction = match->color_easing_fn( app_manager_.ease_col ?
                                                         FLOAT_CAST( start.y) / FLOAT_CAST( end.y)
-                                                                              : FLOAT_CAST( start.x) / FLOAT_CAST( end.x));
+                                                        : FLOAT_CAST( start.x) / FLOAT_CAST( end.x));
                 inner_color   = ColorUtil::interpolateColor( LOW_DWORD( match->scolor),
                                                              LOW_DWORD( match->ecolor), fraction);
                 outline_color = ColorUtil::interpolateColor( HIGH_DWORD( match->scolor),
@@ -256,7 +253,7 @@ uint32_t TextColorizer::easeColor( const MonoGlyph &raster, const RowDetail &row
                                  UNSET( match->end.y) ? std::max<int>( size.y - 1, 1)
                                                       : match->end.y - match->start.y);
     auto cwidth  = match->soak ? match->gradient->width : INT_CAST( end.x),
-            cheight = match->soak ? match->gradient->height : INT_CAST( end.y);
+         cheight = match->soak ? match->gradient->height : INT_CAST( end.y);
     if( match->gradient->gradient_type == GradientType::Radial)
     {
         auto& props = reinterpret_cast<RadialGradient *>( match->gradient.get())->props;

@@ -147,14 +147,6 @@ ConicGradient RuleParser::parseConicGradient( const char *&rule, const ColorRule
                 cstops[ i].second = std::max( cstops[ i - 1].second, cstops[ i].second);
         }
 
-/*     auto last_angle = cstops.back().second;
-     if( last_angle < DEG_MAX)
-         cstops.emplace_back( cstops.back().first, DEG_MAX);
-     auto start = cstops.front().second;
-     if( start > 0)
-         cstops.emplace_back( cstops.back().first, 0);
-     cstops_length = cstops.size();*/
-
         size_t i = 0;
         int rem;
         for( ; i < cstops_length; ++i)
@@ -497,20 +489,20 @@ CompositionRule::CompositionModel RuleParser::selectCompositionModel( std::strin
         return CompositionRule::CompositionModel::NotApplicable;
 
     static const std::unordered_map<std::string_view, CompositionRule::CompositionModel> possibilities
-            {
-                    { CLIP			 , CompositionRule::CompositionModel::Clip},
-                    { COPY			 , CompositionRule::CompositionModel::Copy},
-                    { DESTINATION_ATOP, CompositionRule::CompositionModel::DestinationAtop},
-                    { DESTINATION_IN  , CompositionRule::CompositionModel::DestinationIn},
-                    { DESTINATION_OVER, CompositionRule::CompositionModel::DestinationOver},
-                    { DESTINATION_OUT , CompositionRule::CompositionModel::DestinationOut},
-                    { LIGHTER 		 , CompositionRule::CompositionModel::Lighter},
-                    { SOURCE_ATOP 	 , CompositionRule::CompositionModel::SourceAtop},
-                    { SOURCE_IN 		 , CompositionRule::CompositionModel::SourceIn},
-                    { SOURCE_OVER 	 , CompositionRule::CompositionModel::SourceOver},
-                    { SOURCE_OUT 	 , CompositionRule::CompositionModel::SourceOut},
-                    { XOR 			 , CompositionRule::CompositionModel::Xor},
-            };
+    {
+        { CLIP			 , CompositionRule::CompositionModel::Clip},
+        { COPY			 , CompositionRule::CompositionModel::Copy},
+        { DESTINATION_ATOP, CompositionRule::CompositionModel::DestinationAtop},
+        { DESTINATION_IN  , CompositionRule::CompositionModel::DestinationIn},
+        { DESTINATION_OVER, CompositionRule::CompositionModel::DestinationOver},
+        { DESTINATION_OUT , CompositionRule::CompositionModel::DestinationOut},
+        { LIGHTER 		 , CompositionRule::CompositionModel::Lighter},
+        { SOURCE_ATOP 	 , CompositionRule::CompositionModel::SourceAtop},
+        { SOURCE_IN 		 , CompositionRule::CompositionModel::SourceIn},
+        { SOURCE_OVER 	 , CompositionRule::CompositionModel::SourceOver},
+        { SOURCE_OUT 	 , CompositionRule::CompositionModel::SourceOut},
+        { XOR 			 , CompositionRule::CompositionModel::Xor},
+    };
 
     std::string clone( view_size, 0);
     std::transform( given.cbegin(), given.cend(), clone.begin(), tolower);
@@ -530,35 +522,35 @@ std::deque<CompositionRule::BlendModel> RuleParser::selectBlendModels( std::stri
         s_models.emplace_back( given.data());
 
     static const std::unordered_map<std::string_view, CompositionRule::BlendModel> possibilities
-            {
-                    { BM_NORMAL,        CompositionRule::BlendModel::Normal},
-                    { BM_DISSOLVE,      CompositionRule::BlendModel::Dissolve},
-                    { BM_DARKEN,        CompositionRule::BlendModel::Darken},
-                    { BM_MULTIPLY,      CompositionRule::BlendModel::Multiply},
-                    { BM_COLOR_BURN,    CompositionRule::BlendModel::ColorBurn},
-                    { BM_LINEAR_BURN,   CompositionRule::BlendModel::LinearBurn},
-                    { BM_DARKER_COLOR,  CompositionRule::BlendModel::DarkerColor},
-                    { BM_LIGHTEN,       CompositionRule::BlendModel::Lighten},
-                    { BM_SCREEN,        CompositionRule::BlendModel::Screen},
-                    { BM_COLOR_DODGE,   CompositionRule::BlendModel::ColorDodge},
-                    { BM_LINEAR_DODGE,  CompositionRule::BlendModel::LinearDodge},
-                    { BM_LIGHTER_COLOR, CompositionRule::BlendModel::LighterColor},
-                    { BM_OVERLAY,       CompositionRule::BlendModel::Overlay},
-                    { BM_SOFT_LIGHT,    CompositionRule::BlendModel::SoftLight},
-                    { BM_HARD_LIGHT,    CompositionRule::BlendModel::HardLight},
-                    { BM_VIVID_LIGHT,   CompositionRule::BlendModel::VividLight},
-                    { BM_LINEAR_LIGHT,  CompositionRule::BlendModel::LinearLight},
-                    { BM_PIN_LIGHT,     CompositionRule::BlendModel::PinLight},
-                    { BM_HARD_MIX,      CompositionRule::BlendModel::HardMix},
-                    { BM_DIFFERENCE,    CompositionRule::BlendModel::Difference},
-                    { BM_EXCLUSION,     CompositionRule::BlendModel::Exclusion},
-                    { BM_SUBTRACT,      CompositionRule::BlendModel::Subtract},
-                    { BM_DIVIDE,        CompositionRule::BlendModel::Divide},
-                    { BM_HUE,           CompositionRule::BlendModel::Hue},
-                    { BM_SATURATION,    CompositionRule::BlendModel::Saturation},
-                    { BM_COLOR,         CompositionRule::BlendModel::Color},
-                    { BM_LUMINOSITY,    CompositionRule::BlendModel::Luminosity},
-            };
+    {
+        { BM_NORMAL,        CompositionRule::BlendModel::Normal},
+        { BM_DISSOLVE,      CompositionRule::BlendModel::Dissolve},
+        { BM_DARKEN,        CompositionRule::BlendModel::Darken},
+        { BM_MULTIPLY,      CompositionRule::BlendModel::Multiply},
+        { BM_COLOR_BURN,    CompositionRule::BlendModel::ColorBurn},
+        { BM_LINEAR_BURN,   CompositionRule::BlendModel::LinearBurn},
+        { BM_DARKER_COLOR,  CompositionRule::BlendModel::DarkerColor},
+        { BM_LIGHTEN,       CompositionRule::BlendModel::Lighten},
+        { BM_SCREEN,        CompositionRule::BlendModel::Screen},
+        { BM_COLOR_DODGE,   CompositionRule::BlendModel::ColorDodge},
+        { BM_LINEAR_DODGE,  CompositionRule::BlendModel::LinearDodge},
+        { BM_LIGHTER_COLOR, CompositionRule::BlendModel::LighterColor},
+        { BM_OVERLAY,       CompositionRule::BlendModel::Overlay},
+        { BM_SOFT_LIGHT,    CompositionRule::BlendModel::SoftLight},
+        { BM_HARD_LIGHT,    CompositionRule::BlendModel::HardLight},
+        { BM_VIVID_LIGHT,   CompositionRule::BlendModel::VividLight},
+        { BM_LINEAR_LIGHT,  CompositionRule::BlendModel::LinearLight},
+        { BM_PIN_LIGHT,     CompositionRule::BlendModel::PinLight},
+        { BM_HARD_MIX,      CompositionRule::BlendModel::HardMix},
+        { BM_DIFFERENCE,    CompositionRule::BlendModel::Difference},
+        { BM_EXCLUSION,     CompositionRule::BlendModel::Exclusion},
+        { BM_SUBTRACT,      CompositionRule::BlendModel::Subtract},
+        { BM_DIVIDE,        CompositionRule::BlendModel::Divide},
+        { BM_HUE,           CompositionRule::BlendModel::Hue},
+        { BM_SATURATION,    CompositionRule::BlendModel::Saturation},
+        { BM_COLOR,         CompositionRule::BlendModel::Color},
+        { BM_LUMINOSITY,    CompositionRule::BlendModel::Luminosity},
+    };
     std::deque<CompositionRule::BlendModel> models;
     for( auto& s_model : s_models)
     {
@@ -600,217 +592,217 @@ void RuleParser::fillEasingMode( std::function<float(float)> &function, const ch
     };
 
     static const std::unordered_map<std::string, std::function<float( float)>> easingLookup =
-            {
-                    {
-                            FN_EASEINSINE, []( float progress)
-                                           {
-                                               return 1 - cos( ( progress * M_PI) / 2.0);
-                                           }
-                    },
-                    {
-                            FN_EASEOUTSINE, []( float progress)
-                                           {
-                                               return sin( progress * M_PI / 2);
-                                           }
-                    },
-                    {
-                            FN_EASEINOUTSINE, []( float progress)
-                                           {
-                                               return -( cos( progress * M_PI) - 1) / 2;
-                                           }
-                    },
-                    {
-                            FN_EASEINCUBIC, []( float progress)
-                                           {
-                                               return progress * progress * progress;
-                                           }
-                    },
-                    {
-                            FN_EASEOUTCUBIC, []( float progress)
-                                           {
-                                               return 1 - pow( 1 - progress, 3);
-                                           }
-                    },
-                    {
-                            FN_EASEINOUTCUBIC, []( float progress)
-                                           {
-                                               return progress < 0.5 ? 4 * progress * progress * progress
-                                                                     : 1 - pow( -2 * progress + 2, 3) / 2;
-                                           }
-                    },
-                    {
-                            FN_EASEINQUINT, []( float progress)
-                                           {
-                                               return progress * progress * progress * progress * progress;
-                                           }
-                    },
-                    {
-                            FN_EASEOUTQUINT, []( float progress)
-                                           {
-                                               return  1 - pow( 1 - progress, 5);
-                                           }
-                    },
-                    {
-                            FN_EASEINOUTQUINT, []( float progress)
-                                           {
-                                               return  progress < 0.5 ? 16 * progress * progress * progress * progress * progress
-                                                                      : 1 - pow( -2 * progress + 2, 5) / 2;
-                                           }
-                    },
-                    {
-                            FN_EASEINCIRC, []( float progress)
-                                           {
-                                               return  1 - std::sqrt( (float)( 1 - pow( progress, 2)));
-                                           }
-                    },
-                    {
-                            FN_EASEOUTCIRC, []( float progress)
-                                           {
-                                               return  std::sqrt( ( float)( 1 - pow( progress - 1, 2)));
-                                           }
-                    },
-                    {
-                            FN_EASEINOUTCIRC, []( float progress)
-                                           {
-                                               return  progress < 0.5
-                                                       ? ( 1 - std::sqrt(( float)( 1 - pow( 2 * progress, 2)))) / 2
-                                                       : ( std::sqrt( ( float)(1 - pow( -2 * progress + 2, 2))) + 1) / 2;
-                                           }
-                    },
-                    {
-                            FN_EASEINELASTIC, []( float progress)
-                                           {
-                                               const float c4 = ( 2 * M_PI) / 3.0f;
-                                               return ZERO( progress)
-                                                      ? 0
-                                                      : EQUAL( progress, 1) ? 1
-                                                                            : -pow(2, 10 * progress - 10) * sin(( progress * 10 - 10.75) * c4);
-                                           }
-                    },
-                    {
-                            FN_EASEOUTELASTIC, []( float progress)
-                                           {
-                                               const float c4 = ( 2 * M_PI) / 3.0f;
+    {
+        {
+            FN_EASEINSINE, []( float progress)
+                           {
+                               return 1 - cos( ( progress * M_PI) / 2.0);
+                           }
+        },
+        {
+            FN_EASEOUTSINE, []( float progress)
+                           {
+                               return sin( progress * M_PI / 2);
+                           }
+        },
+        {
+            FN_EASEINOUTSINE, []( float progress)
+                           {
+                               return -( cos( progress * M_PI) - 1) / 2;
+                           }
+        },
+        {
+            FN_EASEINCUBIC, []( float progress)
+                           {
+                               return progress * progress * progress;
+                           }
+        },
+        {
+            FN_EASEOUTCUBIC, []( float progress)
+                           {
+                               return 1 - pow( 1 - progress, 3);
+                           }
+        },
+        {
+            FN_EASEINOUTCUBIC, []( float progress)
+                           {
+                               return progress < 0.5 ? 4 * progress * progress * progress
+                                                     : 1 - pow( -2 * progress + 2, 3) / 2;
+                           }
+        },
+        {
+            FN_EASEINQUINT, []( float progress)
+                           {
+                               return progress * progress * progress * progress * progress;
+                           }
+        },
+        {
+            FN_EASEOUTQUINT, []( float progress)
+                           {
+                               return  1 - pow( 1 - progress, 5);
+                           }
+        },
+        {
+            FN_EASEINOUTQUINT, []( float progress)
+                           {
+                               return  progress < 0.5 ? 16 * progress * progress * progress * progress * progress
+                                                      : 1 - pow( -2 * progress + 2, 5) / 2;
+                           }
+        },
+        {
+            FN_EASEINCIRC, []( float progress)
+                           {
+                               return  1 - std::sqrt( (float)( 1 - pow( progress, 2)));
+                           }
+        },
+        {
+            FN_EASEOUTCIRC, []( float progress)
+                           {
+                               return  std::sqrt( ( float)( 1 - pow( progress - 1, 2)));
+                           }
+        },
+        {
+            FN_EASEINOUTCIRC, []( float progress)
+                           {
+                               return  progress < 0.5
+                                       ? ( 1 - std::sqrt(( float)( 1 - pow( 2 * progress, 2)))) / 2
+                                       : ( std::sqrt( ( float)(1 - pow( -2 * progress + 2, 2))) + 1) / 2;
+                           }
+        },
+        {
+            FN_EASEINELASTIC, []( float progress)
+                           {
+                               const float c4 = ( 2 * M_PI) / 3.0f;
+                               return ZERO( progress)
+                                      ? 0
+                                      : EQUAL( progress, 1) ? 1
+                                                            : -pow(2, 10 * progress - 10) * sin(( progress * 10 - 10.75) * c4);
+                           }
+        },
+        {
+            FN_EASEOUTELASTIC, []( float progress)
+                           {
+                               const float c4 = ( 2 * M_PI) / 3.0f;
 
-                                               return ZERO( progress)
-                                                      ? 0
-                                                      : EQUAL( progress, 1) ? 1
-                                                                            : pow( 2, -10 * progress) * sin( ( progress * 10 - 0.75) * c4) + 1;
-                                           }
-                    },
-                    {
-                            FN_EASEINOUTELASTIC, []( float progress)
-                                           {
-                                               const float c5 = ( 2 * M_PI) / 4.5f;
+                               return ZERO( progress)
+                                      ? 0
+                                      : EQUAL( progress, 1) ? 1
+                                                            : pow( 2, -10 * progress) * sin( ( progress * 10 - 0.75) * c4) + 1;
+                           }
+        },
+        {
+            FN_EASEINOUTELASTIC, []( float progress)
+                           {
+                               const float c5 = ( 2 * M_PI) / 4.5f;
 
-                                               return ZERO( progress) ? 0 : EQUAL( progress, 1) ? 1
-                                                                                                : progress < 0.5 ?
-                                                                                                  -( pow(2, 20 * progress - 10) * sin( ( 20 * progress - 11.125) * c5)) / 2
-                                                                                                                 : ( pow(2, -20 * progress + 10) * sin( ( 20 * progress - 11.125) * c5)) / 2 + 1;
-                                           }
-                    },
-                    {
-                            FN_EASEINQUAD, []( float progress)
-                                           {
-                                               return progress * progress;
-                                           }
-                    },
-                    {
-                            FN_EASEOUTQUAD, []( float progress)
-                                           {
-                                               return 1 - ( 1 - progress) * ( 1 - progress);
-                                           }
-                    },
-                    {
-                            FN_EASEINOUTQUAD, []( float progress)
-                                           {
-                                               return progress < 0.5 ? 2 * progress * progress : 1 - pow( -2 * progress + 2, 2) / 2;
-                                           }
-                    },
-                    {
-                            FN_EASEINQUART, []( float progress)
-                                           {
-                                               return progress  * progress * progress * progress;
-                                           }
-                    },
-                    {
-                            FN_EASEOUTQUART, []( float progress)
-                                           {
-                                               return 1 - pow( 1 - progress, 4);
-                                           }
-                    },
-                    {
-                            FN_EASEINOUTQUART, []( float progress)
-                                           {
-                                               return progress < 0.5 ? 8 * progress * progress * progress * progress
-                                                                     : 1 - pow( -2 * progress + 2, 4) / 2;
-                                           }
-                    },
-                    {
-                            FN_EASEINEXPO, []( float progress)
-                                           {
-                                               return ZERO( progress) ? 0 : pow( 2, 10 * progress - 10);
-                                           }
-                    },
-                    {
-                            FN_EASEOUTEXPO, []( float progress)
-                                           {
-                                               return EQUAL( progress, 1) ? 1 : 1 - pow(2, -10 * progress);
-                                           }
-                    },
-                    {
-                            FN_EASEINOUTEXPO, []( float progress)
-                                           {
-                                               return ZERO( progress) ? 0
-                                                                      : EQUAL( progress, 1) ? 1 : progress < 0.5 ? pow( 2, 20 * progress - 10) / 2
-                                                                                                                 : (2 - pow( 2, -20 * progress + 10)) / 2;
-                                           }
-                    },
-                    {
-                            FN_EASEINBACK, []( float progress)
-                                           {
-                                               const float c1 = 1.70158f;
-                                               const float c3 = c1 + 1.0f;
-                                               return c3 * progress * progress * progress - c1 * progress * progress;
-                                           }
-                    },
-                    {
-                            FN_EASEOUTBACK, []( float progress)
-                                           {
-                                               const float c1 = 1.70158f;
-                                               const float c3 = c1 + 1.0f;
-                                               return 1 + c3 * pow( progress - 1, 3) + c1 * pow( progress - 1, 2);
-                                           }
-                    },
-                    {
-                            FN_EASEINOUTBACK, []( float progress)
-                                           {
-                                               const float c1 = 1.70158f;
-                                               const float c2 = c1 * 1.525f;
+                               return ZERO( progress) ? 0 : EQUAL( progress, 1) ? 1
+                                                                                : progress < 0.5 ?
+                                                                                  -( pow(2, 20 * progress - 10) * sin( ( 20 * progress - 11.125) * c5)) / 2
+                                                                                                 : ( pow(2, -20 * progress + 10) * sin( ( 20 * progress - 11.125) * c5)) / 2 + 1;
+                           }
+        },
+        {
+            FN_EASEINQUAD, []( float progress)
+                           {
+                               return progress * progress;
+                           }
+        },
+        {
+            FN_EASEOUTQUAD, []( float progress)
+                           {
+                               return 1 - ( 1 - progress) * ( 1 - progress);
+                           }
+        },
+        {
+            FN_EASEINOUTQUAD, []( float progress)
+                           {
+                               return progress < 0.5 ? 2 * progress * progress : 1 - pow( -2 * progress + 2, 2) / 2;
+                           }
+        },
+        {
+            FN_EASEINQUART, []( float progress)
+                           {
+                               return progress  * progress * progress * progress;
+                           }
+        },
+        {
+            FN_EASEOUTQUART, []( float progress)
+                           {
+                               return 1 - pow( 1 - progress, 4);
+                           }
+        },
+        {
+            FN_EASEINOUTQUART, []( float progress)
+                           {
+                               return progress < 0.5 ? 8 * progress * progress * progress * progress
+                                                     : 1 - pow( -2 * progress + 2, 4) / 2;
+                           }
+        },
+        {
+            FN_EASEINEXPO, []( float progress)
+                           {
+                               return ZERO( progress) ? 0 : pow( 2, 10 * progress - 10);
+                           }
+        },
+        {
+            FN_EASEOUTEXPO, []( float progress)
+                           {
+                               return EQUAL( progress, 1) ? 1 : 1 - pow(2, -10 * progress);
+                           }
+        },
+        {
+            FN_EASEINOUTEXPO, []( float progress)
+                           {
+                               return ZERO( progress) ? 0
+                                                      : EQUAL( progress, 1) ? 1 : progress < 0.5 ? pow( 2, 20 * progress - 10) / 2
+                                                                                                 : (2 - pow( 2, -20 * progress + 10)) / 2;
+                           }
+        },
+        {
+            FN_EASEINBACK, []( float progress)
+                           {
+                               const float c1 = 1.70158f;
+                               const float c3 = c1 + 1.0f;
+                               return c3 * progress * progress * progress - c1 * progress * progress;
+                           }
+        },
+        {
+            FN_EASEOUTBACK, []( float progress)
+                           {
+                               const float c1 = 1.70158f;
+                               const float c3 = c1 + 1.0f;
+                               return 1 + c3 * pow( progress - 1, 3) + c1 * pow( progress - 1, 2);
+                           }
+        },
+        {
+            FN_EASEINOUTBACK, []( float progress)
+                           {
+                               const float c1 = 1.70158f;
+                               const float c2 = c1 * 1.525f;
 
-                                               return progress < 0.5
-                                                      ? ( pow( 2 * progress, 2) * ( ( c2 + 1) * 2 * progress - c2)) / 2
-                                                      : ( pow( 2 * progress - 2, 2) * ( ( c2 + 1) * ( progress * 2 - 2) + c2) + 2) / 2;
-                                           }
-                    },
-                    {
-                            FN_EASEINBOUNCE, [=]( float progress)
-                                           {
-                                               return 1 - easeOutBounce( progress);
-                                           }
-                    },
-                    {
-                            FN_EASEOUTBOUNCE, easeOutBounce
-                    },
-                    {
-                            FN_EASEINOUTBOUNCE, [=]( float progress)
-                                           {
-                                               return progress < 0.5f
-                                                      ? ( 1.0f - easeOutBounce( 1.0f - 2.0f * progress)) / 2.0f
-                                                      : ( 1.0f + easeOutBounce( 2.0f * progress - 1.0f)) / 2.0f;
-                                           }
-                    }
-            };
+                               return progress < 0.5
+                                      ? ( pow( 2 * progress, 2) * ( ( c2 + 1) * 2 * progress - c2)) / 2
+                                      : ( pow( 2 * progress - 2, 2) * ( ( c2 + 1) * ( progress * 2 - 2) + c2) + 2) / 2;
+                           }
+        },
+        {
+            FN_EASEINBOUNCE, [=]( float progress)
+                           {
+                               return 1 - easeOutBounce( progress);
+                           }
+        },
+        {
+            FN_EASEOUTBOUNCE, easeOutBounce
+        },
+        {
+            FN_EASEINOUTBOUNCE, [=]( float progress)
+                           {
+                               return progress < 0.5f
+                                      ? ( 1.0f - easeOutBounce( 1.0f - 2.0f * progress)) / 2.0f
+                                      : ( 1.0f + easeOutBounce( 2.0f * progress - 1.0f)) / 2.0f;
+                           }
+        }
+    };
 
     std::string easing{};
     while( *rule && *rule != eoc)
@@ -838,6 +830,9 @@ void RuleParser::fillEasingMode( std::function<float(float)> &function, const ch
     }
 }
 
+/*
+ * Explains what the color specified in color rule is doing.
+ */
 void RuleParser::setColor( const char *& rule, PropertyProxy<uint64_t> &color)
 {
     Util::ltrim( rule);

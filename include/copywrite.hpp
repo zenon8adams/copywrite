@@ -207,7 +207,8 @@ struct Span
     {
     }
 
-    int x, y, width, coverage;
+    int x, y, width,
+        coverage;       // Used by Freetype Renderer for antialiasing.
 };
 
 struct Figure
@@ -220,24 +221,33 @@ using Spans = std::vector<Span>;
 
 struct ColorRule;
 
+/*
+ * Stores information about each character making up the text.
+ */
 struct MonoGlyph
 {
-    std::pair<Figure, Spans> spans;
-    std::shared_ptr<ColorRule> match;
-    BBox bbox;
-    FT_Vector advance;
-    Vec2D<int> pos{};
-    size_t level{};
-    bool is_graph{ false};
+    std::pair<Figure, Spans> spans;     // Figure object represent fill, Spans represents the outline.
+    std::shared_ptr<ColorRule> match;   // The matching rule that will be used in processing the character
+    BBox bbox;                          // The tight bounding box of the character.
+    FT_Vector advance;                  // The increment in positioning the next character
+    Vec2D<int> pos{};                   // The glyph identity. The coordinate of the glyph.
+    size_t level{};                     // The current row this glyph belongs.
+    bool is_graph{ false};              // Indicates that the glyph is a printable character ( e.g. is not space)
 };
 typedef std::vector<MonoGlyph> MonoGlyphs;
 
+/*
+ *  Stores information common to each row.
+ */
 struct RowDetail
 {
-    int baseline{ INT_MAX}, v_disp{},
-            max_descent{}, width{},
-            max_shadow_y{}, length{};
-    FT_Vector pen{ 0, 0};
+    int       baseline{ INT_MAX},     // The underline position for the text
+              v_disp{},               // Used for multiline text to represent the cumulative vertical offset.
+              max_descent{},          // The maximum depth from the underline position character in this row can reach.
+              width{},                // The sum of with of all glyphs making up the row.
+              max_shadow_y{},
+              length{};               // Number of characters making up this row.
+    FT_Vector pen{ 0, 0};             // The cursor that changes as each character of this row are drawn.
 };
 typedef std::vector<RowDetail> RowDetails;
 
@@ -248,6 +258,10 @@ enum class Justification
     Center = 02
 };
 
+/*
+ *  Drop in replacement for object with extra notification parameter.
+ *  It can detect change in value of the given type since its construction.
+ */
 template <typename T, typename = void>
 class PropertyProxy
 {
@@ -290,13 +304,13 @@ private:
     bool changed_since_initialization{ false};
 };
 
-enum class GradientType { Linear, Radial, Conic};
+enum class GradientType { Sentinel, Linear, Radial, Conic};
 
 struct BaseGradient
 {
   int startx, width, height;
   GradientType gradient_type;
-  BaseGradient( GradientType type = GradientType::Linear, int sx = {}, int w = {}, int h = {})
+  BaseGradient( GradientType type = GradientType::Sentinel, int sx = {}, int w = {}, int h = {})
   : startx( sx), width( w), height( h), gradient_type( type)
   {
   }
@@ -319,7 +333,6 @@ struct LinearGradient : BaseGradient
 {
 };
 
-
 struct ConicGradient : BaseGradient
 {
     PropertyProxy<Vec2D<float>> origin{};
@@ -329,6 +342,10 @@ struct ConicGradient : BaseGradient
     }
 };
 
+/*
+ * State change detector for class types.
+ * It detects if the object has been reinitialized since construction.
+ */
 template <typename T>
 class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
 {
@@ -344,7 +361,7 @@ class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
   {
   }
 
-    operator T()
+  operator T()
   {
 	return *this;
   }
@@ -373,16 +390,40 @@ class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
   bool changed_since_initialization{ false};
 };
 
+/*
+ * Defines the rule to be used to paint a given set of characters.
+ */
 struct ColorRule
 {
-    Vec2D<int32_t> start{ 1, 1}, end{ -1, -1};
-    PropertyProxy<uint64_t> scolor{ 0x000000FFu}, ecolor{ 0x000000FFu};
+    Vec2D<int32_t> start{ 1, 1},    // The start index of the character the rule applies to.
+                   end{ -1, -1};   //  The end index of the character the rule applies to.
+   /*
+    * `scolor` and `ecolor` are used for color based transitions.
+    */
+    PropertyProxy<uint64_t> scolor{ 0x000000FFu}, // The start color for the outline/fill for each character.
+                            ecolor{ 0x000000FFu}; // The end color for the outline/fill for each character.
+   /*
+    */
     uint32_t shadow_color{ 0x000000FFu};
+    /*
+     * Font size variations to apply to the characters matching this rule.
+     */
     uint32_t font_size_b = UINT32_MAX, font_size_m = UINT32_MAX,
              font_size_e = UINT32_MAX, max_bounce{};
+    /*
+     * Indicates if the color should apply to each character as a whole or to each pixel making up the character.
+     */
     bool soak{ false};
+    /*
+     */
     Vec3D shadow;
-    std::shared_ptr<BaseGradient> gradient{ new LinearGradient()};
+    /*
+     * Gradient used in painting.
+     */
+    std::shared_ptr<BaseGradient> gradient{ new BaseGradient()};
+    /*
+     * Specifies how the font and color should vary.
+     */
     std::function<float(float)> color_easing_fn, font_easing_fn;
 };
 
@@ -398,7 +439,11 @@ struct XyZColor
     double x, y, z;
 };
 
-
+/*
+ *  Stores information about colors in a KDTree.
+ *  KDTrees are used in searching in spatial domain for the closest
+ *  match of a point to other set of points in space.
+ */
 struct KDNode
 {
     Color color;
@@ -409,6 +454,13 @@ struct KDNode
     {
     }
 };
+
+/*
+ *  Stores the closest words in a BKTree.
+ *  The MAX_DIFF_TOLERANCE width indicates the closeness metric.
+ *  BKTree:: Walter Austin Burkhard and Robert M. Keller
+ * is an approximate word search data structure.
+ */
 
 struct BKNode
 {
@@ -421,6 +473,11 @@ struct BKNode
   }
 };;
 
+/*
+ *  Implements a loose ownership semantics.
+ *  Holds this resource. If the resource is still valid when the deleter
+ *  is about to be called, delete it.
+ */
 template<typename Resource>
 class PropertyManager
 {
@@ -467,34 +524,6 @@ class PropertyManager
 };
 
 /*
- * Glyph: Structural representation of a character
- */
-
-struct Glyph
-{
-    FT_Int width{},
-            height{},
-            xstep{},
-            ystep{},
-            index{};
-    std::unique_ptr<unsigned char, void( *)( unsigned char *)> pixmap;
-    FT_Vector origin{};
-    std::shared_ptr<ColorRule> match;
-    std::unique_ptr<Glyph> next{};
-    explicit Glyph( std::unique_ptr<unsigned char, void( *)( unsigned char *)> pixmap)
-    : pixmap( std::move( pixmap))
-    {
-    }
-};
-
-/*
- * Build up a linked list of characters that
- * make up the sentence
- */
-
-void insert( Glyph *&index, Glyph glyph);
-
-/*
  * Render the given glyph into the final computed container
  */
 
@@ -520,6 +549,9 @@ struct FrameBuffer
 
 enum class SpecialEffect;
 
+/*
+ * Predefined positioning on a plain.
+ */
 enum class SnapPosition
 {
     TopLeft,
@@ -551,6 +583,9 @@ struct CompositionRule
 	SourceOut,
 	Xor
   }	                      c_model{ CompositionModel::NotApplicable};
+  /*
+   * Pixel transformation modes used for blending of one over the other.
+   */
   enum class BlendModel
   {
     Normal = 0,
@@ -581,13 +616,40 @@ struct CompositionRule
     Color,
     Luminosity
   };
+  /*
+   * Indicates the surface to apply the rule on
+   * Top::  Top surface
+   * Base:: Base surface
+   * Both:: Top and Base surface.
+   */
   enum class StickyArena { Top, Base, Both};
+  /*
+   * Collection of BlendModels. e.g. Multiply|ColorBurn
+   */
   std::deque<BlendModel>                                  b_models;
+  /*
+   * Holds the absolute positioning of the top surface.
+   */
   Vec2D<float>                                            position{ INFINITY, INFINITY};
+  /*
+   * Holds the decoded snap positioning.
+   */
   Vec2D<float>                                            snap;
+  /*
+   * Specifies the angle of rotation of the top surface before compositing.
+   */
   int 	   	                                              angle{};
+  /*
+   * The extra surface used for compositing.
+   */
   std::string                                             image;
+  /*
+   * Holds a collection of effects to be applied on this surface.
+   */
   std::deque<std::tuple<SpecialEffect, StickyArena, int, std::string>> s_effects;
+  /*
+   * Specifies the final width of this composited surface. This is used by the **resize** routine.
+   */
   int                                                     interpolation[ 3]{};
 };
 
@@ -619,27 +681,37 @@ enum class SpecialEffect
 
 struct SpecialEffectArgs
 {
+    // Kernel used by convolution based effect.
     std::vector<float> kernel;
+    // Used to specify the area this effect is to affect.
     Vec2D<int> start{ 0, 0}, extent{ -1, -1};
+    /*
+     * Twirl effect parameters
+     */
     Vec2D<float> twirl_center{ .5f, .5f};
     int twirl_strength{ 10}, twirl_radius{ 10};
     float twirl_rotation{};
+    /*
+     * Oil painting parameters.
+     */
     int oil_intensity{ 1}, grain_multiplicity{ 1};
+    /*
+     */
     bool inplace{};
 };
 
 struct ApplicationDirector
 {
     const char 			   *raster_glyph{ "\u2589"},
-            *color_rule{ nullptr},
-            *composition_rule{ nullptr},
-            *src_filename{ nullptr};
+                           *color_rule{ nullptr},
+                           *composition_rule{ nullptr},
+                           *src_filename{ nullptr};
     std::string_view        font_profile;
     std::string_view        text;
     std::shared_ptr<KDNode> kdroot;
     std::shared_ptr<BKNode> bkroot;
     size_t 				    font_size{ 10},
-            thickness{ 0};
+                            thickness{ 0};
     float                   line_height{ 1.15f};
     Justification           j_mode{ Justification::Left};
     PropertyProxy<uint32_t> background_color{};
@@ -648,15 +720,19 @@ struct ApplicationDirector
     bool                    shadow_present{ false};
     int                     interpolation[ 3]{};  //[0] - width, [1] - height, [2] -> { 0 - bilinear, 1 - bicubic}
     int                     image_quality{ 100},
-            dpi{ 120};
+                            dpi{ 120};
     Padding                 pad{};
     OutputFormat            out_format{ OutputFormat::PNG};
 };
 
-    enum class FontActivity
-    {
-        Read,
-        Delete
-    };
+/*
+ * Used by **LocalFontManager** to specify
+ * action to be performed on installed fonts.
+ */
+enum class FontActivity
+{
+    Read,
+    Delete
+};
 
 #endif //COPYWRITE_HPP

@@ -18,6 +18,9 @@ public:
     MonoGlyphs& getRasters();
 
 private:
+    /*
+     *  Passed to the Freetype renderer to compute the outline for the glyph.
+     */
     static void spansCallback( int y, int count, const FT_Span *spans, void *user);
 
     void renderSpans( FT_Outline *outline, Spans *spans);
@@ -26,8 +29,8 @@ private:
     FT_Face face_{};
     ApplicationDirector& app_manager_;
     RuleParser& parser_;
-    MonoGlyphs rasters_;
-    RowDetails row_details_;
+    MonoGlyphs rasters_;        // Collection of processed characters.
+    RowDetails row_details_;    // Holds information common to each row processed.
     std::wstring text_;
 };
 

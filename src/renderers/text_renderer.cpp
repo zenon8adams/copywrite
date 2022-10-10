@@ -13,6 +13,7 @@
 TextRenderer::TextRenderer( ApplicationDirector& manager, RuleParser& parser)
 : app_manager_( manager), parser_( parser)
 {
+    // Initialize the freetype renderer.
     int error = FT_Init_FreeType( &library_);
     if( error != 0)
     {
@@ -20,10 +21,12 @@ TextRenderer::TextRenderer( ApplicationDirector& manager, RuleParser& parser)
         exit( EXIT_FAILURE);
     }
 
+    // Font profile deleter
     std::unique_ptr<uint8_t, DeleterType> custom_profile(( uint8_t *)nullptr, []( auto *p){ if( p) free( p);});
     auto font_profile = app_manager_.font_profile.data();
     if( strrchr( font_profile, '.') == nullptr)
     {
+        // Get decoder if it is installed. This is available if local font installation feature is turned on.
         auto codec = dynamic_cast<LocalFontManager *>( PluginManager::instance()->get( LOCAL_FONT_MANAGER));
         int64_t size{ -1};
         if( codec != nullptr)
@@ -33,6 +36,8 @@ TextRenderer::TextRenderer( ApplicationDirector& manager, RuleParser& parser)
                 error = FT_New_Memory_Face( library_, ( const FT_Byte *)custom_profile.get(), size, 0, &face_);
         }
 
+        // If we are unable to load font or plugin is unavailable, piggyback on loading the specified text
+        // as a font family installed on a system-wide base.
         if( error != 0 || size == -1)
         {
             auto file = Util::getFontFile( font_profile);
@@ -53,6 +58,8 @@ TextRenderer::TextRenderer( ApplicationDirector& manager, RuleParser& parser)
         exit( EXIT_FAILURE);
     }
 
+    // Check if the given text is a text file containing only plain text by
+    // using the linux `file` utility.
     auto text = app_manager_.text.data();
 #if IS_LINUX && HAVE_SYS_STAT_H
     struct stat statbuf{};
@@ -104,7 +111,8 @@ TextRenderer::TextRenderer( ApplicationDirector& manager, RuleParser& parser)
 FrameBuffer<uint32_t> TextRenderer::render()
 {
     auto& color_rule = app_manager_.color_rule;
-    auto map = [ this]( auto color_rule, auto bkroot)
+    // Transform all rules into objects
+    auto map = [ this]( auto color_rule)
     {
         auto rules = parser_.parseColorRule( color_rule);
         std::vector<std::shared_ptr<ColorRule>> new_rules( rules.size());
@@ -113,8 +121,9 @@ FrameBuffer<uint32_t> TextRenderer::render()
         return new_rules;
     };
     auto rules = color_rule == nullptr ? std::vector<std::shared_ptr<ColorRule>>{}
-                                       : map( color_rule, app_manager_.bkroot.get());
+                                       : map( color_rule);
     auto general = std::make_shared<ColorRule>();
+    // Split text into lines based on justification.
     auto [ text_rows, _] = Util::expand( std::wstring_view( text_.data()), app_manager_.j_mode, false);
     auto total_length = 0;
     for( auto& row : text_rows)
@@ -129,12 +138,13 @@ FrameBuffer<uint32_t> TextRenderer::render()
     FT_Stroker_Set( stroker, To26Dot6( app_manager_.thickness),
                     FT_STROKER_LINECAP_BUTT, FT_STROKER_LINEJOIN_MITER, 0);
     FT_Vector box_size{ 0, 0};
+
     for( int j = 0, t_row = INT_CAST( text_rows.size()), index = 0; j < t_row; ++j)
     {
         FT_Int max_ascent{};
         FT_Vector max_row_box{ 0, 0}, adjustment;
         auto &baseline    = row_details_[ j].baseline,
-                &max_descent = row_details_[ j].max_descent;
+             &max_descent = row_details_[ j].max_descent;
         row_details_[ j].length = INT_CAST( text_rows[ j].size());
         int line_height = 0, max_shadow_y = 0, max_row_bounce = 0;
         for( int i = 0, t_len = INT_CAST( text_rows[ j].length()); i < t_len; ++i, ++index)
@@ -166,19 +176,19 @@ FrameBuffer<uint32_t> TextRenderer::render()
             }
 
             /*
-             * Calculate font size for each glyph
+             * Calculate font size for each glyph based on the font variation specified.
              */
             FT_Int font_size = UNSET( best->font_size_b) ? best->font_size_b = app_manager_.font_size
                                                          : best->font_size_b;
             if( best->font_easing_fn)
             {
                 auto start = Vec2D<int>( i + 1 - best->start.x, j + 1 - best->start.y),
-                        end   = Vec2D<int>( UNSET( best->end.x)
-                                            ? std::max<int>( total_length - 1, 1) : best->end.x - best->start.x,
-                                            UNSET( best->end.y)
-                                            ? std::max<int>( t_row - 1, 1) : best->end.y - best->start.y);
-
+                     end   = Vec2D<int>( UNSET( best->end.x)
+                                         ? std::max<int>( total_length - 1, 1) : best->end.x - best->start.x,
+                                         UNSET( best->end.y)
+                                         ? std::max<int>( t_row - 1, 1) : best->end.y - best->start.y);
                 float fraction;
+                // Select either a row interpolation or a column interpolation.
                 if( app_manager_.ease_col)
                     fraction = best->font_easing_fn( FLOAT_CAST( start.y) / FLOAT_CAST( end.y));
                 else
@@ -194,7 +204,7 @@ FrameBuffer<uint32_t> TextRenderer::render()
 
             line_height = INT_CAST( font_size * app_manager_.line_height);
 
-            if ( FT_Set_Char_Size( face_, font_size << 6, 0, app_manager_.dpi, 0) != 0)
+            if ( FT_Set_Char_Size( face_, To26Dot6( font_size), 0, app_manager_.dpi, 0) != 0)
                 continue;
 
             if( FT_Load_Char( face_, c_char, FT_LOAD_DEFAULT) != 0
@@ -235,6 +245,7 @@ FrameBuffer<uint32_t> TextRenderer::render()
                         .top    = slot->bitmap_top,
                         .width  = ( int)slot->bitmap.width,
                         .height = ( int)slot->bitmap.rows};
+
                 if( !outline.empty())
                 {
                     rect = { outline.front().x,
@@ -267,19 +278,31 @@ FrameBuffer<uint32_t> TextRenderer::render()
                 {
                     FT_Get_Kerning( face_, c_char, text_rows[ j][ i - 1],
                                     FT_KERNING_DEFAULT, &adjustment);
-                    max_row_box.x += adjustment.x >> 6;
-                    max_row_box.y += adjustment.y >> 6;
+                    max_row_box.x += From26Dot6( adjustment.x);
+                    max_row_box.y += From26Dot6( adjustment.y);
                 }
                 /*
                  * Set the spacing of the glyphs to ensure no extra space occurs
-                 * at the far end.
+                 * at the far end. And use it in calculating the maximum width of the row
                  */
                 max_row_box.x += ( i + 1 == t_len ? rect.width() : INT_CAST( raster.advance.x))
                                  + INT_CAST( std::abs( best->shadow.x));
+                /*
+                 * Calculates the maximum height of the current row.
+                 */
                 max_row_box.y = std::max<long>( max_row_box.y, height);
                 max_shadow_y  = std::max( max_shadow_y, INT_CAST( std::abs( best->shadow.y)));
                 raster.bbox = rect;
+                /*
+                 * bearingY is the height of the character from the underline position.
+                 */
                 bearing_y = From26Dot6( slot->metrics.horiBearingY) + app_manager_.thickness * 2;
+                /*
+                 * Keep tabs in the maximum distance from the underline to the top of the character
+                 * and the maximum distance from the underline position to the bottom of the character.
+                 * Example: ag - The maximum ascent here is the height of `a`, the maximum descent
+                 *               is the difference between the height of `g` and `a`.
+                 */
                 max_ascent  = std::max( max_ascent, bearing_y);
                 max_descent = std::max( max_descent, -rect.ymin);
                 baseline = std::min( rect.ymin, baseline); // This is the underline position for glyph groups
@@ -296,13 +319,16 @@ FrameBuffer<uint32_t> TextRenderer::render()
             }
             max_row_bounce = std::max( max_row_bounce, INT_CAST( best->max_bounce));
 
+            /*
+             * Calculates the width and height to be used for color change during painting.
+             */
             if( best->color_easing_fn && best != general)
             {
                 best->gradient->width = INT_CAST( std::max( max_row_box.x, box_size.x));
                 best->gradient->height = INT_CAST( box_size.y) + ( max_row_box.y == 0 ?
-                                                                   ( face_->glyph->metrics.vertAdvance >> 6)
-                                                                   + app_manager_.thickness * 2
-                                                                                      : max_ascent + max_descent + max_shadow_y) + line_height * ( j + 1 != t_row);
+                                           From26Dot6( face_->glyph->metrics.vertAdvance)
+                                           + app_manager_.thickness * 2
+                                          : max_ascent + max_descent + max_shadow_y) + line_height * ( j + 1 != t_row);
             }
 
             FT_Done_Glyph( o_glyph);
@@ -320,19 +346,21 @@ FrameBuffer<uint32_t> TextRenderer::render()
             {
                 if( !std::isspace( c_char))
                     continue;
-                auto& raster = rasters_[ index];
-                raster.advance.y = default_height;
+
+                rasters_[ index].advance.y = default_height;
             }
             max_ascent = INT_CAST( default_height);
         }
+
         max_row_box.y = max_ascent + max_descent + max_shadow_y + max_row_bounce;
         row_details_[ j].width = INT_CAST( max_row_box.x + app_manager_.pad.right
                                            + app_manager_.pad.left - max_shadow_y);
         row_details_[ j].max_shadow_y = max_shadow_y;
-        if( max_row_box.y <= 0)
+        if( max_row_box.y <= 0) // If we are unable to calculate a non-zero value for this row,
             continue;
         box_size.x = std::max( max_row_box.x, box_size.x); // The width of the largest row
-        auto row_line_height = line_height * ( j + 1 != t_row); // The spacing between glyphs
+        // The spacing between glyphs with the final row taken into account as it will not have any spacing
+        auto row_line_height = line_height * ( j + 1 != t_row);
         box_size.y += max_row_box.y + row_line_height;
         // Offset at which each row should start
         row_details_[ j].v_disp += INT_CAST( box_size.y) - row_line_height - max_shadow_y;

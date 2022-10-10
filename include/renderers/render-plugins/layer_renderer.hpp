@@ -17,125 +17,19 @@ public:
     template <typename Tp>
     static void resize( FrameBuffer<Tp> &frame, int *interpolation);
 
-private:
-    static bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test);
-
-    static std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel model);
-
-    template <typename Tp>
-    void useEffectsOn( FrameBuffer<Tp> &frame, const CompositionRule& c_rule, CompositionRule::StickyArena pos);
-
-    static std::vector<float> makeEmboss( int width);
-
     // Implementation of guassian filter using erf as cdf
     // References:
     //[1] https://stackoverflow.com/questions/809362/how-to-calculate-cumulative-normal-distribution
     static std::vector<float> makeGaussian( float radius);
 
-    static float gaussianNoise();
-
-    template <typename Src, typename Dst>
-    inline void readPixel( Src *src,  Dst *r, Dst *g, Dst *b, Dst *a)
-    {
-        if constexpr ( sizeof( Src) == 4)
-        {
-            *r = RED( *src);
-            *g = GREEN( *src);
-            *b = BLUE( *src);
-            *a = ALPHA( *src);
-        }
-        else
-        {
-            *r = *src;
-            *g = *++src;
-            *b = *++src;
-            *a = *++src;
-        }
-    }
-
-    template <typename Dst, typename Src>
-    inline void writePixel( Dst *dst, Src r, Src g, Src b, Dst *a)
-    {
-        if constexpr ( sizeof( Dst) == 4)
-            *dst =  RGBA( r, g, b, ALPHA( *a));
-        else
-        {
-              *dst = r;
-            *++dst = g;
-            *++dst = b;
-            *++dst = a[ 3];
-        }
-    }
-
-    template<typename Tp>
-    std::pair<FrameBuffer<Tp>, FrameBuffer<Tp>> padFrame( FrameBuffer<Tp>& frame, int row_inc, int col_inc)
-    {
-        auto n_width   = frame.width + col_inc;
-        auto n_height  = frame.height + row_inc;
-        auto n_channel = std::max( 1, frame.n_channel);
-        auto advance   = n_channel * sizeof( Tp);
-        auto n_stride  = n_width * advance;
-        auto inc_bytes = col_inc * advance;
-        auto w_stride  = frame.width * advance;
-        auto dest = std::shared_ptr<Tp>(( Tp *)calloc( n_width * n_height * n_channel, sizeof( Tp)),
-                                        []( auto *p){ free( p);});
-        auto cache = std::shared_ptr<Tp>(( Tp *)calloc( n_width * n_height * n_channel, sizeof( Tp)),
-                                        []( auto *p){ free( p);});
-        auto d_buffer = dest.get();
-        auto c_buffer = cache.get();
-        auto s_buffer = frame.buffer.get();
-        for( int j = 0; j < frame.height; ++j)
-        {
-            memcpy( d_buffer + j * n_stride, s_buffer + j * w_stride, w_stride);
-            auto s_end = s_buffer + ( j + 1) * w_stride - advance * col_inc;
-            memcpy( d_buffer + ( j + 1) * n_stride - inc_bytes, s_end, advance * col_inc);
-            memcpy( c_buffer + ( j + 1) * n_stride - inc_bytes, s_end, advance * col_inc);
-        }
-
-        memcpy( d_buffer + frame.height * n_stride,
-                d_buffer + frame.height * n_stride - n_stride * row_inc, n_stride * row_inc);
-        memcpy( c_buffer + frame.height * n_stride,
-                c_buffer + frame.height * n_stride - n_stride * row_inc, n_stride * row_inc);
-
-        return {{ std::move( dest), n_width, n_height, n_channel}, { std::move( cache), n_width, n_height, n_channel}};
-    }
-
-    template<typename Tp, typename Kv>
-    void weightedAverageConv( Tp *src, Tp *dst, int n_channel, Kv *kernel, int s_cols, int d_rows, int d_cols,
-                              int s_row, int s_col, int k_rows, int k_cols, bool row = true)
-    {
-        using std::min, std::max;
-        float red{}, green{}, blue{}, alpha{};
-        int k_width = !row ? k_rows : k_cols;
-
-        for( int j = 0; j < k_rows; ++j)
-        {
-            for( int i = 0; i < k_cols; ++i)
-            {
-                int index = j * k_width + i;
-                float r, g, b, a;
-                readPixel( src + ( j + s_row) * s_cols * n_channel + ( i + s_col) * n_channel, &r, &g, &b, &a);
-                red   += kernel[ index] * r;
-                green += kernel[ index] * g;
-                blue  += kernel[ index] * b;
-            }
-        }
-
-        red = ColorUtil::colorClamp( red);
-        green = ColorUtil::colorClamp( green);
-        blue = ColorUtil::colorClamp( blue);
-        writePixel( dst + s_row * d_cols * n_channel + s_col * n_channel, red, green, blue,
-                    src + s_row * s_cols * n_channel + s_col * n_channel);
-    }
-
     template <typename Tp, typename = std::enable_if_t<std::is_integral_v<Tp>>>
-    void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, const SpecialEffectArgs& extras = {})
+    static void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, const SpecialEffectArgs& extras = {})
     {
         int n_channel = std::max( frame.n_channel, 1);
         auto width    = frame.width,
              height   = frame.height;
-        auto x_extent = extras.extent.x != -1 ? extras.extent.x : width,
-             y_extent = extras.extent.y != -1 ? extras.extent.y : height;
+        auto x_extent = width,
+             y_extent = height;
         if( ENUM_CAST( effect) < ENUM_CAST( SpecialEffect::RequiresKernelSentinel))
         {
             auto kernel  = extras.kernel;
@@ -201,10 +95,6 @@ private:
             }
             else
             {
-                auto advance = n_channel * sizeof( Tp);
-                auto t_stride = t_frame.width * advance;
-                auto o_stride = width * advance;
-                auto inc_bytes = ( k_size - 1) * advance;
                 // Row pass
                 for( int j = 0; j < height; ++j)
                     for( int i = 0; i < width; ++i)
@@ -251,6 +141,7 @@ private:
                                         FLOAT_CAST( height) * extras.twirl_center.y);
             auto strength = extras.twirl_strength;
             auto rotation = extras.twirl_rotation;
+            auto min_radius = 100.f, thickness = 60.f, max_radius = min_radius + thickness;
             for( size_t j = 0; j < height; ++j)
             {
                 for( size_t i = 0; i < width; ++i)
@@ -260,7 +151,7 @@ private:
                     auto theta   = atan2( dy, dx);
                     auto dist    = std::sqrt( dx * dx + dy * dy);
                     auto spin    = FLOAT_CAST( strength) * std::exp( -dist / eff_rad);
-                    auto n_theta = rotation + spin + theta;
+                    auto n_theta = (( rotation + spin)/* * FLOAT_CAST( dist >= min_radius && dist <= max_radius)*/) + theta;
                     auto x_dist  = FLOAT_CAST( dist * std::cos( n_theta));
                     auto y_dist  = FLOAT_CAST( dist * std::sin( n_theta));
                     auto x       = INT_CAST( center.x + x_dist),
@@ -283,6 +174,112 @@ private:
             args.kernel = makeGaussian( 200, 11);
             applyEffect( frame, SpecialEffect::Blur, args);*/
         }
+    }
+
+private:
+    static bool intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float> test);
+
+    static std::function<uint32_t( uint32_t, uint32_t)> selectBlendFn( CompositionRule::BlendModel model);
+
+    template <typename Tp>
+    void useEffectsOn( FrameBuffer<Tp> &frame, const CompositionRule& c_rule, CompositionRule::StickyArena pos);
+
+    static std::vector<float> makeEmboss( int width);
+
+    static float gaussianNoise();
+
+    template <typename Src, typename Dst>
+    static inline void readPixel( Src *src,  Dst *r, Dst *g, Dst *b, Dst *a)
+    {
+        if constexpr ( sizeof( Src) == 4)
+        {
+            *r = RED( *src);
+            *g = GREEN( *src);
+            *b = BLUE( *src);
+            *a = ALPHA( *src);
+        }
+        else
+        {
+            *r = *src;
+            *g = *++src;
+            *b = *++src;
+            *a = *++src;
+        }
+    }
+
+    template <typename Dst, typename Src>
+    static inline void writePixel( Dst *dst, Src r, Src g, Src b, Dst *a)
+    {
+        if constexpr ( sizeof( Dst) == 4)
+            *dst =  RGBA( r, g, b, ALPHA( *a));
+        else
+        {
+              *dst = r;
+            *++dst = g;
+            *++dst = b;
+            *++dst = a[ 3];
+        }
+    }
+
+    template<typename Tp>
+    static std::pair<FrameBuffer<Tp>, FrameBuffer<Tp>> padFrame( FrameBuffer<Tp>& frame, int row_inc, int col_inc)
+    {
+        auto n_width   = frame.width + col_inc;
+        auto n_height  = frame.height + row_inc;
+        auto n_channel = std::max( 1, frame.n_channel);
+        auto n_bytes   = sizeof( Tp);
+        auto n_stride  = n_width * n_channel;
+        auto inc_bytes = col_inc * n_channel;
+        auto w_stride  = frame.width * n_channel;
+        auto dest = std::shared_ptr<Tp>(( Tp *)calloc( n_width * n_height * n_channel, n_bytes),
+                                        []( auto *p){ free( p);});
+        auto cache = std::shared_ptr<Tp>(( Tp *)calloc( n_width * n_height * n_channel, n_bytes),
+                                        []( auto *p){ free( p);});
+        auto d_buffer = dest.get();
+        auto c_buffer = cache.get();
+        auto s_buffer = frame.buffer.get();
+        for( int j = 0; j < frame.height; ++j)
+        {
+            memcpy( d_buffer + j * n_stride, s_buffer + j * w_stride, w_stride * n_bytes);
+            auto s_end = s_buffer + ( j + 1) * w_stride - n_channel * col_inc;
+            memcpy( d_buffer + ( j + 1) * n_stride - inc_bytes, s_end, n_channel * col_inc * n_bytes);
+            memcpy( c_buffer + ( j + 1) * n_stride - inc_bytes, s_end, n_channel * col_inc * n_bytes);
+        }
+
+        memcpy( d_buffer + frame.height * n_stride,
+                d_buffer + frame.height * n_stride - n_stride * row_inc, n_stride * row_inc * n_bytes);
+        memcpy( c_buffer + frame.height * n_stride,
+                c_buffer + frame.height * n_stride - n_stride * row_inc, n_stride * row_inc * n_bytes);
+
+        return {{ std::move( dest), n_width, n_height, n_channel}, { std::move( cache), n_width, n_height, n_channel}};
+    }
+
+    template<typename Tp, typename Kv>
+    static void weightedAverageConv( Tp *src, Tp *dst, int n_channel, Kv *kernel, int s_cols, int d_rows, int d_cols,
+                              int s_row, int s_col, int k_rows, int k_cols, bool row = true)
+    {
+        using std::min, std::max;
+        float red{}, green{}, blue{}, alpha{};
+        int k_width = !row ? k_rows : k_cols;
+
+        for( int j = 0; j < k_rows; ++j)
+        {
+            for( int i = 0; i < k_cols; ++i)
+            {
+                int index = j * k_width + i;
+                float r, g, b, a;
+                readPixel( src + ( j + s_row) * s_cols * n_channel + ( i + s_col) * n_channel, &r, &g, &b, &a);
+                red   += kernel[ index] * r;
+                green += kernel[ index] * g;
+                blue  += kernel[ index] * b;
+            }
+        }
+
+        red = ColorUtil::colorClamp( red);
+        green = ColorUtil::colorClamp( green);
+        blue = ColorUtil::colorClamp( blue);
+        writePixel( dst + s_row * d_cols * n_channel + s_col * n_channel, red, green, blue,
+                    src + s_row * s_cols * n_channel + s_col * n_channel);
     }
 
     std::vector<CompositionRule> c_rules_;

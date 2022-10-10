@@ -134,7 +134,7 @@ void write( FrameBuffer<uint32_t> &frame, const char *raster_glyph, FILE *destin
     auto raster_bytes = destination != stdout ? MAX( TextCodec::byteCount( *raster_glyph) - 1, 1) : is_stdout = true;
     std::string sp( raster_bytes, ' ');
     auto width = frame.width,
-            height = frame.height;
+         height = frame.height;
     uint8_t fmt[] = { '\x1B', '[', '3', '8', ';', '5', ';', '0', '0', '0', 'm', '\0'};
     constexpr uint8_t offset = 7;
 
@@ -168,7 +168,8 @@ uint64_t getNumber( const char *&ctx, uint8_t base)
     while( isxdigit( *ctx))
     {
         uint8_t character = tolower( *( ctx++));
-        int value = character >= 'a' && character <= 'f' ? character - 'a' + 10 : isdigit( character) ? character - '0' : 0;
+        int value = character >= 'a' && character <= 'f' ? character - 'a' + 10
+                : isdigit( character) ? character - '0' : 0;
         weight = weight * base + value;
     }
 
@@ -223,17 +224,17 @@ Vec2D<float> getSnapCoordinate( std::string_view given)
         return { INFINITY, INFINITY};
 
     static const std::unordered_map<std::string_view, Vec2D<float>> possibilities
-            {
-                    { SNAP_TOP_LEFT,       { 0.f,  0.f}},
-                    { SNAP_TOP_CENTER ,    { .5f,  0.f}},
-                    { SNAP_TOP_RIGHT ,     { 1.f,  0.f}},
-                    { SNAP_LEFT_CENTER ,   { 0.f,  .5f}},
-                    { SNAP_CENTER ,        { 0.5f, .5f}},
-                    { SNAP_RIGHT_CENTER ,  { 1.f,  .5f}},
-                    { SNAP_BOTTOM_LEFT ,   { 0.f,  1.f}},
-                    { SNAP_BOTTOM_CENTER , { 0.5f, 1.f}},
-                    { SNAP_BOTTOM_RIGHT ,  { 1.f,  1.f}},
-            };
+    {
+        { SNAP_TOP_LEFT,       { 0.f,  0.f}},
+        { SNAP_TOP_CENTER ,    { .5f,  0.f}},
+        { SNAP_TOP_RIGHT ,     { 1.f,  0.f}},
+        { SNAP_LEFT_CENTER ,   { 0.f,  .5f}},
+        { SNAP_CENTER ,        { 0.5f, .5f}},
+        { SNAP_RIGHT_CENTER ,  { 1.f,  .5f}},
+        { SNAP_BOTTOM_LEFT ,   { 0.f,  1.f}},
+        { SNAP_BOTTOM_CENTER , { 0.5f, 1.f}},
+        { SNAP_BOTTOM_RIGHT ,  { 1.f,  1.f}},
+    };
 
     std::string clone( view_size, 0);
     std::transform( given.cbegin(), given.cend(), clone.begin(), tolower);
