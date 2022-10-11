@@ -25,8 +25,8 @@ jobs:
       run: sudo apt install clang
     
     - name: Install Dependencies
-      # Install FontConfig, Freetype, LibPNG, LibJPG, LibZip
-      run: sudo apt install libfontconfig-dev libfreetype-dev libpng-dev libjpeg-dev libzip-dev
+      # Install FontConfig, Freetype, LibPNGPP, LibJPG, LibZip
+      run: sudo apt install libfontconfig-dev libfreetype-dev libpng++-dev libjpeg-dev libzip-dev
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
