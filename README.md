@@ -155,3 +155,8 @@ cd cmake-build
 cmake ../
 make
 ```
+## Remarks
+To view other features available, use the help command:
+```sh
+ copywrite -h
+```
