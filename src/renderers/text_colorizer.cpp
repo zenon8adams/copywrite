@@ -237,6 +237,7 @@ void TextColorizer::paintText( FrameBuffer<uint32_t> &frame)
         pen.x += raster.advance.x;
         pen.y += raster.advance.y;
     }
+	putchar('\n');
 }
 
 uint32_t TextColorizer::easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<int> size,

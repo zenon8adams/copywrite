@@ -197,14 +197,15 @@ std::vector<CompositionRule> RuleParser::parseCompositionRule( std::string_view 
     //6. blend=dissolve or blend
     //7. effect=blur|(twirl, top, 30, 20, 20deg, top-left)
     //8. size=300w bicubic
-    std::string_view base( R"((?:\s*from\s+([+-]?\d{1,3})deg(?:\s+at\s+([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))"
-                           R"(,\s*([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))?,\s*)?\s*)"
-                           R"((?:snap=([a-z]+(?:-[a-z]+)?),\s*)?)"
-                           R"(layer=(.+?)\s*,\s*mode=([a-z]+(?:-[a-z]+)?))"
-                           R"((?:,\s*blend=([a-z]+(?:-[a-z]+)?(?:\s*\|\s*[a-z]+(?:-[a-z]+)?)*))?)"
-                           R"((?:,\s*effect=((?:[a-z]+|\(.+?\))(?:\s*\|\s*(?:[a-z]+|\(.+?\)))*))?)"
-                           R"((?:,\s*size=(.+?))?)");
-    auto parts = Util::partition( rule, R"(;(?=\[))");
+    std::string_view base( R"((?:[\s\n]*from[\s\n]+([+-]?\d{1,3})deg)"
+						   R"((?:[\s\n]+at[\s\n]+([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))"
+                           R"(,[\s\n]*([+-]?\d*.\d+|[+-]?\d+(?:\.\d*)?))?,[\s\n]*)?[\s\n]*)"
+                           R"((?:snap=([a-z]+(?:-[a-z]+)?),[\s\n]*)?)"
+                           R"(layer=(.+?)[\s\n]*,[\s\n]*mode=([a-z]+(?:-[a-z]+)?))"
+                           R"((?:,[\s\n]*blend=([a-z]+(?:-[a-z]+)?(?:[\s\n]*\|[\s\n]*[a-z]+(?:-[a-z]+)?)*))?)"
+                           R"((?:,[\s\n]*effect=((?:[a-z]+|\(.+?\))(?:[\s\n]*\|[\s\n]*(?:[a-z]+|\(.+?\)))*))?)"
+                           R"((?:,[\s\n]*size=(.+?))?)");
+    auto parts = Util::partition( rule, R"(;[\s\n]*(?=\[))");
     if( parts.empty())
         parts.emplace_back( rule.data());
     std::regex matcher( base.data(), std::regex_constants::icase);

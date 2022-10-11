@@ -750,25 +750,28 @@ std::function<uint32_t( uint32_t, uint32_t)> LayerRenderer::selectBlendFn( Compo
             return ALPHA( top) > 180 ?
                    RGBA( ColorUtil::colorClamp( RED( top) * factor), ColorUtil::colorClamp( GREEN( top) * factor),
                          ColorUtil::colorClamp( BLUE( top) * factor), ALPHA( top))
-                                     : RGBA( ColorUtil::colorClamp( RED( base) * factor), ColorUtil::colorClamp( GREEN( base) * factor),
+                                     : RGBA( ColorUtil::colorClamp( RED( base) * factor),
+											 ColorUtil::colorClamp( GREEN( base) * factor),
                                              ColorUtil::colorClamp( BLUE( base) * factor), ALPHA( base));
         },
         []( auto top, auto base)
         {
-            uint8_t red   = Util::clamp((( RED( base) > 127.5) * ( 1 - ( 1 - 2 * ( ( float)RED( base) / RGB_SCALE - .5f))
-                                                                       * ( 1 - ( float)RED( top) / RGB_SCALE)) + ( RED( base) <= 127.5f)
-                                                                                                                 * (( 2 * ( float)RED( base) / RGB_SCALE) * RED( top))) * RGB_SCALE, 0, RGB_SCALE),
+            uint8_t red   = Util::clamp((( RED( base) > 127.5)
+							* ( 1 - ( 1 - 2 * ( ( float)RED( base) / RGB_SCALE - .5f))
+                            * ( 1 - ( float)RED( top) / RGB_SCALE)) + ( RED( base) <= 127.5f)
+                            * (( 2 * ( float)RED( base) / RGB_SCALE) * RED( top))) * RGB_SCALE, 0, RGB_SCALE),
                     green = Util::clamp((( GREEN( base) > 127.5)
-                                         * ( 1 - ( 1 - 2 * (( float)GREEN( base) / RGB_SCALE - .5))
-                                                 * ( 1 - ( float)GREEN( top) / RGB_SCALE)) + ( GREEN( base) <= 127.5f)
-                                                                                             * (( 2 * ( float)GREEN( base) / RGB_SCALE) * GREEN( top))) * RGB_SCALE, 0, RGB_SCALE),
-                    blue  = Util::clamp((( BLUE( base) > 127.5) * ( 1 - ( 1 - 2 * (( float)BLUE( base) / RGB_SCALE - .5))
-                                                                        * ( 1 - ( float)BLUE( top) / RGB_SCALE)) + ( BLUE( base) <= 127.5f)
-                                                                                                                   * (( 2 * ( float)BLUE( base) / RGB_SCALE) * BLUE( top))) * RGB_SCALE, 0, RGB_SCALE),
+                            * ( 1 - ( 1 - 2 * (( float)GREEN( base) / RGB_SCALE - .5))
+                            * ( 1 - ( float)GREEN( top) / RGB_SCALE)) + ( GREEN( base) <= 127.5f)
+                            * (( 2 * ( float)GREEN( base) / RGB_SCALE) * GREEN( top))) * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = Util::clamp((( BLUE( base) > 127.5)
+							* ( 1 - ( 1 - 2 * (( float)BLUE( base) / RGB_SCALE - .5))
+                            * ( 1 - ( float)BLUE( top) / RGB_SCALE)) + ( BLUE( base) <= 127.5f)
+							* (( 2 * ( float)BLUE( base) / RGB_SCALE) * BLUE( top))) * RGB_SCALE, 0, RGB_SCALE),
                     alpha = Util::clamp((( ALPHA( base) > 127.5)
-                                         * ( 1 - ( 1 - 2 * (( float)ALPHA( base) / RGB_SCALE - .5))
-                                                 * ( 1 - ( float)ALPHA( top) / RGB_SCALE)) + ( ALPHA( base) <= 127.5f)
-                                                                                             * (( 2 * ( float)ALPHA( base) / RGB_SCALE) * ALPHA( top))) * RGB_SCALE, 0, RGB_SCALE);
+                             * ( 1 - ( 1 - 2 * (( float)ALPHA( base) / RGB_SCALE - .5))
+                             * ( 1 - ( float)ALPHA( top) / RGB_SCALE)) + ( ALPHA( base) <= 127.5f)
+                             * (( 2 * ( float)ALPHA( base) / RGB_SCALE) * ALPHA( top))) * RGB_SCALE, 0, RGB_SCALE);
 
             return RGBA( red, green, blue, ALPHA( top) < 180 ? ALPHA( base) : ALPHA( top));
         },
@@ -796,22 +799,21 @@ std::function<uint32_t( uint32_t, uint32_t)> LayerRenderer::selectBlendFn( Compo
         []( auto top, auto base)
         {
             uint8_t red   = Util::clamp((( RED( top) > 127.5) * ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE)
-                                                                      * ( 1 - 2 * (( float)RED( top) / RGB_SCALE - .5f)))
-                                         + ( RED( top) <= 127.5) * (( float)RED( base) * ( 2 * ( float)RED( top) / RGB_SCALE)))
-                                        * RGB_SCALE, 0, RGB_SCALE),
+                            * ( 1 - 2 * (( float)RED( top) / RGB_SCALE - .5f)))
+                            + ( RED( top) <= 127.5) * (( float)RED( base) * ( 2 * ( float)RED( top) / RGB_SCALE)))
+                            * RGB_SCALE, 0, RGB_SCALE),
                     green = Util::clamp((( GREEN( top) > 127.5) * ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE)
-                                                                        * ( 1 - 2 * (( float)GREEN( top) / RGB_SCALE - .5f)))
-                                         + ( GREEN( top) <= 127.5) * (( float)GREEN( base)
-                                                                      * ( 2 * ( float)GREEN( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
+                            * ( 1 - 2 * (( float)GREEN( top) / RGB_SCALE - .5f)))
+                            + ( GREEN( top) <= 127.5) * (( float)GREEN( base)
+                            * ( 2 * ( float)GREEN( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
                     blue  = Util::clamp((( BLUE( top) > 127.5) * ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE)
-                                                                       * ( 1 - 2 * (( float)BLUE( top) / RGB_SCALE - .5f)))
-                                         + ( BLUE( top) <= 127.5) * (( float)BLUE( base)
-                                                                     * ( 2 * ( float)BLUE( top) / RGB_SCALE)))
-                                        * RGB_SCALE, 0, RGB_SCALE),
+                            * ( 1 - 2 * (( float)BLUE( top) / RGB_SCALE - .5f)))
+                            + ( BLUE( top) <= 127.5) * (( float)BLUE( base)
+                            * ( 2 * ( float)BLUE( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
                     alpha = Util::clamp((( ALPHA( top) > 127.5) * ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE)
-                                                                        * ( 1 - 2 * (( float)ALPHA( top) / RGB_SCALE - .5f)))
-                                         + ( ALPHA( top) <= 127.5) * (( float)ALPHA( base)
-                                                                      * ( 2 * ( float)ALPHA( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE);
+                            * ( 1 - 2 * (( float)ALPHA( top) / RGB_SCALE - .5f)))
+                            + ( ALPHA( top) <= 127.5) * (( float)ALPHA( base)
+                            * ( 2 * ( float)ALPHA( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE);
 
             return RGBA( red, green, blue, alpha);
         },
@@ -826,63 +828,63 @@ std::function<uint32_t( uint32_t, uint32_t)> LayerRenderer::selectBlendFn( Compo
                     alpha_f_base = ( 1 - 2 * (( float)ALPHA( top) / RGB_SCALE - .5f)),
                     alpha_e_base = ( 2 * ( float)ALPHA( top) / RGB_SCALE);
             uint8_t red   = Util::clamp(((( RED( top) > 127.5) * ( ZERO( red_f_base) ? 1 :
-                                                                   ((( float)RED( base) / RGB_SCALE) / red_f_base))) + (( RED( top) <= 127.5)
-                                                                                                                        * ( ZERO( red_e_base) ? 0 : ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE) / red_e_base))))
+                           ((( float)RED( base) / RGB_SCALE) / red_f_base))) + (( RED( top) <= 127.5)
+                            * ( ZERO( red_e_base) ? 0 : ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE) / red_e_base))))
                                         * RGB_SCALE, 0, RGB_SCALE),
                     green = Util::clamp(((( GREEN( top) > 127.5) * ( ZERO( green_f_base) ? 1 :
-                                                                     ((( float)GREEN( base) / RGB_SCALE) / green_f_base))) + (( RED( top) <= 127.5)
-                                                                                                                              * ( ZERO( green_e_base) ? 0 :
-                                                                                                                                  ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE) / green_e_base)))) * RGB_SCALE, 0, RGB_SCALE),
+                            ((( float)GREEN( base) / RGB_SCALE) / green_f_base))) + (( RED( top) <= 127.5)
+                            * ( ZERO( green_e_base) ? 0 :
+                            ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE) / green_e_base)))) * RGB_SCALE, 0, RGB_SCALE),
                     blue  = Util::clamp(((( BLUE( top) > 127.5) * ( ZERO( blue_f_base) ? 1 :
-                                                                    ((( float)BLUE( base) / RGB_SCALE) / blue_f_base))) + (( BLUE( top) <= 127.5)
-                                                                                                                           * ( ZERO( blue_e_base) ? 0 : ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE) / blue_e_base))))
+                            ((( float)BLUE( base) / RGB_SCALE) / blue_f_base))) + (( BLUE( top) <= 127.5)
+                            * ( ZERO( blue_e_base) ? 0 : ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE) / blue_e_base))))
                                         * RGB_SCALE, 0, RGB_SCALE),
                     alpha = Util::clamp(((( ALPHA( top) > 127.5) * ( ZERO( alpha_f_base) ? 1 :
-                                                                     ((( float)ALPHA( base) / RGB_SCALE) / alpha_f_base))) + (( ALPHA( top) <= 127.5)
-                                                                                                                              * ( ZERO( alpha_e_base) ? 0 :
-                                                                                                                                  ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE) / alpha_e_base)))) * RGB_SCALE, 0, RGB_SCALE);
+                            ((( float)ALPHA( base) / RGB_SCALE) / alpha_f_base))) + (( ALPHA( top) <= 127.5)
+                            * ( ZERO( alpha_e_base) ? 0 :
+                            ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE) / alpha_e_base)))) * RGB_SCALE, 0, RGB_SCALE);
 
             return RGBA( red, green, blue, alpha);
         },
         []( auto top, auto base)
         {
             uint8_t red  = Util::clamp((( RED( top) > 127.5) * (( float)RED( base) / RGB_SCALE + 2
-                                                                                                 * (( float)RED( top) / RGB_SCALE - .5f)) + ( RED( top) <= 127.5)
-                                                                                                                                            * (( float)RED( base) / RGB_SCALE + 2 * (( float)RED( top) / RGB_SCALE) - 1))
-                                       * RGB_SCALE, 0, RGB_SCALE),
+                            * (( float)RED( top) / RGB_SCALE - .5f)) + ( RED( top) <= 127.5)
+                            * (( float)RED( base) / RGB_SCALE + 2 * (( float)RED( top) / RGB_SCALE) - 1))
+                            * RGB_SCALE, 0, RGB_SCALE),
                     green = Util::clamp((( GREEN( top) > 127.5) * (( float)GREEN( base) / RGB_SCALE + 2
-                                                                                                      * (( float)GREEN( top) / RGB_SCALE - .5f)) + ( GREEN( top) <= 127.5)
-                                                                                                                                                   * (( float)GREEN( base) / RGB_SCALE + 2 * (( float)GREEN( top) / RGB_SCALE) - 1))
+                            * (( float)GREEN( top) / RGB_SCALE - .5f)) + ( GREEN( top) <= 127.5)
+                            * (( float)GREEN( base) / RGB_SCALE + 2 * (( float)GREEN( top) / RGB_SCALE) - 1))
                                         * RGB_SCALE, 0, RGB_SCALE),
                     blue  = Util::clamp((( BLUE( top) > 127.5) * (( float)BLUE( base) / RGB_SCALE + 2
-                                                                                                    * (( float)BLUE( top) / RGB_SCALE - .5f)) + ( BLUE( top) <= 127.5)
-                                                                                                                                                * (( float)BLUE( base) / RGB_SCALE + 2 * (( float)BLUE( top) / RGB_SCALE) - 1))
-                                        * RGB_SCALE, 0, RGB_SCALE),
+							* (( float)BLUE( top) / RGB_SCALE - .5f)) + ( BLUE( top) <= 127.5)
+                            * (( float)BLUE( base) / RGB_SCALE + 2 * (( float)BLUE( top) / RGB_SCALE) - 1))
+                            * RGB_SCALE, 0, RGB_SCALE),
                     alpha = Util::clamp((( ALPHA( top) > 127.5) * (( float)ALPHA( base) / RGB_SCALE + 2
-                                                                                                      * (( float)ALPHA( top) / RGB_SCALE - .5f)) + ( ALPHA( top) <= 127.5)
-                                                                                                                                                   * (( float)ALPHA( base) / RGB_SCALE + 2 * (( float)ALPHA( top) / RGB_SCALE) - 1))
-                                        * RGB_SCALE, 0, RGB_SCALE);
+                            * (( float)ALPHA( top) / RGB_SCALE - .5f)) + ( ALPHA( top) <= 127.5)
+                            * (( float)ALPHA( base) / RGB_SCALE + 2 * (( float)ALPHA( top) / RGB_SCALE) - 1))
+                            * RGB_SCALE, 0, RGB_SCALE);
 
             return RGBA( red, green, blue, alpha);
         },
         []( auto top, auto base)
         {
             uint8_t red   = Util::clamp((( RED( top) > 127.5) * ( std::max<float>(( float)RED( base) / RGB_SCALE,
-                                                                                  2 * (( float)RED( top) / RGB_SCALE - .5f))) + ( RED( top) <= 127.5)
-                                                                                                                                * ( std::min<float>(( float)RED( base) / RGB_SCALE, 2 * ( float)RED( top) / RGB_SCALE)))
-                                        * RGB_SCALE, 0, RGB_SCALE),
+                            2 * (( float)RED( top) / RGB_SCALE - .5f))) + ( RED( top) <= 127.5)
+                            * ( std::min<float>(( float)RED( base) / RGB_SCALE, 2 * ( float)RED( top) / RGB_SCALE)))
+                            * RGB_SCALE, 0, RGB_SCALE),
                     green = Util::clamp((( GREEN( top) > 127.5) * ( std::max<float>(( float)GREEN( base) / RGB_SCALE,
-                                                                                    2 * (( float)GREEN( top) / RGB_SCALE - .5f))) + ( GREEN( top) <= 127.5)
-                                                                                                                                    * ( std::min<float>(( float)GREEN( base) / RGB_SCALE,
-                                                                                                                                                        2 * ( float)GREEN( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
+                            2 * (( float)GREEN( top) / RGB_SCALE - .5f))) + ( GREEN( top) <= 127.5)
+                            * ( std::min<float>(( float)GREEN( base) / RGB_SCALE,
+                            2 * ( float)GREEN( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
                     blue  = Util::clamp((( BLUE( top) > 127.5) * ( std::max<float>(( float)BLUE( base) / RGB_SCALE,
-                                                                                   2 * (( float)BLUE( top) / RGB_SCALE - .5f))) + ( BLUE( top) <= 127.5)
-                                                                                                                                  * ( std::min<float>(( float)BLUE( base) / RGB_SCALE,
-                                                                                                                                                      2 * ( float)BLUE( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
+                            2 * (( float)BLUE( top) / RGB_SCALE - .5f))) + ( BLUE( top) <= 127.5)
+                            * ( std::min<float>(( float)BLUE( base) / RGB_SCALE,
+                            2 * ( float)BLUE( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
                     alpha = Util::clamp((( ALPHA( top) > 127.5) * ( std::max<float>(( float)ALPHA( base)
-                                                                                    / RGB_SCALE, 2 * (( float)ALPHA( top) / RGB_SCALE - .5f))) + ( ALPHA( top) <= 127.5)
-                                                                                                                                                 * ( std::min<float>(( float)ALPHA( base) / RGB_SCALE,
-                                                                                                                                                                     2 * ( float)ALPHA( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE);
+                            / RGB_SCALE, 2 * (( float)ALPHA( top) / RGB_SCALE - .5f))) + ( ALPHA( top) <= 127.5)
+                            * ( std::min<float>(( float)ALPHA( base) / RGB_SCALE,
+                            2 * ( float)ALPHA( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE);
 
             return RGBA( red, green, blue, alpha);
         },
@@ -927,13 +929,13 @@ std::function<uint32_t( uint32_t, uint32_t)> LayerRenderer::selectBlendFn( Compo
         []( auto top, auto base)
         {
             uint8_t red   = RED( base) == 0 ? RGB_SCALE
-                                            : ColorUtil::colorClamp( FLOAT_CAST(RED( top)) * RGB_SCALE / RED( base)),
+                            : ColorUtil::colorClamp( FLOAT_CAST(RED( top)) * RGB_SCALE / RED( base)),
                     green = GREEN( base) == 0 ? RGB_SCALE
-                                              : ColorUtil::colorClamp( FLOAT_CAST( GREEN( top)) * RGB_SCALE / GREEN( base)),
+                            : ColorUtil::colorClamp( FLOAT_CAST( GREEN( top)) * RGB_SCALE / GREEN( base)),
                     blue  = BLUE( base) == 0 ? RGB_SCALE
-                                             : ColorUtil::colorClamp( FLOAT_CAST( BLUE( top)) * RGB_SCALE / BLUE( base)),
+                            : ColorUtil::colorClamp( FLOAT_CAST( BLUE( top)) * RGB_SCALE / BLUE( base)),
                     alpha = ALPHA( base) == 0 ? RGB_SCALE
-                                              : ColorUtil::colorClamp( FLOAT_CAST( ALPHA( top)) * RGB_SCALE / ALPHA( base));
+                            : ColorUtil::colorClamp( FLOAT_CAST( ALPHA( top)) * RGB_SCALE / ALPHA( base));
 
             return RGBA( red, green, blue, alpha);
         },

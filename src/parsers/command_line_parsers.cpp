@@ -32,7 +32,7 @@ ApplicationDirector CommandLineParser::process()
 #include "static_kdtree_lut.inserts"
 #include "static_bktree_lut.inserts"
 
-    const char *font_profile{ "../common-fonts/Times New Roman/times new roman.ttf"},
+    const char *font_profile{ DEFAULT_PROJECT_FONT},
             *justification{ nullptr},
             *image_quality{ nullptr},
 #if defined( CUSTOM_FONT_SUPPORTED)

@@ -89,6 +89,7 @@ int main( int argc, char *argv[])
         }
 
         Util::write( surface, activity_director.raster_glyph, destination.get(), activity_director.kdroot.get());
+		std::cout << '\n';
     }
 
   return 0;
