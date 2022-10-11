@@ -198,85 +198,85 @@ void LayerRenderer::composite( FrameBuffer<uint32_t> &s_frame)
             [&]( auto part) // DestinationAtop
             {
                 std::visit( [ &]( auto&& current)
+                {
+                    using T = std::remove_cv_t<std::remove_reference_t<decltype(current)>>;
+                    const size_t d_max_index = d_frame.width * d_frame.height * d_frame.n_channel;
+                    auto *d_buffer = d_frame.buffer.get();
+                    for( int y = INT_CAST( smallbox_top_edge.y), j = 0; j < final_height; ++y, ++j)
+                    {
+                        for ( int x = INT_CAST( smallbox_top_edge.x), i = 0; i < final_width; ++x, ++i)
+                        {
+                            auto point = Vec2D<float>( FLOAT_CAST( x), FLOAT_CAST( y));
+                            if constexpr ( std::is_same_v<T, Default>) // DestinationAtop
                             {
-                                using T = std::remove_cv_t<std::remove_reference_t<decltype(current)>>;
-                                const size_t d_max_index = d_frame.width * d_frame.height * d_frame.n_channel;
-                                auto *d_buffer = d_frame.buffer.get();
-                                for( int y = INT_CAST( smallbox_top_edge.y), j = 0; j < final_height; ++y, ++j)
+                                auto d_index = y * d_frame.width * d_frame.n_channel +  x * d_frame.n_channel;
+                                auto s_coord = ( point - center).rotate( FLOAT_CAST( -c_rule.angle)) + center - pos;
+                                int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                if(!c_rule.b_models.empty())
                                 {
-                                    for ( int x = INT_CAST( smallbox_top_edge.x), i = 0; i < final_width; ++x, ++i)
+                                    bool corners_intersects = false;
+                                    if(( corners_intersects = ( index >= 0 && index < s_frame_dimension
+                                                                && intersects( corners, point)))
+                                       && d_index < d_max_index && intersects( big_corners, point))
                                     {
-                                        auto point = Vec2D<float>( FLOAT_CAST( x), FLOAT_CAST( y));
-                                        if constexpr ( std::is_same_v<T, Default>) // DestinationAtop
-                                        {
-                                            auto d_index = y * d_frame.width * d_frame.n_channel +  x * d_frame.n_channel;
-                                            auto s_coord = ( point - center).rotate( FLOAT_CAST( -c_rule.angle)) + center - pos;
-                                            int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                                            if(!c_rule.b_models.empty())
-                                            {
-                                                bool corners_intersects = false;
-                                                if(( corners_intersects = ( index >= 0 && index < s_frame_dimension
-                                                                            && intersects( corners, point)))
-                                                   && d_index < d_max_index && intersects( big_corners, point))
-                                                {
-                                                    auto top = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
-                                                                     d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
-                                                    auto base = s_frame.buffer.get()[ index];
-                                                    for( auto& blendFn : blendFns)
-                                                        top = blendFn( top, base);
-                                                    out_buffer[  j * final_width + i] = top;
-                                                }
-                                                else if( corners_intersects)
-                                                    out_buffer[  j * final_width + i] = s_frame.buffer.get()[ index];
-                                            }
-                                            else if( d_index < d_max_index && intersects( corners, point)
-                                                     && intersects( big_corners, point))
-                                            {
-                                                out_buffer[  j * final_width + i] = RGBA( d_buffer[ d_index],
-                                                                                          d_buffer[d_index + 1],
-                                                                                          d_buffer[ d_index + 2],
-                                                                                          d_buffer[ d_index + 3]);
-                                            }
-                                            else if( intersects( corners, point))
-                                            {
-                                                if( index >= 0 && index < s_frame_dimension)
-                                                    out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
-                                            }
-                                        }
-                                        else if constexpr ( std::is_same_v<T, Top>) // DestinationIn
-                                        {
-                                            auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-                                            if( d_index < d_max_index && intersects( corners, point)
-                                                && intersects( big_corners, point))
-                                            {
-                                                auto top = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
-                                                                 d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
-                                                if( !c_rule.b_models.empty())
-                                                {
-                                                    auto s_coord = ( point - center).rotate( FLOAT_CAST( -c_rule.angle))
-                                                                   + center - pos;
-                                                    int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                                                    auto base = s_frame.buffer.get()[ index];
-                                                    for( auto& blendFn : blendFns)
-                                                        top = blendFn( top, base);
-                                                }
-                                                out_buffer[ j * final_width + i] = top;
-                                            }
-                                        }
-                                        else if constexpr( std::is_same_v<T, Bottom>) // Source-Out
-                                        {
-                                            if( intersects( corners, point) && !intersects( big_corners, point))
-                                            {
-                                                auto s_coord = ( point - center).rotate( FLOAT_CAST( -c_rule.angle))
-                                                               + center - pos;
-                                                int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                                                if( index > 0 && index < s_frame_dimension)
-                                                    out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
-                                            }
-                                        }
+                                        auto top = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+                                                         d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
+                                        auto base = s_frame.buffer.get()[ index];
+                                        for( auto& blendFn : blendFns)
+                                            top = blendFn( top, base);
+                                        out_buffer[  j * final_width + i] = top;
                                     }
+                                    else if( corners_intersects)
+                                        out_buffer[  j * final_width + i] = s_frame.buffer.get()[ index];
                                 }
-                            }, part);
+                                else if( d_index < d_max_index && intersects( corners, point)
+                                         && intersects( big_corners, point))
+                                {
+                                    out_buffer[  j * final_width + i] = RGBA( d_buffer[ d_index],
+                                                                              d_buffer[d_index + 1],
+                                                                              d_buffer[ d_index + 2],
+                                                                              d_buffer[ d_index + 3]);
+                                }
+                                else if( intersects( corners, point))
+                                {
+                                    if( index >= 0 && index < s_frame_dimension)
+                                        out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
+                                }
+                            }
+                            else if constexpr ( std::is_same_v<T, Top>) // DestinationIn
+                            {
+                                auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                                if( d_index < d_max_index && intersects( corners, point)
+                                    && intersects( big_corners, point))
+                                {
+                                    auto top = RGBA( d_buffer[ d_index], d_buffer[ d_index + 1],
+                                                     d_buffer[ d_index + 2], d_buffer[ d_index + 3]);
+                                    if( !c_rule.b_models.empty())
+                                    {
+                                        auto s_coord = ( point - center).rotate( FLOAT_CAST( -c_rule.angle))
+                                                       + center - pos;
+                                        int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                        auto base = s_frame.buffer.get()[ index];
+                                        for( auto& blendFn : blendFns)
+                                            top = blendFn( top, base);
+                                    }
+                                    out_buffer[ j * final_width + i] = top;
+                                }
+                            }
+                            else if constexpr( std::is_same_v<T, Bottom>) // Source-Out
+                            {
+                                if( intersects( corners, point) && !intersects( big_corners, point))
+                                {
+                                    auto s_coord = ( point - center).rotate( FLOAT_CAST( -c_rule.angle))
+                                                   + center - pos;
+                                    int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                    if( index > 0 && index < s_frame_dimension)
+                                        out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
+                                }
+                            }
+                        }
+                    }
+                }, part);
             },
             [&]( auto part) // DestinationIn
             {
@@ -285,82 +285,82 @@ void LayerRenderer::composite( FrameBuffer<uint32_t> &s_frame)
             [&]( auto part) // DestinationOver
             {
                 std::visit( [&]( auto&& current)
+                {
+                    using T = std::remove_cv_t<std::remove_reference_t<decltype( current)>>;
+                    for( int y = INT_CAST( origin.y), j = 0; j < final_height; ++y, ++j)
+                    {
+                        for ( int x = INT_CAST( origin.x), i = 0; i < final_width; ++x, ++i)
+                        {
+                            auto point = Vec2D<float>( FLOAT_CAST( x), FLOAT_CAST( y));
+                            auto s_coord = ( point - center).rotate( FLOAT_CAST( -c_rule.angle)) + center - pos;
+                            if constexpr ( !std::is_same_v<T, Default>)
                             {
-                                using T = std::remove_cv_t<std::remove_reference_t<decltype( current)>>;
-                                for( int y = INT_CAST( origin.y), j = 0; j < final_height; ++y, ++j)
+                                if( auto b_intersects = intersects( big_corners, point),
+                                            c_intersects = intersects( corners, point);
+                                        b_intersects && c_intersects)
                                 {
-                                    for ( int x = INT_CAST( origin.x), i = 0; i < final_width; ++x, ++i)
+                                    if constexpr( std::is_same_v<T, Bottom>) // Selection for Lighter
                                     {
-                                        auto point = Vec2D<float>( FLOAT_CAST( x), FLOAT_CAST( y));
-                                        auto s_coord = ( point - center).rotate( FLOAT_CAST( -c_rule.angle)) + center - pos;
-                                        if constexpr ( !std::is_same_v<T, Default>)
-                                        {
-                                            if( auto b_intersects = intersects( big_corners, point),
-                                                        c_intersects = intersects( corners, point);
-                                                    b_intersects && c_intersects)
-                                            {
-                                                if constexpr( std::is_same_v<T, Bottom>) // Selection for Lighter
-                                                {
-                                                    auto d_index = y * d_frame.width * d_frame.n_channel
-                                                                   + x * d_frame.n_channel;
-                                                    int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                                                    auto *buffer = d_frame.buffer.get();
-                                                    auto b_color = RGBA( buffer[ d_index], buffer[ d_index + 1],
-                                                                         buffer[ d_index + 2], buffer[ d_index + 3]);
-                                                    uint32_t c_color = b_color;
-                                                    if( index > 0 && index < s_frame_dimension)
-                                                        c_color = s_frame.buffer.get()[ index];
-                                                    auto final_color = ColorUtil::sumMix(b_color, c_color);
-                                                    auto alpha = ( uint16_t)( c_color & 0xFFu) + ( b_color & 0xFFu);
-                                                    final_color = final_color | std::min( 0xFFu, alpha);
-                                                    out_buffer[ j * final_width + i] = final_color;
-                                                }
-                                            }
-                                            else if( b_intersects) // Bypass the intersection of source and destination
-                                            {
-                                                auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-                                                auto *buffer = d_frame.buffer.get();
-                                                out_buffer[ j * final_width + i] = RGBA( buffer[ d_index], buffer[d_index + 1],
-                                                                                         buffer[ d_index + 2],
-                                                                                         buffer[ d_index + 3]);
-                                            }
-                                            else if( c_intersects)
-                                            {
-                                                int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                                                if( index > 0 && index < s_frame_dimension)
-                                                    out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
-                                            }
-                                        }
-                                        else if( !c_rule.b_models.empty() &&
-                                                 intersects( big_corners, point) && intersects( corners, point))
-                                        {
-                                            auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-                                            int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                                            auto *buffer = d_frame.buffer.get();
-                                            auto top = RGBA( buffer[ d_index], buffer[ d_index + 1],
-                                                             buffer[ d_index + 2], buffer[ d_index + 3]),
-                                                    base = s_frame.buffer.get()[ index];
-                                            for( auto& blendFn : blendFns)
-                                                top = blendFn( top, base);
-                                            out_buffer[ j * final_width + i] = top;
-                                        }
-                                        else if( intersects( big_corners, point)) // Selection for DestinationOver
-                                        {
-                                            auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
-                                            auto *buffer = d_frame.buffer.get();
-                                            out_buffer[ j * final_width + i] = RGBA( buffer[ d_index], buffer[d_index + 1],
-                                                                                     buffer[ d_index + 2],
-                                                                                     buffer[ d_index + 3]);
-                                        }
-                                        else if( intersects( corners, point)) // Selection for DestinationOver
-                                        {
-                                            int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                                            if( index > 0 && index < s_frame_dimension)
-                                                out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
-                                        }
+                                        auto d_index = y * d_frame.width * d_frame.n_channel
+                                                       + x * d_frame.n_channel;
+                                        int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                        auto *buffer = d_frame.buffer.get();
+                                        auto b_color = RGBA( buffer[ d_index], buffer[ d_index + 1],
+                                                             buffer[ d_index + 2], buffer[ d_index + 3]);
+                                        uint32_t c_color = b_color;
+                                        if( index > 0 && index < s_frame_dimension)
+                                            c_color = s_frame.buffer.get()[ index];
+                                        auto final_color = ColorUtil::sumMix(b_color, c_color);
+                                        auto alpha = ( uint16_t)( c_color & 0xFFu) + ( b_color & 0xFFu);
+                                        final_color = final_color | std::min( 0xFFu, alpha);
+                                        out_buffer[ j * final_width + i] = final_color;
                                     }
                                 }
-                            }, part);
+                                else if( b_intersects) // Bypass the intersection of source and destination
+                                {
+                                    auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                                    auto *buffer = d_frame.buffer.get();
+                                    out_buffer[ j * final_width + i] = RGBA( buffer[ d_index], buffer[d_index + 1],
+                                                                             buffer[ d_index + 2],
+                                                                             buffer[ d_index + 3]);
+                                }
+                                else if( c_intersects)
+                                {
+                                    int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                    if( index > 0 && index < s_frame_dimension)
+                                        out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
+                                }
+                            }
+                            else if( !c_rule.b_models.empty() &&
+                                     intersects( big_corners, point) && intersects( corners, point))
+                            {
+                                auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                                int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                auto *buffer = d_frame.buffer.get();
+                                auto top = RGBA( buffer[ d_index], buffer[ d_index + 1],
+                                                 buffer[ d_index + 2], buffer[ d_index + 3]),
+                                        base = s_frame.buffer.get()[ index];
+                                for( auto& blendFn : blendFns)
+                                    top = blendFn( top, base);
+                                out_buffer[ j * final_width + i] = top;
+                            }
+                            else if( intersects( big_corners, point)) // Selection for DestinationOver
+                            {
+                                auto d_index = y * d_frame.width * d_frame.n_channel + x * d_frame.n_channel;
+                                auto *buffer = d_frame.buffer.get();
+                                out_buffer[ j * final_width + i] = RGBA( buffer[ d_index], buffer[d_index + 1],
+                                                                         buffer[ d_index + 2],
+                                                                         buffer[ d_index + 3]);
+                            }
+                            else if( intersects( corners, point)) // Selection for DestinationOver
+                            {
+                                int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                if( index > 0 && index < s_frame_dimension)
+                                    out_buffer[ j * final_width + i] = s_frame.buffer.get()[ index];
+                            }
+                        }
+                    }
+                }, part);
             },
             [&]( auto part) // DestinationOut
             {
@@ -376,89 +376,89 @@ void LayerRenderer::composite( FrameBuffer<uint32_t> &s_frame)
             [&]( auto part) // SourceAtop
             {
                 std::visit( [ &]( auto&& current)
+                {
+                    auto max_d_frame_dimension = d_frame.width * d_frame.height * d_frame.n_channel;
+                    using T = std::remove_cv_t<std::remove_reference_t<decltype( current)>>;
+                    for( int y = INT_CAST( origin.y), j = 0; j < final_height; ++y, ++j)
+                    {
+                        for( int x = INT_CAST( origin.x), i = 0; i < final_width; ++x, ++i)
+                        {
+                            int s_index     = j * d_frame.width * d_frame.n_channel
+                                              + i * d_frame.n_channel,
+                                    d_index     = j * final_width + i;
+                            auto *d_ptr     = d_frame.buffer.get();
+                            uint32_t &pixel = out_buffer[  d_index];
+                            auto point      = Vec2D<float>( FLOAT_CAST( x), FLOAT_CAST( y));
+                            if constexpr ( std::is_same_v<T, Default>) // SourceAtop
                             {
-                                auto max_d_frame_dimension = d_frame.width * d_frame.height * d_frame.n_channel;
-                                using T = std::remove_cv_t<std::remove_reference_t<decltype( current)>>;
-                                for( int y = INT_CAST( origin.y), j = 0; j < final_height; ++y, ++j)
+                                if( intersects( corners, point) && intersects( big_corners, point))
                                 {
-                                    for( int x = INT_CAST( origin.x), i = 0; i < final_width; ++x, ++i)
+                                    auto s_coord = ( point - center).rotate( FLOAT_CAST( -c_rule.angle))
+                                                   + center - pos;
+                                    int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                    auto rgba    = s_frame.buffer.get()[ index];
+                                    if( c_rule.b_models.empty())
                                     {
-                                        int s_index     = j * d_frame.width * d_frame.n_channel
-                                                          + i * d_frame.n_channel,
-                                                d_index     = j * final_width + i;
-                                        auto *d_ptr     = d_frame.buffer.get();
-                                        uint32_t &pixel = out_buffer[  d_index];
-                                        auto point      = Vec2D<float>( FLOAT_CAST( x), FLOAT_CAST( y));
-                                        if constexpr ( std::is_same_v<T, Default>) // SourceAtop
-                                        {
-                                            if( intersects( corners, point) && intersects( big_corners, point))
-                                            {
-                                                auto s_coord = ( point - center).rotate( FLOAT_CAST( -c_rule.angle))
-                                                               + center - pos;
-                                                int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                                                auto rgba    = s_frame.buffer.get()[ index];
-                                                if( c_rule.b_models.empty())
-                                                {
-                                                    if( ALPHA( rgba) < 180)
-                                                        pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-                                                                      d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-                                                    else
-                                                        pixel = s_frame.buffer.get()[ index];
-                                                }
-                                                else
-                                                {
-                                                    auto top  = s_frame.buffer.get()[ index],
-                                                            base = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-                                                                         d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-                                                    for( auto& blendFn : blendFns)
-                                                        top = blendFn( top, base);
-                                                    pixel = top;
-                                                }
-                                            }
-                                            else
-                                            {
-                                                pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-                                                              d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-                                            }
-                                        }
-                                        else if constexpr ( std::is_same_v<T, Top>) // DestinationOut
-                                        {
-                                            if( !intersects( corners, point) || !intersects( big_corners, point))
-                                                pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-                                                              d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-                                        }
-                                        else if constexpr ( std::is_same_v<T, Bottom>) // SourceIn, Clip
-                                        {
-                                            if( intersects( corners, point) && intersects( big_corners, point))
-                                            {
-                                                auto s_coord = ( point - center).rotate( -c_rule.angle)
-                                                               + center - pos;
-                                                int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
-                                                auto color   = s_frame.buffer.get()[ index];
-                                                if( s_index >= max_d_frame_dimension)
-                                                    continue;
-                                                if(!c_rule.b_models.empty())
-                                                {
-                                                    auto top  = color,
-                                                            base = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-                                                                         d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-                                                    for( auto& blendFn : blendFns)
-                                                        top = blendFn( top, base);
-                                                    pixel = top;
-                                                }
-                                                else
-                                                {
-                                                    if( ALPHA( color) < 180)
-                                                        pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
-                                                                      d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
-                                                    else
-                                                        pixel = color;
-                                                }
-                                            }
-                                        }
+                                        if( ALPHA( rgba) < 180)
+                                            pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                          d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                                        else
+                                            pixel = s_frame.buffer.get()[ index];
+                                    }
+                                    else
+                                    {
+                                        auto top  = s_frame.buffer.get()[ index],
+                                                base = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                             d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                                        for( auto& blendFn : blendFns)
+                                            top = blendFn( top, base);
+                                        pixel = top;
                                     }
                                 }
-                            }, part);
+                                else
+                                {
+                                    pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                  d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                                }
+                            }
+                            else if constexpr ( std::is_same_v<T, Top>) // DestinationOut
+                            {
+                                if( !intersects( corners, point) || !intersects( big_corners, point))
+                                    pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                  d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                            }
+                            else if constexpr ( std::is_same_v<T, Bottom>) // SourceIn, Clip
+                            {
+                                if( intersects( corners, point) && intersects( big_corners, point))
+                                {
+                                    auto s_coord = ( point - center).rotate( -c_rule.angle)
+                                                   + center - pos;
+                                    int index    = (int)s_coord.y * s_frame.width + (int)s_coord.x;
+                                    auto color   = s_frame.buffer.get()[ index];
+                                    if( s_index >= max_d_frame_dimension)
+                                        continue;
+                                    if(!c_rule.b_models.empty())
+                                    {
+                                        auto top  = color,
+                                                base = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                             d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                                        for( auto& blendFn : blendFns)
+                                            top = blendFn( top, base);
+                                        pixel = top;
+                                    }
+                                    else
+                                    {
+                                        if( ALPHA( color) < 180)
+                                            pixel = RGBA( d_ptr[ s_index], d_ptr[ s_index + 1],
+                                                          d_ptr[ s_index + 2], d_ptr[ s_index + 3]);
+                                        else
+                                            pixel = color;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }, part);
             },
             [&]( auto part) // SourceIn
             {
@@ -653,322 +653,322 @@ bool LayerRenderer::intersects( std::array<Vec2D<float>, 4> corners, Vec2D<float
 std::function<uint32_t( uint32_t, uint32_t)> LayerRenderer::selectBlendFn( CompositionRule::BlendModel model)
 {
     static std::function<uint32_t( uint32_t, uint32_t)> selector[ NUMBER_OF_BLEND_MODES] =
+    {
+        []( auto top, auto base)
+        {
+            auto value = ( rand() % ( 0x100 - ALPHA( top)));
+            return value >= 0 && value <= 10 ? top | 0xff : base;
+        },
+        []( auto top, auto base)
+        {
+            int t_rgb_min = std::min( std::min( RED( top), GREEN( top)), BLUE( top)),
+                    b_rgb_min = std::min( std::min( RED( base), GREEN( base)), BLUE( base)),
+                    t_rgb_max = std::max( std::max( RED( top), GREEN( top)), BLUE( top)),
+                    b_rgb_max = std::max( std::max( RED( base), GREEN( base)), BLUE( base));
+            return ( t_rgb_max + t_rgb_min) < ( b_rgb_max + b_rgb_min) ? top : base;
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red   = (( float)RED( top) / RGB_SCALE   * ( float)RED( base) / RGB_SCALE) * RGB_SCALE,
+                    green = (( float)GREEN( top) / RGB_SCALE * ( float)GREEN( base) / RGB_SCALE) * RGB_SCALE,
+                    blue  = (( float)BLUE( top) / RGB_SCALE  * ( float)BLUE( base) / RGB_SCALE) * RGB_SCALE,
+                    alpha = (( float)ALPHA( top) / RGB_SCALE * ( float)ALPHA( base) / RGB_SCALE) * RGB_SCALE;
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red   = RED( top) == 0 ? 0 :
+                            ColorUtil::colorClamp( ( 1.f - ( FLOAT_CAST( RGB_SCALE - RED( base))
+                                                             / FLOAT_CAST( RED( top)))) * RGB_SCALE),
+                    green = GREEN( top) == 0 ? 0 :
+                            ColorUtil::colorClamp( ( 1.f - ( FLOAT_CAST( RGB_SCALE - GREEN( base))
+                                                             / FLOAT_CAST( GREEN( top)))) * RGB_SCALE),
+                    blue  = BLUE( top) == 0 ? 0 :
+                            ColorUtil::colorClamp( ( 1.f - ( FLOAT_CAST( RGB_SCALE - BLUE( base))
+                                                             / FLOAT_CAST( BLUE( top)))) * RGB_SCALE),
+                    alpha = ALPHA( top) == 0 ? 0 :
+                            ColorUtil::colorClamp( ( 1.f - ( FLOAT_CAST( RGB_SCALE - ALPHA( base))
+                                                             / FLOAT_CAST( ALPHA( top)))) * RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red_sum   = ColorUtil::colorClamp(( int16_t)RED( base) + RED( top) - RGB_SCALE),
+                    green_sum = ColorUtil::colorClamp(( int16_t)GREEN( base) + GREEN( top) - RGB_SCALE),
+                    blue_sum  = ColorUtil::colorClamp(( int16_t)BLUE( base) + BLUE( top) - RGB_SCALE),
+                    alpha_sum = ColorUtil::colorClamp(( int16_t)ALPHA( base) + ALPHA( top) - RGB_SCALE);
+
+            return RGBA( red_sum, green_sum, blue_sum, alpha_sum);
+        },
+        []( auto top, auto base)
+        {
+            constexpr auto factor = .5f;
+            return ALPHA( top) > 180 ?
+                   RGBA( ColorUtil::colorClamp( RED( top) * factor), ColorUtil::colorClamp( GREEN( top) * factor),
+                         ColorUtil::colorClamp( BLUE( top) * factor), ALPHA( top))
+                                     : RGBA( ColorUtil::colorClamp( RED( base) * factor),
+                                             ColorUtil::colorClamp( GREEN( base) * factor),
+                                             ColorUtil::colorClamp( BLUE( base) * factor), ALPHA( base));
+        },
+        []( auto top, auto base)
+        {
+            return selector[ ENUM_CAST( CompositionRule::BlendModel::Darken)]( top, base) == top ? base : top;
+        },
+        []( auto top, auto base)
+        {
+            constexpr auto factor = 0.00001538f;
+            uint8_t red   = ( 1 - factor * (( RGB_SCALE - RED( base)) * ( RGB_SCALE - RED( top)))) * RGB_SCALE,
+                    green = ( 1 - factor * (( RGB_SCALE - GREEN( base)) * ( RGB_SCALE - GREEN( top)))) * RGB_SCALE,
+                    blue  = ( 1 - factor * (( RGB_SCALE - BLUE( base)) * ( RGB_SCALE - BLUE( top)))) * RGB_SCALE,
+                    alpha = ( 1 - factor * (( RGB_SCALE - ALPHA( base)) * ( RGB_SCALE - ALPHA( top)))) * RGB_SCALE;
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red   = ( float)RED( base) * RGB_SCALE / ( RGB_SCALE - RED( top)),
+                    green = ( float)GREEN( base) * RGB_SCALE / ( RGB_SCALE - GREEN( top)),
+                    blue  = ( float)BLUE( base) * RGB_SCALE / ( RGB_SCALE - BLUE( top)),
+                    alpha = ( float)ALPHA( base) * RGB_SCALE / ( RGB_SCALE - ALPHA( top));
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red_sum   = ColorUtil::colorClamp(( int16_t)RED( base) + RED( top)),
+                    green_sum = ColorUtil::colorClamp(( int16_t)GREEN( base) + GREEN( top)),
+                    blue_sum  = ColorUtil::colorClamp(( int16_t)BLUE( base) + BLUE( top)),
+                    alpha_sum = ColorUtil::colorClamp(( int16_t)ALPHA( base) + ALPHA( top));
+
+            return RGBA( red_sum, green_sum, blue_sum, alpha_sum);
+        },
+        []( auto top, auto base)
+        {
+            constexpr auto factor = 2.f;
+            return ALPHA( top) > 180 ?
+                   RGBA( ColorUtil::colorClamp( RED( top) * factor), ColorUtil::colorClamp( GREEN( top) * factor),
+                         ColorUtil::colorClamp( BLUE( top) * factor), ALPHA( top))
+                                     : RGBA( ColorUtil::colorClamp( RED( base) * factor), ColorUtil::colorClamp( GREEN( base) * factor),
+                                             ColorUtil::colorClamp( BLUE( base) * factor), ALPHA( base));
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red   = Util::clamp((( RED( base) > 127.5) * ( 1 - ( 1 - 2 * ( ( float)RED( base) / RGB_SCALE - .5f))
+                                                                       * ( 1 - ( float)RED( top) / RGB_SCALE)) + ( RED( base) <= 127.5f)
+                                                                                                                 * (( 2 * ( float)RED( base) / RGB_SCALE) * RED( top))) * RGB_SCALE, 0, RGB_SCALE),
+                    green = Util::clamp((( GREEN( base) > 127.5)
+                                         * ( 1 - ( 1 - 2 * (( float)GREEN( base) / RGB_SCALE - .5))
+                                                 * ( 1 - ( float)GREEN( top) / RGB_SCALE)) + ( GREEN( base) <= 127.5f)
+                                                                                             * (( 2 * ( float)GREEN( base) / RGB_SCALE) * GREEN( top))) * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = Util::clamp((( BLUE( base) > 127.5) * ( 1 - ( 1 - 2 * (( float)BLUE( base) / RGB_SCALE - .5))
+                                                                        * ( 1 - ( float)BLUE( top) / RGB_SCALE)) + ( BLUE( base) <= 127.5f)
+                                                                                                                   * (( 2 * ( float)BLUE( base) / RGB_SCALE) * BLUE( top))) * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = Util::clamp((( ALPHA( base) > 127.5)
+                                         * ( 1 - ( 1 - 2 * (( float)ALPHA( base) / RGB_SCALE - .5))
+                                                 * ( 1 - ( float)ALPHA( top) / RGB_SCALE)) + ( ALPHA( base) <= 127.5f)
+                                                                                             * (( 2 * ( float)ALPHA( base) / RGB_SCALE) * ALPHA( top))) * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, ALPHA( top) < 180 ? ALPHA( base) : ALPHA( top));
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red   = Util::clamp((( RED( top) > 127.5) * ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE)
+                                                                      * ( 1 - (( float)RED( top) / RGB_SCALE - .5f))) + ( RED( top) <= 127.5)
+                                                                                                                        * (( float)RED( base) / RGB_SCALE * (( float)RED( top) / RGB_SCALE + .5f)))
+                                        * RGB_SCALE, 0, RGB_SCALE),
+                    green = Util::clamp((( GREEN( top) > 127.5) * ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE)
+                                                                        * ( 1 - (( float)GREEN( top) / RGB_SCALE - .5f))) + ( GREEN( top) <= 127.5)
+                                                                                                                            * ( ( float)GREEN( base) / RGB_SCALE * (( float)GREEN( top) / RGB_SCALE + .5f)))
+                                        * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = Util::clamp((( BLUE( top) > 127.5) * ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE)
+                                                                       * ( 1 - (( float)BLUE( top) / RGB_SCALE - .5f))) + ( BLUE( top) <= 127.5)
+                                                                                                                          * (( float)BLUE( base) / RGB_SCALE * (( float)BLUE( top) / RGB_SCALE + .5)))
+                                        * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = Util::clamp((( ALPHA( top) > 127.5) * ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE)
+                                                                        * ( 1 - (( float)ALPHA( top) / RGB_SCALE - .5f))) + ( ALPHA( top) <= 127.5)
+                                                                                                                            * (( float)ALPHA( base) / RGB_SCALE * (( float)ALPHA( top) / RGB_SCALE + .5f)))
+                                        * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red   = Util::clamp((( RED( top) > 127.5) * ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE)
+                                                                      * ( 1 - 2 * (( float)RED( top) / RGB_SCALE - .5f)))
+                                         + ( RED( top) <= 127.5) * (( float)RED( base) * ( 2 * ( float)RED( top) / RGB_SCALE)))
+                                        * RGB_SCALE, 0, RGB_SCALE),
+                    green = Util::clamp((( GREEN( top) > 127.5) * ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE)
+                                                                        * ( 1 - 2 * (( float)GREEN( top) / RGB_SCALE - .5f)))
+                                         + ( GREEN( top) <= 127.5) * (( float)GREEN( base)
+                                                                      * ( 2 * ( float)GREEN( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = Util::clamp((( BLUE( top) > 127.5) * ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE)
+                                                                       * ( 1 - 2 * (( float)BLUE( top) / RGB_SCALE - .5f)))
+                                         + ( BLUE( top) <= 127.5) * (( float)BLUE( base)
+                                                                     * ( 2 * ( float)BLUE( top) / RGB_SCALE)))
+                                        * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = Util::clamp((( ALPHA( top) > 127.5) * ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE)
+                                                                        * ( 1 - 2 * (( float)ALPHA( top) / RGB_SCALE - .5f)))
+                                         + ( ALPHA( top) <= 127.5) * (( float)ALPHA( base)
+                                                                      * ( 2 * ( float)ALPHA( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            auto red_f_base   = ( 1 - 2 * (( float)RED( top) / RGB_SCALE - .5f)),
+                    red_e_base   = ( 2 * ( float)RED( top) / RGB_SCALE),
+                    green_f_base = ( 1 - 2 * (( float)GREEN( top) / RGB_SCALE - .5f)),
+                    green_e_base = ( 2 * ( float)GREEN( top) / RGB_SCALE),
+                    blue_f_base  = ( 1 - 2 * (( float)BLUE( top) / RGB_SCALE - .5f)),
+                    blue_e_base  = ( 2 * ( float)BLUE( top) / RGB_SCALE),
+                    alpha_f_base = ( 1 - 2 * (( float)ALPHA( top) / RGB_SCALE - .5f)),
+                    alpha_e_base = ( 2 * ( float)ALPHA( top) / RGB_SCALE);
+            uint8_t red   = Util::clamp(((( RED( top) > 127.5) * ( ZERO( red_f_base) ? 1 :
+                                                                   ((( float)RED( base) / RGB_SCALE) / red_f_base))) + (( RED( top) <= 127.5)
+                                                                                                                        * ( ZERO( red_e_base) ? 0 : ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE) / red_e_base))))
+                                        * RGB_SCALE, 0, RGB_SCALE),
+                    green = Util::clamp(((( GREEN( top) > 127.5) * ( ZERO( green_f_base) ? 1 :
+                                                                     ((( float)GREEN( base) / RGB_SCALE) / green_f_base))) + (( RED( top) <= 127.5)
+                                                                                                                              * ( ZERO( green_e_base) ? 0 :
+                                                                                                                                  ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE) / green_e_base)))) * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = Util::clamp(((( BLUE( top) > 127.5) * ( ZERO( blue_f_base) ? 1 :
+                                                                    ((( float)BLUE( base) / RGB_SCALE) / blue_f_base))) + (( BLUE( top) <= 127.5)
+                                                                                                                           * ( ZERO( blue_e_base) ? 0 : ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE) / blue_e_base))))
+                                        * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = Util::clamp(((( ALPHA( top) > 127.5) * ( ZERO( alpha_f_base) ? 1 :
+                                                                     ((( float)ALPHA( base) / RGB_SCALE) / alpha_f_base))) + (( ALPHA( top) <= 127.5)
+                                                                                                                              * ( ZERO( alpha_e_base) ? 0 :
+                                                                                                                                  ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE) / alpha_e_base)))) * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red  = Util::clamp((( RED( top) > 127.5) * (( float)RED( base) / RGB_SCALE + 2
+                                                                                                 * (( float)RED( top) / RGB_SCALE - .5f)) + ( RED( top) <= 127.5)
+                                                                                                                                            * (( float)RED( base) / RGB_SCALE + 2 * (( float)RED( top) / RGB_SCALE) - 1))
+                                       * RGB_SCALE, 0, RGB_SCALE),
+                    green = Util::clamp((( GREEN( top) > 127.5) * (( float)GREEN( base) / RGB_SCALE + 2
+                                                                                                      * (( float)GREEN( top) / RGB_SCALE - .5f)) + ( GREEN( top) <= 127.5)
+                                                                                                                                                   * (( float)GREEN( base) / RGB_SCALE + 2 * (( float)GREEN( top) / RGB_SCALE) - 1))
+                                        * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = Util::clamp((( BLUE( top) > 127.5) * (( float)BLUE( base) / RGB_SCALE + 2
+                                                                                                    * (( float)BLUE( top) / RGB_SCALE - .5f)) + ( BLUE( top) <= 127.5)
+                                                                                                                                                * (( float)BLUE( base) / RGB_SCALE + 2 * (( float)BLUE( top) / RGB_SCALE) - 1))
+                                        * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = Util::clamp((( ALPHA( top) > 127.5) * (( float)ALPHA( base) / RGB_SCALE + 2
+                                                                                                      * (( float)ALPHA( top) / RGB_SCALE - .5f)) + ( ALPHA( top) <= 127.5)
+                                                                                                                                                   * (( float)ALPHA( base) / RGB_SCALE + 2 * (( float)ALPHA( top) / RGB_SCALE) - 1))
+                                        * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red   = Util::clamp((( RED( top) > 127.5) * ( std::max<float>(( float)RED( base) / RGB_SCALE,
+                                                                                  2 * (( float)RED( top) / RGB_SCALE - .5f))) + ( RED( top) <= 127.5)
+                                                                                                                                * ( std::min<float>(( float)RED( base) / RGB_SCALE, 2 * ( float)RED( top) / RGB_SCALE)))
+                                        * RGB_SCALE, 0, RGB_SCALE),
+                    green = Util::clamp((( GREEN( top) > 127.5) * ( std::max<float>(( float)GREEN( base) / RGB_SCALE,
+                                                                                    2 * (( float)GREEN( top) / RGB_SCALE - .5f))) + ( GREEN( top) <= 127.5)
+                                                                                                                                    * ( std::min<float>(( float)GREEN( base) / RGB_SCALE,
+                                                                                                                                                        2 * ( float)GREEN( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = Util::clamp((( BLUE( top) > 127.5) * ( std::max<float>(( float)BLUE( base) / RGB_SCALE,
+                                                                                   2 * (( float)BLUE( top) / RGB_SCALE - .5f))) + ( BLUE( top) <= 127.5)
+                                                                                                                                  * ( std::min<float>(( float)BLUE( base) / RGB_SCALE,
+                                                                                                                                                      2 * ( float)BLUE( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = Util::clamp((( ALPHA( top) > 127.5) * ( std::max<float>(( float)ALPHA( base)
+                                                                                    / RGB_SCALE, 2 * (( float)ALPHA( top) / RGB_SCALE - .5f))) + ( ALPHA( top) <= 127.5)
+                                                                                                                                                 * ( std::min<float>(( float)ALPHA( base) / RGB_SCALE,
+                                                                                                                                                                     2 * ( float)ALPHA( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            auto mix = selector[ ENUM_CAST( BLEND_ENUM( LinearDodge))]( top, base);
+
+            return RGBA( RED( mix) < RGB_SCALE ? 0 : RGB_SCALE, GREEN( mix) < RGB_SCALE ? 0 : RGB_SCALE,
+                         BLUE( mix) < RGB_SCALE ? 0 : RGB_SCALE, ALPHA( mix) < RGB_SCALE ? 0 : RGB_SCALE);
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red   = std::abs(( int16_t)RED( base) - ( int8_t)RED( top)),
+                    green = std::abs(( int16_t)GREEN( base) - ( int8_t)GREEN( top)),
+                    blue  = std::abs(( int16_t)BLUE( base) - ( int8_t)BLUE( top)),
+                    alpha = ColorUtil::colorClamp(( uint16_t)ALPHA( base) + ALPHA( top));
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red   = Util::clamp(( .5f - 2 * (( float)RED( base) / RGB_SCALE - .5f)
+                                                * (( float)RED( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE),
+                    green = Util::clamp(( .5f - 2 * (( float)GREEN( base) / RGB_SCALE - .5f)
+                                                * (( float)GREEN( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE),
+                    blue  = Util::clamp(( .5f - 2 * (( float)BLUE( base) / RGB_SCALE - .5f)
+                                                * (( float)BLUE( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE),
+                    alpha = Util::clamp(( .5f - 2 * (( float)ALPHA( base) / RGB_SCALE - .5f)
+                                                * (( float)ALPHA( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red   = RED( top) > RED( base) ? RED( top) - RED( base) : RED( top),
+                    green = GREEN( top) > GREEN( base) ? GREEN( top) - GREEN( base) : GREEN( top),
+                    blue  = BLUE( top) > BLUE( base) ? BLUE( top) - BLUE( base) : BLUE( top),
+                    alpha = ALPHA( top) > ALPHA( base) ? ALPHA( top) - ALPHA( base) : ALPHA( top);
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            uint8_t red   = RED( base) == 0 ? RGB_SCALE
+                                            : ColorUtil::colorClamp( FLOAT_CAST(RED( top)) * RGB_SCALE / RED( base)),
+                    green = GREEN( base) == 0 ? RGB_SCALE
+                                              : ColorUtil::colorClamp( FLOAT_CAST( GREEN( top)) * RGB_SCALE / GREEN( base)),
+                    blue  = BLUE( base) == 0 ? RGB_SCALE
+                                             : ColorUtil::colorClamp( FLOAT_CAST( BLUE( top)) * RGB_SCALE / BLUE( base)),
+                    alpha = ALPHA( base) == 0 ? RGB_SCALE
+                                              : ColorUtil::colorClamp( FLOAT_CAST( ALPHA( top)) * RGB_SCALE / ALPHA( base));
+
+            return RGBA( red, green, blue, alpha);
+        },
+        []( auto top, auto base)
+        {
+            auto top_hsla      = ColorSpaceConverter::rgbaToHsla( top),
+                    base_hsla  = ColorSpaceConverter::rgbaToHsla( base),
+                    lum_change = HSLA( HUE( top_hsla), SAT( base_hsla), LUMIN( base_hsla), ALPHA( base_hsla));
+
+            return ColorSpaceConverter::hslaToRgba( lum_change);
+        },
+        []( auto top, auto base)
+        {
+            auto top_hsla   = ColorSpaceConverter::rgbaToHsla( top),
+                    base_hsla  = ColorSpaceConverter::rgbaToHsla( base),
+                    lum_change = HSLA( HUE( base_hsla), SAT( top_hsla), LUMIN( base_hsla), ALPHA( base_hsla));
+
+            return ColorSpaceConverter::hslaToRgba( lum_change);
+        },
+        []( auto top, auto base)
+        {
+            auto top_hsla   = ColorSpaceConverter::rgbaToHsla( top),
+                    lum_change = HSLA( HUE( top_hsla), SAT( top_hsla), LUMIN( top_hsla), ALPHA( base));
+
+            return ColorSpaceConverter::hslaToRgba( lum_change);
+        },
+        []( auto top, auto base)
             {
-                    [ ENUM_CAST( BLEND_ENUM( Dissolve))]     = []( auto top, auto base)
-                    {
-                        auto value = ( rand() % ( 0x100 - ALPHA( top)));
-                        return value >= 0 && value <= 10 ? top | 0xff : base;
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Darken))]       = []( auto top, auto base)
-                    {
-                        int t_rgb_min = std::min( std::min( RED( top), GREEN( top)), BLUE( top)),
-                                b_rgb_min = std::min( std::min( RED( base), GREEN( base)), BLUE( base)),
-                                t_rgb_max = std::max( std::max( RED( top), GREEN( top)), BLUE( top)),
-                                b_rgb_max = std::max( std::max( RED( base), GREEN( base)), BLUE( base));
-                        return ( t_rgb_max + t_rgb_min) < ( b_rgb_max + b_rgb_min) ? top : base;
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Multiply))]     = []( auto top, auto base)
-                    {
-                        uint8_t red   = (( float)RED( top) / RGB_SCALE   * ( float)RED( base) / RGB_SCALE) * RGB_SCALE,
-                                green = (( float)GREEN( top) / RGB_SCALE * ( float)GREEN( base) / RGB_SCALE) * RGB_SCALE,
-                                blue  = (( float)BLUE( top) / RGB_SCALE  * ( float)BLUE( base) / RGB_SCALE) * RGB_SCALE,
-                                alpha = (( float)ALPHA( top) / RGB_SCALE * ( float)ALPHA( base) / RGB_SCALE) * RGB_SCALE;
+                auto top_hsla   = ColorSpaceConverter::rgbaToHsla( top),
+                        base_hsla  = ColorSpaceConverter::rgbaToHsla( base),
+                        lum_change = HSLA( HUE( base_hsla), SAT( base_hsla), LUMIN( top_hsla), ALPHA( base_hsla));
 
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( ColorBurn))]    = []( auto top, auto base)
-                    {
-                        uint8_t red   = RED( top) == 0 ? 0 :
-                                        ColorUtil::colorClamp( ( 1.f - ( FLOAT_CAST( RGB_SCALE - RED( base))
-                                                                         / FLOAT_CAST( RED( top)))) * RGB_SCALE),
-                                green = GREEN( top) == 0 ? 0 :
-                                        ColorUtil::colorClamp( ( 1.f - ( FLOAT_CAST( RGB_SCALE - GREEN( base))
-                                                                         / FLOAT_CAST( GREEN( top)))) * RGB_SCALE),
-                                blue  = BLUE( top) == 0 ? 0 :
-                                        ColorUtil::colorClamp( ( 1.f - ( FLOAT_CAST( RGB_SCALE - BLUE( base))
-                                                                         / FLOAT_CAST( BLUE( top)))) * RGB_SCALE),
-                                alpha = ALPHA( top) == 0 ? 0 :
-                                        ColorUtil::colorClamp( ( 1.f - ( FLOAT_CAST( RGB_SCALE - ALPHA( base))
-                                                                         / FLOAT_CAST( ALPHA( top)))) * RGB_SCALE);
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( LinearBurn))]   = []( auto top, auto base)
-                    {
-                        uint8_t red_sum   = ColorUtil::colorClamp(( int16_t)RED( base) + RED( top) - RGB_SCALE),
-                                green_sum = ColorUtil::colorClamp(( int16_t)GREEN( base) + GREEN( top) - RGB_SCALE),
-                                blue_sum  = ColorUtil::colorClamp(( int16_t)BLUE( base) + BLUE( top) - RGB_SCALE),
-                                alpha_sum = ColorUtil::colorClamp(( int16_t)ALPHA( base) + ALPHA( top) - RGB_SCALE);
-
-                        return RGBA( red_sum, green_sum, blue_sum, alpha_sum);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( DarkerColor))]  = []( auto top, auto base)
-                    {
-                        constexpr auto factor = .5f;
-                        return ALPHA( top) > 180 ?
-                               RGBA( ColorUtil::colorClamp( RED( top) * factor), ColorUtil::colorClamp( GREEN( top) * factor),
-                                     ColorUtil::colorClamp( BLUE( top) * factor), ALPHA( top))
-                                                 : RGBA( ColorUtil::colorClamp( RED( base) * factor),
-                                                         ColorUtil::colorClamp( GREEN( base) * factor),
-                                                         ColorUtil::colorClamp( BLUE( base) * factor), ALPHA( base));
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Lighten))]      = []( auto top, auto base)
-                    {
-                        return selector[ ENUM_CAST( CompositionRule::BlendModel::Darken)]( top, base) == top ? base : top;
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Screen))]       = []( auto top, auto base)
-                    {
-                        constexpr auto factor = 0.00001538f;
-                        uint8_t red   = ( 1 - factor * (( RGB_SCALE - RED( base)) * ( RGB_SCALE - RED( top)))) * RGB_SCALE,
-                                green = ( 1 - factor * (( RGB_SCALE - GREEN( base)) * ( RGB_SCALE - GREEN( top)))) * RGB_SCALE,
-                                blue  = ( 1 - factor * (( RGB_SCALE - BLUE( base)) * ( RGB_SCALE - BLUE( top)))) * RGB_SCALE,
-                                alpha = ( 1 - factor * (( RGB_SCALE - ALPHA( base)) * ( RGB_SCALE - ALPHA( top)))) * RGB_SCALE;
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( ColorDodge))]   = []( auto top, auto base)
-                    {
-                        uint8_t red   = ( float)RED( base) * RGB_SCALE / ( RGB_SCALE - RED( top)),
-                                green = ( float)GREEN( base) * RGB_SCALE / ( RGB_SCALE - GREEN( top)),
-                                blue  = ( float)BLUE( base) * RGB_SCALE / ( RGB_SCALE - BLUE( top)),
-                                alpha = ( float)ALPHA( base) * RGB_SCALE / ( RGB_SCALE - ALPHA( top));
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( LinearDodge))]  = []( auto top, auto base)
-                    {
-                        uint8_t red_sum   = ColorUtil::colorClamp(( int16_t)RED( base) + RED( top)),
-                                green_sum = ColorUtil::colorClamp(( int16_t)GREEN( base) + GREEN( top)),
-                                blue_sum  = ColorUtil::colorClamp(( int16_t)BLUE( base) + BLUE( top)),
-                                alpha_sum = ColorUtil::colorClamp(( int16_t)ALPHA( base) + ALPHA( top));
-
-                        return RGBA( red_sum, green_sum, blue_sum, alpha_sum);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( LighterColor))] = []( auto top, auto base)
-                    {
-                        constexpr auto factor = 2.f;
-                        return ALPHA( top) > 180 ?
-                               RGBA( ColorUtil::colorClamp( RED( top) * factor), ColorUtil::colorClamp( GREEN( top) * factor),
-                                     ColorUtil::colorClamp( BLUE( top) * factor), ALPHA( top))
-                                                 : RGBA( ColorUtil::colorClamp( RED( base) * factor), ColorUtil::colorClamp( GREEN( base) * factor),
-                                                         ColorUtil::colorClamp( BLUE( base) * factor), ALPHA( base));
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Overlay))]      = []( auto top, auto base)
-                    {
-                        uint8_t red   = Util::clamp((( RED( base) > 127.5) * ( 1 - ( 1 - 2 * ( ( float)RED( base) / RGB_SCALE - .5f))
-                                                                                   * ( 1 - ( float)RED( top) / RGB_SCALE)) + ( RED( base) <= 127.5f)
-                                                                                                                             * (( 2 * ( float)RED( base) / RGB_SCALE) * RED( top))) * RGB_SCALE, 0, RGB_SCALE),
-                                green = Util::clamp((( GREEN( base) > 127.5)
-                                                     * ( 1 - ( 1 - 2 * (( float)GREEN( base) / RGB_SCALE - .5))
-                                                             * ( 1 - ( float)GREEN( top) / RGB_SCALE)) + ( GREEN( base) <= 127.5f)
-                                                                                                         * (( 2 * ( float)GREEN( base) / RGB_SCALE) * GREEN( top))) * RGB_SCALE, 0, RGB_SCALE),
-                                blue  = Util::clamp((( BLUE( base) > 127.5) * ( 1 - ( 1 - 2 * (( float)BLUE( base) / RGB_SCALE - .5))
-                                                                                    * ( 1 - ( float)BLUE( top) / RGB_SCALE)) + ( BLUE( base) <= 127.5f)
-                                                                                                                               * (( 2 * ( float)BLUE( base) / RGB_SCALE) * BLUE( top))) * RGB_SCALE, 0, RGB_SCALE),
-                                alpha = Util::clamp((( ALPHA( base) > 127.5)
-                                                     * ( 1 - ( 1 - 2 * (( float)ALPHA( base) / RGB_SCALE - .5))
-                                                             * ( 1 - ( float)ALPHA( top) / RGB_SCALE)) + ( ALPHA( base) <= 127.5f)
-                                                                                                         * (( 2 * ( float)ALPHA( base) / RGB_SCALE) * ALPHA( top))) * RGB_SCALE, 0, RGB_SCALE);
-
-                        return RGBA( red, green, blue, ALPHA( top) < 180 ? ALPHA( base) : ALPHA( top));
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( SoftLight))]    = []( auto top, auto base)
-                    {
-                        uint8_t red   = Util::clamp((( RED( top) > 127.5) * ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE)
-                                                                                  * ( 1 - (( float)RED( top) / RGB_SCALE - .5f))) + ( RED( top) <= 127.5)
-                                                                                                                                    * (( float)RED( base) / RGB_SCALE * (( float)RED( top) / RGB_SCALE + .5f)))
-                                                    * RGB_SCALE, 0, RGB_SCALE),
-                                green = Util::clamp((( GREEN( top) > 127.5) * ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE)
-                                                                                    * ( 1 - (( float)GREEN( top) / RGB_SCALE - .5f))) + ( GREEN( top) <= 127.5)
-                                                                                                                                        * ( ( float)GREEN( base) / RGB_SCALE * (( float)GREEN( top) / RGB_SCALE + .5f)))
-                                                    * RGB_SCALE, 0, RGB_SCALE),
-                                blue  = Util::clamp((( BLUE( top) > 127.5) * ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE)
-                                                                                   * ( 1 - (( float)BLUE( top) / RGB_SCALE - .5f))) + ( BLUE( top) <= 127.5)
-                                                                                                                                      * (( float)BLUE( base) / RGB_SCALE * (( float)BLUE( top) / RGB_SCALE + .5)))
-                                                    * RGB_SCALE, 0, RGB_SCALE),
-                                alpha = Util::clamp((( ALPHA( top) > 127.5) * ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE)
-                                                                                    * ( 1 - (( float)ALPHA( top) / RGB_SCALE - .5f))) + ( ALPHA( top) <= 127.5)
-                                                                                                                                        * (( float)ALPHA( base) / RGB_SCALE * (( float)ALPHA( top) / RGB_SCALE + .5f)))
-                                                    * RGB_SCALE, 0, RGB_SCALE);
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( HardLight))]    = []( auto top, auto base)
-                    {
-                        uint8_t red   = Util::clamp((( RED( top) > 127.5) * ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE)
-                                                                                  * ( 1 - 2 * (( float)RED( top) / RGB_SCALE - .5f)))
-                                                     + ( RED( top) <= 127.5) * (( float)RED( base) * ( 2 * ( float)RED( top) / RGB_SCALE)))
-                                                    * RGB_SCALE, 0, RGB_SCALE),
-                                green = Util::clamp((( GREEN( top) > 127.5) * ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE)
-                                                                                    * ( 1 - 2 * (( float)GREEN( top) / RGB_SCALE - .5f)))
-                                                     + ( GREEN( top) <= 127.5) * (( float)GREEN( base)
-                                                                                  * ( 2 * ( float)GREEN( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
-                                blue  = Util::clamp((( BLUE( top) > 127.5) * ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE)
-                                                                                   * ( 1 - 2 * (( float)BLUE( top) / RGB_SCALE - .5f)))
-                                                     + ( BLUE( top) <= 127.5) * (( float)BLUE( base)
-                                                                                 * ( 2 * ( float)BLUE( top) / RGB_SCALE)))
-                                                    * RGB_SCALE, 0, RGB_SCALE),
-                                alpha = Util::clamp((( ALPHA( top) > 127.5) * ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE)
-                                                                                    * ( 1 - 2 * (( float)ALPHA( top) / RGB_SCALE - .5f)))
-                                                     + ( ALPHA( top) <= 127.5) * (( float)ALPHA( base)
-                                                                                  * ( 2 * ( float)ALPHA( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE);
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( VividLight))]   = []( auto top, auto base)
-                    {
-                        auto red_f_base   = ( 1 - 2 * (( float)RED( top) / RGB_SCALE - .5f)),
-                                red_e_base   = ( 2 * ( float)RED( top) / RGB_SCALE),
-                                green_f_base = ( 1 - 2 * (( float)GREEN( top) / RGB_SCALE - .5f)),
-                                green_e_base = ( 2 * ( float)GREEN( top) / RGB_SCALE),
-                                blue_f_base  = ( 1 - 2 * (( float)BLUE( top) / RGB_SCALE - .5f)),
-                                blue_e_base  = ( 2 * ( float)BLUE( top) / RGB_SCALE),
-                                alpha_f_base = ( 1 - 2 * (( float)ALPHA( top) / RGB_SCALE - .5f)),
-                                alpha_e_base = ( 2 * ( float)ALPHA( top) / RGB_SCALE);
-                        uint8_t red   = Util::clamp(((( RED( top) > 127.5) * ( ZERO( red_f_base) ? 1 :
-                                                                               ((( float)RED( base) / RGB_SCALE) / red_f_base))) + (( RED( top) <= 127.5)
-                                                                                                                                    * ( ZERO( red_e_base) ? 0 : ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE) / red_e_base))))
-                                                    * RGB_SCALE, 0, RGB_SCALE),
-                                green = Util::clamp(((( GREEN( top) > 127.5) * ( ZERO( green_f_base) ? 1 :
-                                                                                 ((( float)GREEN( base) / RGB_SCALE) / green_f_base))) + (( RED( top) <= 127.5)
-                                                                                                                                          * ( ZERO( green_e_base) ? 0 :
-                                                                                                                                              ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE) / green_e_base)))) * RGB_SCALE, 0, RGB_SCALE),
-                                blue  = Util::clamp(((( BLUE( top) > 127.5) * ( ZERO( blue_f_base) ? 1 :
-                                                                                ((( float)BLUE( base) / RGB_SCALE) / blue_f_base))) + (( BLUE( top) <= 127.5)
-                                                                                                                                       * ( ZERO( blue_e_base) ? 0 : ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE) / blue_e_base))))
-                                                    * RGB_SCALE, 0, RGB_SCALE),
-                                alpha = Util::clamp(((( ALPHA( top) > 127.5) * ( ZERO( alpha_f_base) ? 1 :
-                                                                                 ((( float)ALPHA( base) / RGB_SCALE) / alpha_f_base))) + (( ALPHA( top) <= 127.5)
-                                                                                                                                          * ( ZERO( alpha_e_base) ? 0 :
-                                                                                                                                              ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE) / alpha_e_base)))) * RGB_SCALE, 0, RGB_SCALE);
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( LinearLight))]  = []( auto top, auto base)
-                    {
-                        uint8_t red  = Util::clamp((( RED( top) > 127.5) * (( float)RED( base) / RGB_SCALE + 2
-                                                                                                             * (( float)RED( top) / RGB_SCALE - .5f)) + ( RED( top) <= 127.5)
-                                                                                                                                                        * (( float)RED( base) / RGB_SCALE + 2 * (( float)RED( top) / RGB_SCALE) - 1))
-                                                   * RGB_SCALE, 0, RGB_SCALE),
-                                green = Util::clamp((( GREEN( top) > 127.5) * (( float)GREEN( base) / RGB_SCALE + 2
-                                                                                                                  * (( float)GREEN( top) / RGB_SCALE - .5f)) + ( GREEN( top) <= 127.5)
-                                                                                                                                                               * (( float)GREEN( base) / RGB_SCALE + 2 * (( float)GREEN( top) / RGB_SCALE) - 1))
-                                                    * RGB_SCALE, 0, RGB_SCALE),
-                                blue  = Util::clamp((( BLUE( top) > 127.5) * (( float)BLUE( base) / RGB_SCALE + 2
-                                                                                                                * (( float)BLUE( top) / RGB_SCALE - .5f)) + ( BLUE( top) <= 127.5)
-                                                                                                                                                            * (( float)BLUE( base) / RGB_SCALE + 2 * (( float)BLUE( top) / RGB_SCALE) - 1))
-                                                    * RGB_SCALE, 0, RGB_SCALE),
-                                alpha = Util::clamp((( ALPHA( top) > 127.5) * (( float)ALPHA( base) / RGB_SCALE + 2
-                                                                                                                  * (( float)ALPHA( top) / RGB_SCALE - .5f)) + ( ALPHA( top) <= 127.5)
-                                                                                                                                                               * (( float)ALPHA( base) / RGB_SCALE + 2 * (( float)ALPHA( top) / RGB_SCALE) - 1))
-                                                    * RGB_SCALE, 0, RGB_SCALE);
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( PinLight))]     = []( auto top, auto base)
-                    {
-                        uint8_t red   = Util::clamp((( RED( top) > 127.5) * ( std::max<float>(( float)RED( base) / RGB_SCALE,
-                                                                                              2 * (( float)RED( top) / RGB_SCALE - .5f))) + ( RED( top) <= 127.5)
-                                                                                                                                            * ( std::min<float>(( float)RED( base) / RGB_SCALE, 2 * ( float)RED( top) / RGB_SCALE)))
-                                                    * RGB_SCALE, 0, RGB_SCALE),
-                                green = Util::clamp((( GREEN( top) > 127.5) * ( std::max<float>(( float)GREEN( base) / RGB_SCALE,
-                                                                                                2 * (( float)GREEN( top) / RGB_SCALE - .5f))) + ( GREEN( top) <= 127.5)
-                                                                                                                                                * ( std::min<float>(( float)GREEN( base) / RGB_SCALE,
-                                                                                                                                                                    2 * ( float)GREEN( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
-                                blue  = Util::clamp((( BLUE( top) > 127.5) * ( std::max<float>(( float)BLUE( base) / RGB_SCALE,
-                                                                                               2 * (( float)BLUE( top) / RGB_SCALE - .5f))) + ( BLUE( top) <= 127.5)
-                                                                                                                                              * ( std::min<float>(( float)BLUE( base) / RGB_SCALE,
-                                                                                                                                                                  2 * ( float)BLUE( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE),
-                                alpha = Util::clamp((( ALPHA( top) > 127.5) * ( std::max<float>(( float)ALPHA( base)
-                                                                                                / RGB_SCALE, 2 * (( float)ALPHA( top) / RGB_SCALE - .5f))) + ( ALPHA( top) <= 127.5)
-                                                                                                                                                             * ( std::min<float>(( float)ALPHA( base) / RGB_SCALE,
-                                                                                                                                                                                 2 * ( float)ALPHA( top) / RGB_SCALE))) * RGB_SCALE, 0, RGB_SCALE);
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( HardMix))]      = []( auto top, auto base)
-                    {
-                        auto mix = selector[ ENUM_CAST( BLEND_ENUM( LinearDodge))]( top, base);
-
-                        return RGBA( RED( mix) < RGB_SCALE ? 0 : RGB_SCALE, GREEN( mix) < RGB_SCALE ? 0 : RGB_SCALE,
-                                     BLUE( mix) < RGB_SCALE ? 0 : RGB_SCALE, ALPHA( mix) < RGB_SCALE ? 0 : RGB_SCALE);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Difference))]   = []( auto top, auto base)
-                    {
-                        uint8_t red   = std::abs(( int16_t)RED( base) - ( int8_t)RED( top)),
-                                green = std::abs(( int16_t)GREEN( base) - ( int8_t)GREEN( top)),
-                                blue  = std::abs(( int16_t)BLUE( base) - ( int8_t)BLUE( top)),
-                                alpha = ColorUtil::colorClamp(( uint16_t)ALPHA( base) + ALPHA( top));
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Exclusion))]    = []( auto top, auto base)
-                    {
-                        uint8_t red   = Util::clamp(( .5f - 2 * (( float)RED( base) / RGB_SCALE - .5f)
-                                                            * (( float)RED( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE),
-                                green = Util::clamp(( .5f - 2 * (( float)GREEN( base) / RGB_SCALE - .5f)
-                                                            * (( float)GREEN( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE),
-                                blue  = Util::clamp(( .5f - 2 * (( float)BLUE( base) / RGB_SCALE - .5f)
-                                                            * (( float)BLUE( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE),
-                                alpha = Util::clamp(( .5f - 2 * (( float)ALPHA( base) / RGB_SCALE - .5f)
-                                                            * (( float)ALPHA( top) / RGB_SCALE - .5f)) * RGB_SCALE, 0, RGB_SCALE);
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Subtract))]     = []( auto top, auto base)
-                    {
-                        uint8_t red   = RED( top) > RED( base) ? RED( top) - RED( base) : RED( top),
-                                green = GREEN( top) > GREEN( base) ? GREEN( top) - GREEN( base) : GREEN( top),
-                                blue  = BLUE( top) > BLUE( base) ? BLUE( top) - BLUE( base) : BLUE( top),
-                                alpha = ALPHA( top) > ALPHA( base) ? ALPHA( top) - ALPHA( base) : ALPHA( top);
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Divide))]       = []( auto top, auto base)
-                    {
-                        uint8_t red   = RED( base) == 0 ? RGB_SCALE
-                                                        : ColorUtil::colorClamp( FLOAT_CAST(RED( top)) * RGB_SCALE / RED( base)),
-                                green = GREEN( base) == 0 ? RGB_SCALE
-                                                          : ColorUtil::colorClamp( FLOAT_CAST( GREEN( top)) * RGB_SCALE / GREEN( base)),
-                                blue  = BLUE( base) == 0 ? RGB_SCALE
-                                                         : ColorUtil::colorClamp( FLOAT_CAST( BLUE( top)) * RGB_SCALE / BLUE( base)),
-                                alpha = ALPHA( base) == 0 ? RGB_SCALE
-                                                          : ColorUtil::colorClamp( FLOAT_CAST( ALPHA( top)) * RGB_SCALE / ALPHA( base));
-
-                        return RGBA( red, green, blue, alpha);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Hue))]          = []( auto top, auto base)
-                    {
-                        auto top_hsla      = ColorSpaceConverter::rgbaToHsla( top),
-                                base_hsla  = ColorSpaceConverter::rgbaToHsla( base),
-                                lum_change = HSLA( HUE( top_hsla), SAT( base_hsla), LUMIN( base_hsla), ALPHA( base_hsla));
-
-                        return ColorSpaceConverter::hslaToRgba( lum_change);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Saturation))]   = []( auto top, auto base)
-                    {
-                        auto top_hsla   = ColorSpaceConverter::rgbaToHsla( top),
-                                base_hsla  = ColorSpaceConverter::rgbaToHsla( base),
-                                lum_change = HSLA( HUE( base_hsla), SAT( top_hsla), LUMIN( base_hsla), ALPHA( base_hsla));
-
-                        return ColorSpaceConverter::hslaToRgba( lum_change);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Color))]        = []( auto top, auto base)
-                    {
-                        auto top_hsla   = ColorSpaceConverter::rgbaToHsla( top),
-                                lum_change = HSLA( HUE( top_hsla), SAT( top_hsla), LUMIN( top_hsla), ALPHA( base));
-
-                        return ColorSpaceConverter::hslaToRgba( lum_change);
-                    },
-                    [ ENUM_CAST( BLEND_ENUM( Luminosity))]   = []( auto top, auto base)
-                    {
-                        auto top_hsla   = ColorSpaceConverter::rgbaToHsla( top),
-                                base_hsla  = ColorSpaceConverter::rgbaToHsla( base),
-                                lum_change = HSLA( HUE( base_hsla), SAT( base_hsla), LUMIN( top_hsla), ALPHA( base_hsla));
-
-                        return ColorSpaceConverter::hslaToRgba( lum_change);
-                    }
-            };
+                return ColorSpaceConverter::hslaToRgba( lum_change);
+            }
+    };
     return selector[ ENUM_CAST( model)];
 }
 
