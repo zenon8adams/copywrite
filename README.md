@@ -138,7 +138,7 @@ Copywrite is a command line based tool for image generation.
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Result
 <img src="https://github.com/zenon8adams/copywrite/blob/master/assets/docs/images/image_layering_centered.png" alt="center" height="500px"/>   
 
-### Text Transformation
+### Color translation  
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Prompt
 ```sh
  copywrite -cT="(DarkGreen/Red + DarkBlue/Blue)"
