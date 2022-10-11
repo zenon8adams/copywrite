@@ -1,4 +1,8 @@
-# Copywrite
+
+Copywrite
+=========
+[![Default](https://github.com/zenon8adams/copywrite/actions/workflows/github-ci.yml/badge.svg?branch=master)](https://github.com/zenon8adams/copywrite/actions/workflows/github-ci.yml)
+
 A package for watermarking your code.
 
 ## Description
