@@ -128,8 +128,8 @@ void ImageManager::writeImage( FrameBuffer<uint32_t>& frame) const
     compressor.input_components = 3;
     compressor.in_color_space = JCS_RGB;
     compressor.write_JFIF_header = TRUE;
-    compressor.JFIF_major_version = JPEG_LIB_VERSION_MAJOR;
-    compressor.JFIF_minor_version = JPEG_LIB_VERSION_MINOR;
+//    compressor.JFIF_major_version = JPEG_LIB_VERSION_MAJOR;
+//    compressor.JFIF_minor_version = JPEG_LIB_VERSION_MINOR;
 
     jpeg_set_defaults( &compressor);
     compressor.dct_method  = JDCT_FLOAT;
