@@ -45,7 +45,7 @@ include(CXX17)
 check_for_cxx17_compiler( CXX17_COMPILER)
 
 if(CXX17_COMPILER)
-    set(CMAKE_CXX_COMPILER "g++")
+    set(CMAKE_CXX_COMPILER "clang++")
     set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
 else()
