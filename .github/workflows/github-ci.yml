@@ -20,6 +20,9 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     
+    - name: Install Build Tools
+      run: sudo apt install clang
+    
     - name: Install Dependencies
       # Install FontConfig, Freetype, LibPNG, LibJPG, LibZip
       run: |
