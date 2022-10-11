@@ -304,13 +304,61 @@ private:
     bool changed_since_initialization{ false};
 };
 
-enum class GradientType { Sentinel, Linear, Radial, Conic};
+/*
+ * State change detector for class types.
+ * It detects if the object has been reinitialized since construction.
+ */
+template <typename T>
+class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
+{
+public:
+    template <typename = std::enable_if<std::is_default_constructible_v<T>>>
+    PropertyProxy(): T()
+    {
+    }
+
+    template <typename... Args>
+    explicit PropertyProxy( Args&&... values)
+            : T( std::forward<T>( values)...)
+    {
+    }
+
+    operator T()
+    {
+        return *this;
+    }
+
+    T& cast()
+    {
+        return *this;
+    }
+
+    T operator=( T another)
+    {
+        if( state_change_callable)
+            std::invoke( state_change_callable, *static_cast<T*>( this));
+
+        changed_since_initialization = true;
+        return T::operator=( std::forward<T>( another));
+    }
+
+    [[nodiscard]] bool changed() const
+    {
+        return changed_since_initialization;
+    }
+private:
+
+    std::function<void( T)> state_change_callable;
+    bool changed_since_initialization{ false};
+};
+
+enum class GradientType { Linear, Radial, Conic};
 
 struct BaseGradient
 {
   int startx, width, height;
   GradientType gradient_type;
-  BaseGradient( GradientType type = GradientType::Sentinel, int sx = {}, int w = {}, int h = {})
+  BaseGradient( GradientType type = GradientType::Linear, int sx = {}, int w = {}, int h = {})
   : startx( sx), width( w), height( h), gradient_type( type)
   {
   }
@@ -340,54 +388,6 @@ struct ConicGradient : BaseGradient
     ConicGradient() : BaseGradient( GradientType::Conic)
     {
     }
-};
-
-/*
- * State change detector for class types.
- * It detects if the object has been reinitialized since construction.
- */
-template <typename T>
-class PropertyProxy<T, std::enable_if_t<std::is_class_v<T>>> : public T
-{
- public:
-  template <typename = std::enable_if<std::is_default_constructible_v<T>>>
-  PropertyProxy(): T()
-  {
-  }
-
-  template <typename... Args>
-  explicit PropertyProxy( Args&&... values)
-	  : T( std::forward<T>( values)...)
-  {
-  }
-
-  operator T()
-  {
-	return *this;
-  }
-
-  T& cast()
-  {
-    return *this;
-  }
-
-  T operator=( T another)
-  {
-    if( state_change_callable)
-      std::invoke( state_change_callable, *static_cast<T*>( this));
-
-	changed_since_initialization = true;
-	return T::operator=( std::forward<T>( another));
-  }
-
-  [[nodiscard]] bool changed() const
-  {
-	return changed_since_initialization;
-  }
- private:
-
-  std::function<void( T)> state_change_callable;
-  bool changed_since_initialization{ false};
 };
 
 /*

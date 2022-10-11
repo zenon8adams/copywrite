@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include "copywrite.hpp"
 #include "parsers/rule_parser.hpp"
 #include "renderers/text_renderer.hpp"
