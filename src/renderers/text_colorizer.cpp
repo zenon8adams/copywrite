@@ -28,7 +28,7 @@ void TextColorizer::paintShadow( FrameBuffer<uint32_t> &frame)
     for( auto& raster : rasters)
     {
         auto& [ main, outline] = raster.spans;
-        std::clog << "RasterIDX: " << raster.level << ", n_points: " << outline.size() <<'\n';
+//        std::clog << "RasterIDX: " << raster.level << ", n_points: " << outline.size() <<'\n';
         auto& rect  = raster.bbox;
         int width   = raster.is_graph ? raster.bbox.width()  : INT_CAST( raster.advance.x),
                 height  = raster.is_graph ? raster.bbox.height() : INT_CAST( raster.advance.y);
@@ -57,10 +57,10 @@ void TextColorizer::paintShadow( FrameBuffer<uint32_t> &frame)
 
         int v_offset = row_detail.v_disp - height - row_detail.max_descent - rect.ymin
                        + app_manager_.pad.top + INT_CAST(( match->shadow.y >= 0) * match->shadow.y) - bounce_disp,
-                h_offset = INT_CAST( ENUM_CAST( app_manager_.j_mode) > 0)
-                           * (( frame.width - row_detail.width + row_detail.max_shadow_y)
-                              / ENUM_CAST( app_manager_.j_mode))
-                           + app_manager_.pad.left + INT_CAST(( match->shadow.x >= 0) * match->shadow.x);
+            h_offset = INT_CAST( ENUM_CAST( app_manager_.j_mode) > 0)
+                       * (( frame.width - row_detail.width + row_detail.max_shadow_y)
+                       / ENUM_CAST( app_manager_.j_mode))
+                       + app_manager_.pad.left + INT_CAST(( match->shadow.x >= 0) * match->shadow.x);
         for ( auto& s: outline)
         {
             for ( int w = 0; w < s.width; ++w)
@@ -237,7 +237,7 @@ void TextColorizer::paintText( FrameBuffer<uint32_t> &frame)
         pen.x += raster.advance.x;
         pen.y += raster.advance.y;
     }
-	putchar('\n');
+//	putchar('\n');
 }
 
 uint32_t TextColorizer::easeColor( const MonoGlyph &raster, const RowDetail &row_detail, Vec2D<int> size,
