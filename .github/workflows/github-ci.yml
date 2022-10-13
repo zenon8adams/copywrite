@@ -8,6 +8,8 @@ on:
       - 'include/**'
       - 'src/**'
       - 'tests/**'
+      - 'CMakeLists.txt'
+      - '.github/**'
   pull_request:
     branches: [ "master" ]
     paths:
@@ -15,6 +17,8 @@ on:
       - 'include/**'
       - 'src/**'
       - 'tests/**'
+      - 'CMakeLists.txt'
+      - '.github/**'
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
