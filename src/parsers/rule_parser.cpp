@@ -447,6 +447,11 @@ std::vector<ColorRule> RuleParser::parseColorRule( const char *rule)
                     exit( EXIT_FAILURE);
                 }
             }
+			else
+            {
+				fprintf( stderr, "Rule not well defined.\n");
+				exit( EXIT_FAILURE);
+			}
         }
     }
 
