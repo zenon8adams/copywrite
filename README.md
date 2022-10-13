@@ -28,13 +28,14 @@ Copywrite is a command line based tool for image generation.
  copywrite -wS=1 -rC="[1..]{ Purple/Red}" "Hello World"
 ```
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Result
-![linear_gradient](https://github.com/zenon8adams/copywrite/blob/master/assets/docs/images/terminal_linear_gradient.png)
+<img src="https://github.com/zenon8adams/copywrite/blob/master/assets/docs/images/terminal_outline.png" alt="outline" height="200px"/>
+
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Prompt
 ```sh
  copywrite -rC="[1..]{ Darker(Khaki) -> Darker(Red) +}" "Hello World"
 ```
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Result
-![outline](https://github.com/zenon8adams/copywrite/blob/master/assets/docs/images/terminal_outline.png)
+![linear_gradient](https://github.com/zenon8adams/copywrite/blob/master/assets/docs/images/terminal_linear_gradient.png)
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Prompt
 ```sh
  copywrite -rC="[1..]{ Darker(Purple) -> Purple -C +}" "Hello World"
@@ -52,14 +53,14 @@ Copywrite is a command line based tool for image generation.
  copywrite -rC="[1..:10-15-10 -easeInOutSine]{ Yellow}" "Hello World"
 ```
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Result
-<img src="https://github.com/zenon8adams/copywrite/blob/master/assets/docs/images/terminal_easing_yellow.png" alt="easing" height="250px" />    
+<img src="https://github.com/zenon8adams/copywrite/blob/master/assets/docs/images/terminal_easing_yellow.png" alt="easing" height="200px" />    
 
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Prompt
 ```sh
  copywrite -hL=.1 -cD=\# -rC="[1..:10 -easeInOutSine]{ (Yellow + Khaki)}" "Hello World!"
 ```
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Result
-<img src="https://github.com/zenon8adams/copywrite/blob/master/assets/docs/images/terminal_color_addition.png" alt="addition" height="250px" />    
+<img src="https://github.com/zenon8adams/copywrite/blob/master/assets/docs/images/terminal_drawing_character.png" alt="addition" height="150px" />    
 
 ### Multiline pixel art
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Prompt
@@ -67,7 +68,7 @@ Copywrite is a command line based tool for image generation.
  copywrite -hL=.1 -rC="[1..:10-15-10 -easeInOutSine]{ (Yellow + Khaki)}" value.txt
 ```
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Result    
-<img src="https://github.com/zenon8adams/copywrite/blob/master/assets/docs/images/terminal_color_multiline.png" alt="multiline" height="400px"/>   
+<img src="https://github.com/zenon8adams/copywrite/blob/master/assets/docs/images/terminal_color_multiline.png" alt="multiline" height="350px"/>   
 
 ### Layering
 ###### &nbsp;&nbsp;&nbsp;&nbsp; Prompt
