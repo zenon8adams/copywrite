@@ -1,12 +1,19 @@
+###########################
 # Print build configuration
+###########################
 macro( print_configuration)
-    message("\n========== Build Configuration ======\n")
+    message("\n======== Build Configuration ========\n")
     message(STATUS "CUSTOM_FONT_SUPPORTED        = " ${CUSTOM_FONT_SUPPORTED})
     message(STATUS "PNG_SUPPORTED                = "         ${PNG_SUPPORTED})
     message(STATUS "JPG_SUPPORTED                = "         ${JPG_SUPPORTED})
     message(STATUS "BUILD_TESTS                  = "           ${BUILD_TESTS})
+    message("\n=============== Done ================\n")
 endmacro()
 
+################################################################################
+# For all subdirectory in the specified directory, search for all CMakeLists.txt
+# and include them.
+################################################################################
 macro( include_subdirs PARENT)
     file(GLOB SUBDIRS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${PARENT}/*")
     foreach(SUBDIR ${SUBDIRS})
@@ -30,7 +37,6 @@ endmacro()
 macro( autoload)
     include_guard()
     get_filename_component(MODULE_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
-    include(Macros)
     file(GLOB PROJECT_SOURCE_FILES "*.cpp")
     file(GLOB EXTRA_DEFS "${CMAKE_SOURCE_DIR}/include/*.h*")
     load_matching_include_files( PROJECT_INCLUDE_FILES ${MODULE_NAME} PROJECT_SOURCE_FILES)
