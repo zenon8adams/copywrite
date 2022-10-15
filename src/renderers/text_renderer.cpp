@@ -179,8 +179,9 @@ FrameBuffer<uint32_t> TextRenderer::render()
             /*
              * Calculate font size for each glyph based on the font variation specified.
              */
-            FT_Int font_size = UNSET( best->font_size_b) ? best->font_size_b = app_manager_.font_size
-                                                         : best->font_size_b;
+            FT_Int font_size = UNSET( best->font_size_b)
+							   || best->font_size_b == 0 ? best->font_size_b = app_manager_.font_size
+                               : best->font_size_b;
             if( best->font_easing_fn)
             {
                 auto start = Vec2D<int>( i + 1 - best->start.x, j + 1 - best->start.y),

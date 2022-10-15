@@ -104,7 +104,7 @@ namespace Util
 
     uint64_t getNumber( const char *&ctx, uint8_t base = 10);
 
-    void requestFontList();
+	std::vector<std::pair<std::string, std::string>> requestFontList();
 
     std::string getFontFile( std::string_view font);
 

@@ -7,7 +7,6 @@
 #cmakedefine IS_LINUX                     1
 #cmakedefine IS_WINDOWS                   1
 #cmakedefine HAVE_SYS_STAT_H              1
-#cmakedefine DEFAULT_PROJECT_FONT         "@DEFAULT_PROJECT_FONT@"
 
 #ifndef PNG_SUPPORTED
     #define PNG_SUPPORTED                0

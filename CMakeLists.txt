@@ -25,7 +25,7 @@
 #/***************************************************************************/
 
 cmake_minimum_required(VERSION 3.5.0)
-project(copywrite)
+project(copywrite LANGUAGES CXX)
 
 # Read the version information from the VERSION file
 file(STRINGS "${PROJECT_SOURCE_DIR}/VERSION" PACKAGE_VERSION)
@@ -56,11 +56,6 @@ option(CUSTOM_FONT_SUPPORTED "Install and Uninstall fonts locally" OFF)
 option(PNG_SUPPORTED         "Export design as PNG"                OFF)
 option(JPG_SUPPORTED         "Export design as JPG"                OFF)
 option(BUILD_TESTS           "Compile and make test"               OFF)
-
-##################################################
-# Setup the default font to be used in the project
-##################################################
-set(DEFAULT_PROJECT_FONT "${CMAKE_CURRENT_LIST_DIR}/assets/common-fonts/Times New Roman/times new roman bold.ttf")
 
 set(OPERATING_SYSTEM "${CMAKE_SYSTEM_NAME}")
 

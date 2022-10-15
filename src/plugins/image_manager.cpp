@@ -165,7 +165,7 @@ void ImageManager::writeImage( FrameBuffer<uint32_t>& frame) const
     #if PNG_SUPPORTED
     constexpr const auto BYTES_READ = 8;
     char magic[ BYTES_READ];
-    PropertyManager<FILE *> handle( fopen( filename.data(), "rb"), []( auto *p) { if( p) fclose( p); p = nullptr;});
+    PropertyManager<FILE *> handle( fopen( filename.data(), "rb"), []( auto *p) { if( p) fclose( p); });
     if( handle.get() == nullptr)
         return {};
 

@@ -222,19 +222,19 @@ std::vector<CompositionRule> RuleParser::parseCompositionRule( std::string_view 
                     y_origin = match_results[ 3].str(),
                     angle    = match_results[ 1].str();
             c_rules.push_back(
-                    CompositionRule{
-                            .c_model   = selectCompositionModel( match_results[ 6].str()),
-                            .b_models  = selectBlendModels( match_results[ 7].str()),
-                            .position  = Vec2D( INT_CAST( x_origin.size()) ? std::stof( x_origin, nullptr)
-                                                                           : INFINITY,
-                                                INT_CAST( y_origin.size()) ? std::stof( y_origin, nullptr)
-                                                                           : INFINITY),
-                            .snap      = Util::getSnapCoordinate( match_results[ 4].str()),
-                            .angle     = INT_CAST( angle.size()) ? std::stoi( angle, nullptr, 10) : 0,
-                            .image     = match_results[ 5].str(),
-                            .s_effects = extractEffects( match_results[ 8].str())
-                    });
-
+	            CompositionRule{
+	                .c_model   = selectCompositionModel( match_results[ 6].str()),
+	                .b_models  = selectBlendModels( match_results[ 7].str()),
+	                .position  = Vec2D( INT_CAST( x_origin.size()) ? std::stof( x_origin, nullptr)
+	                                                               : INFINITY,
+	                                    INT_CAST( y_origin.size()) ? std::stof( y_origin, nullptr)
+	                                                               : INFINITY),
+	                .snap      = Util::getSnapCoordinate( match_results[ 4].str()),
+	                .angle     = INT_CAST( angle.size()) ? std::stoi( angle, nullptr, 10) : 0,
+	                .image     = match_results[ 5].str(),
+	                .s_effects = extractEffects( match_results[ 8].str())
+	            }
+			);
             parseFinalSize( match_results[ 9].str().data(), c_rules.back().interpolation);
         }
     }

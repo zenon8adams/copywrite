@@ -706,7 +706,7 @@ struct ApplicationDirector
                            *color_rule{ nullptr},
                            *composition_rule{ nullptr},
                            *src_filename{ nullptr};
-    std::string_view        font_profile;
+    std::string             font_profile;
     std::string_view        text;
     std::shared_ptr<KDNode> kdroot;
     std::shared_ptr<BKNode> bkroot;

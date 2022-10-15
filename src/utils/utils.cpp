@@ -245,10 +245,11 @@ Vec2D<float> getSnapCoordinate( std::string_view given)
     return index->second;
 }
 
-void requestFontList()
+std::vector<std::pair<std::string, std::string>> requestFontList()
 {
+	std::vector<std::pair<std::string, std::string>> system_fonts;
     if( !FcInit())
-        return;
+        return {};
 
     auto locale_name = std::locale("").name();
     if( size_t idx = locale_name.find( '_'); idx != std::string::npos)
@@ -286,12 +287,14 @@ void requestFontList()
                 if( sm[ 1].matched || sm[ 4].matched) style.append( "Normal");
                 if( sm[ 2].matched) style.append( style.empty() ? "Bold" : ", Bold");
                 if( sm[ 3].matched) style.append( style.empty() ? "Italic" : ", Italic");
-                std::cout << "Family: " << parts[ 0] << ", style(s): " << style <<'\n';
+				system_fonts.emplace_back( parts[ 0], style);
             }
         }
         while( ++i < font_set->nfont);
     }
     FcFini();
+
+	return system_fonts;
 }
 
 std::string getFontFile( std::string_view font)
