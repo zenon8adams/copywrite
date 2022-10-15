@@ -5,8 +5,6 @@
 #include <regex>
 #include <iomanip>
 #include <cassert>
-#include <chrono>
-#include <thread>
 #include "copywrite.hpp"
 #include "parsers/command_line_parsers.hpp"
 #include "blend_defs.hpp"
@@ -34,14 +32,7 @@ ApplicationDirector CommandLineParser::process()
 #include "static_kdtree_lut.inserts"
 #include "static_bktree_lut.inserts"
 
-	// Get the list of all fonts installed on the current system
-	// and use the first valid font as the default font.
-	auto fonts = Util::requestFontList();
-	std::string default_font = fonts.front().first + " "  + fonts.front().second;
-	for( auto& [font, style] : fonts)
-		std::cout << font << ", " << style <<'\n';
-	std::this_thread::sleep_for( std::chrono::seconds( 5));
-    const char *font_profile{ default_font.data()},
+    const char *font_profile{ DEFAULT_PROJECT_FONT},
             *justification{ nullptr},
             *image_quality{ nullptr},
 #if defined( CUSTOM_FONT_SUPPORTED)
@@ -78,6 +69,8 @@ ApplicationDirector CommandLineParser::process()
          || FOUND_STRING( strcmp( directive, SHORT( LIST_FONTS))))
         {
             puts( "Available fonts:\n");
+	        // Get the list of all fonts installed on the current system
+			auto fonts = Util::requestFontList();
 			for( auto &[font, style]: fonts)
 				std::cout << "Family: " << font << ", style(s): " << style <<'\n';
         }
