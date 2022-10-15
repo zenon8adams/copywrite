@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <cassert>
 #include <chrono>
+#include <thread>
 #include "copywrite.hpp"
 #include "parsers/command_line_parsers.hpp"
 #include "blend_defs.hpp"
@@ -39,7 +40,7 @@ ApplicationDirector CommandLineParser::process()
 	std::string default_font = fonts.front().first + " "  + fonts.front().second;
 	for( auto& [font, style] : fonts)
 		std::cout << font << ", " << style <<'\n';
-	std::chrono::this_thread::sleep_for( std::chrono::seconds( 5));
+	std::this_thread::sleep_for( std::chrono::seconds( 5));
     const char *font_profile{ default_font.data()},
             *justification{ nullptr},
             *image_quality{ nullptr},
