@@ -36,6 +36,7 @@ ApplicationDirector CommandLineParser::process()
 	// and use the first valid font as the default font.
 	auto fonts = Util::requestFontList();
 	std::string default_font = fonts.front().first + " "  + fonts.front().second;
+	std::cout << "Default font: " << default_font <<'\n';
     const char *font_profile{ default_font.data()},
             *justification{ nullptr},
             *image_quality{ nullptr},
