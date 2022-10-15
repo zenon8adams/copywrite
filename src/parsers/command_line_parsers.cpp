@@ -5,6 +5,7 @@
 #include <regex>
 #include <iomanip>
 #include <cassert>
+#include <chrono>
 #include "copywrite.hpp"
 #include "parsers/command_line_parsers.hpp"
 #include "blend_defs.hpp"
@@ -36,7 +37,9 @@ ApplicationDirector CommandLineParser::process()
 	// and use the first valid font as the default font.
 	auto fonts = Util::requestFontList();
 	std::string default_font = fonts.front().first + " "  + fonts.front().second;
-	std::cout << "Default font: " << default_font <<'\n';
+	for( auto& [font, style] : fonts)
+		std::cout << font << ", " << style <<'\n';
+	std::this_thread::sleep_for( std::chrono::seconds( 5));
     const char *font_profile{ default_font.data()},
             *justification{ nullptr},
             *image_quality{ nullptr},
