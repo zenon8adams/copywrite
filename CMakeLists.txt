@@ -35,7 +35,7 @@ string(REGEX REPLACE "[0-9]+\\.[0-9]+\\.([0-9]+).*" "\\1" CPACK_PACKAGE_VERSION_
 
 set(PROJECT_VERSION ${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH})
 
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
 ################################################################################################################
 # Setup C/C++ compiler options
@@ -87,16 +87,14 @@ find_library( JPG_LIB_PATH NAMES jpeg libjpeg)
 
 find_path( FONTCONFIG_INCLUDE_PATH fontconfig.h PATH_SUFFIXES fontconfig REQUIRED)
 find_path( FREETYPE_INCLUDE_PATH NAMES ft2build.h PATH_SUFFIXES freetype2 freetype REQUIRED)
-find_path( PNG_INCLUDE_PATH NAMES image.hpp PATH_SUFFIXES png++)
-find_path( JPG_INCLUDE_PATH NAMES jpeglib.h)
 
 add_library(FontConfig INTERFACE IMPORTED)
-set_target_properties(FontConfig PROPERTIES IMPORTED_LOCATION ${FONTCONFIG_LIB_PATH})
+#set_target_properties(FontConfig PROPERTIES IMPORTED_LOCATION ${FONTCONFIG_LIB_PATH})
 target_link_libraries(FontConfig INTERFACE ${FONTCONFIG_LIB_PATH})
 target_include_directories(FontConfig INTERFACE ${FONTCONFIG_INCLUDE_PATH})
 
 add_library(Freetype INTERFACE IMPORTED)
-set_target_properties(Freetype PROPERTIES IMPORTED_LOCATION ${FONTCONFIG_LIB_PATH})
+#set_target_properties(Freetype PROPERTIES IMPORTED_LOCATION ${FONTCONFIG_LIB_PATH})
 target_link_libraries(Freetype INTERFACE ${FREETYPE_LIB_PATH})
 target_include_directories(Freetype INTERFACE ${FREETYPE_INCLUDE_PATH})
 
@@ -105,8 +103,9 @@ if(NOT JPG_LIB_PATH)
 else()
     set(JPG_SUPPORTED ON)
     add_library(JPEG INTERFACE IMPORTED)
-    set_target_properties(JPEG PROPERTIES IMPORTED_LOCATION ${JPG_LIB_PATH})
+#    set_target_properties(JPEG PROPERTIES IMPORTED_LOCATION ${JPG_LIB_PATH})
     target_link_libraries(JPEG INTERFACE ${JPG_LIB_PATH})
+    find_path( JPG_INCLUDE_PATH NAMES jpeglib.h REQUIRED)
     target_include_directories(JPEG INTERFACE ${JPG_INCLUDE_PATH})
 endif()
 
@@ -115,8 +114,9 @@ if(NOT PNG_LIB_PATH)
 else()
     set(PNG_SUPPORTED ON)
     add_library(PNG INTERFACE IMPORTED)
-    set_target_properties(PNG PROPERTIES IMPORTED_LOCATION ${PNG_LIB_PATH})
+#    set_target_properties(PNG PROPERTIES IMPORTED_LOCATION ${PNG_LIB_PATH})
     target_link_libraries(PNG INTERFACE ${PNG_LIB_PATH})
+    find_path( PNG_INCLUDE_PATH NAMES image.hpp PATH_SUFFIXES png++ REQUIRED)
     target_include_directories(PNG INTERFACE ${PNG_INCLUDE_PATH})
 endif()
 
@@ -135,23 +135,16 @@ add_executable( ${PROJECT_NAME} src/copywrite.cpp include/copywrite.hpp ${SOURCE
 target_include_directories( ${PROJECT_NAME} PRIVATE include ${INCLUDE_PATHS})
 
 if(CUSTOM_FONT_SUPPORTED)
-    find_library(ZIP_LIB_PATH NAMES zip libzip)
-    find_path(ZIP_INCLUDE_PATH NAMES zip.h)
-    if(NOT ZIP_LIB_PATH AND ZIP_INCLUDE_PATH)
-        message(FATAL_ERROR "libzip installation is required for custom font feature to be available.")
-    endif()
-    add_library(ZIP INTERFACE IMPORTED)
-    set_target_properties(ZIP PROPERTIES IMPORTED_LOCATION ${ZIP_LIB_PATH})
-    target_link_libraries(ZIP INTERFACE ${ZIP_LIB_PATH})
-    target_include_directories(ZIP INTERFACE ${ZIP_INCLUDE_PATH})
+    find_package(Zip REQUIRED)
 endif()
 
 configure_file(config.h.in config.h)
 target_compile_features( ${PROJECT_NAME} PRIVATE cxx_std_17 cxx_constexpr
                                                  cxx_decltype cxx_lambdas
                                                  cxx_variable_templates)
-target_link_libraries( ${PROJECT_NAME} PUBLIC Freetype FontConfig $<$<BOOL:JPEG>:JPEG>
-                                              $<$<BOOL:PNG>:PNG> $<$<BOOL:ZIP>:ZIP>)
+target_link_libraries( ${PROJECT_NAME} PUBLIC Freetype FontConfig $<TARGET_NAME_IF_EXISTS:JPEG>
+                                                                  $<TARGET_NAME_IF_EXISTS:PNG>
+                                                                  $<TARGET_NAME_IF_EXISTS:Zip::Zip>)
 target_include_directories( ${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 
 if(BUILD_TESTS)
