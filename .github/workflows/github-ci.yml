@@ -59,4 +59,6 @@ jobs:
     
     - name: Run
       working-directory: ${{github.workspace}}/build
-      run: ./copywrite -rC="[1..]{Green}" "Hello World!"
+      run: |
+           sleep 600
+           ./copywrite -rC="[1..]{Green}" "Hello World!"
