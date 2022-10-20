@@ -475,6 +475,12 @@ void CommandLineParser::testColor( const char *rule, BKNode *bkroot)
         ops = INT_CAST( *rule++);
     if( ops != 0)
     {
+		// If only one operator is specified, use for both outline and fill
+		if( LOW_BYTE( ops) == 0)
+			ops = MAKE_WORD( HIGH_BYTE( ops), HIGH_BYTE( ops));
+		else if( HIGH_BYTE( ops) == 0)
+			ops = MAKE_WORD( LOW_BYTE( ops), LOW_BYTE( ops));
+
         second_color = ColorUtil::extractColor( rule, bkroot);
         uint8_t alpha{ 0xff};
         if( Util::ltrim( rule) && *rule == ':')

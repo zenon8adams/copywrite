@@ -27,6 +27,9 @@
 cmake_minimum_required(VERSION 3.5.0)
 project(copywrite CXX)
 
+set(APP_NAME copywrite)
+enable_testing()
+
 # Read the version information from the VERSION file
 file(STRINGS "${PROJECT_SOURCE_DIR}/VERSION" PACKAGE_VERSION)
 string(REGEX REPLACE "([0-9]+)\\.[0-9]+\\.[0-9]+.*" "\\1" CPACK_PACKAGE_VERSION_MAJOR ${PACKAGE_VERSION})
@@ -55,7 +58,7 @@ endif()
 option(CUSTOM_FONT_SUPPORTED "Install and Uninstall fonts locally" OFF)
 option(PNG_SUPPORTED         "Export design as PNG"                OFF)
 option(JPG_SUPPORTED         "Export design as JPG"                OFF)
-option(BUILD_TESTS           "Compile and make test"               OFF)
+option(RUN_ALL_TESTS         "Compile and run tests"               OFF)
 
 ##################################################
 # Setup the default font to be used in the project
@@ -131,23 +134,23 @@ include(autoloader)
 ###################################################
 include_subdirs( src)
 
-add_executable( ${PROJECT_NAME} src/copywrite.cpp include/copywrite.hpp ${SOURCE_FILES} ${INCLUDE_FILES})
-target_include_directories( ${PROJECT_NAME} PRIVATE include ${INCLUDE_PATHS})
+add_executable( ${APP_NAME} src/copywrite.cpp include/copywrite.hpp ${SOURCE_FILES} ${INCLUDE_FILES})
+target_include_directories( ${APP_NAME} PRIVATE include ${INCLUDE_PATHS})
 
 if(CUSTOM_FONT_SUPPORTED)
     find_package(Zip REQUIRED)
 endif()
 
 configure_file(config.h.in config.h)
-target_compile_features( ${PROJECT_NAME} PRIVATE cxx_std_17 cxx_constexpr
+target_compile_features( ${APP_NAME} PRIVATE cxx_std_17 cxx_constexpr
                                                  cxx_decltype cxx_lambdas
                                                  cxx_variable_templates)
-target_link_libraries( ${PROJECT_NAME} PUBLIC Freetype FontConfig $<TARGET_NAME_IF_EXISTS:JPEG>
+target_link_libraries( ${APP_NAME} PUBLIC Freetype FontConfig $<TARGET_NAME_IF_EXISTS:JPEG>
                                                                   $<TARGET_NAME_IF_EXISTS:PNG>
                                                                   $<TARGET_NAME_IF_EXISTS:Zip::Zip>)
-target_include_directories( ${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories( ${APP_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 
-if(BUILD_TESTS)
+if(RUN_ALL_TESTS)
     add_subdirectory(tests)
 endif()
 
