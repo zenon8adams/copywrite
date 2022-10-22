@@ -13,9 +13,9 @@ public:
     }
     ~OptionsPlugin() override = default;
 
-    bool parseArguments( int ac, const char * const *av, int index)
+    bool parseArguments( int ac, const char * const *av, int index) override
     {
-        return false;
+        return true;
     }
 };
 

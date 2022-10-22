@@ -48,7 +48,6 @@ include(CXX17)
 check_for_cxx17_compiler( CXX17_COMPILER)
 
 if(CXX17_COMPILER)
-    set(CMAKE_CXX_COMPILER "clang++")
     set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
 else()
@@ -58,7 +57,7 @@ endif()
 option(CUSTOM_FONT_SUPPORTED "Install and Uninstall fonts locally" OFF)
 option(PNG_SUPPORTED         "Export design as PNG"                OFF)
 option(JPG_SUPPORTED         "Export design as JPG"                OFF)
-option(RUN_ALL_TESTS         "Compile and run tests"               OFF)
+option(BUILD_TESTS           "Compile and run tests"               OFF)
 
 ##################################################
 # Setup the default font to be used in the project
@@ -150,7 +149,7 @@ target_link_libraries( ${APP_NAME} PUBLIC Freetype FontConfig $<TARGET_NAME_IF_E
                                                                   $<TARGET_NAME_IF_EXISTS:Zip::Zip>)
 target_include_directories( ${APP_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 
-if(RUN_ALL_TESTS)
+if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 

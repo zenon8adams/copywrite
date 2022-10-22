@@ -428,20 +428,20 @@ void CommandLineParser::helpMe( std::string program)
                    [ &max_length]( auto each){ max_length = std::max( max_length, each.size());});
 
     auto *prog_ptr = strrchr( program.data(), '/');
-    fprintf( stderr, "Usage: %s [OPTION]... FILE|TEXT\n", prog_ptr == nullptr ? program.data() : ++prog_ptr);
-    fprintf( stderr, "Convert the content of FILE or TEXT into a format defined by OPTIONs\n\n");
-    fprintf( stderr, "The following options can be used to tune the generator:\n");
+    fprintf( stdout, "Usage: %s [OPTION]... FILE|TEXT\n", prog_ptr == nullptr ? program.data() : ++prog_ptr);
+    fprintf( stdout, "Convert the content of FILE or TEXT into a format defined by OPTIONs\n\n");
+    fprintf( stdout, "The following options can be used to tune the generator:\n");
     for( size_t j = 0, options_size = OPTIONS_COUNT; j < options_size; ++j)
     {
         auto [ help_lines, max_line] = Util::expand( options_message[ j], Justification::Left);
         int base_spacing = INT_CAST( max_length) + max_line + ALLOWANCE;
-        std::cerr << options[ j] << std::setw( INT_CAST( base_spacing) - options[ j].size())
+        std::cout << options[ j] << std::setw( INT_CAST( base_spacing) - options[ j].size())
                   << help_lines[ 0] <<'\n';
         size_t idx = 1, help_lines_size = help_lines.size();
         while( idx < help_lines_size)
-            std::cerr << std::setw( base_spacing) << help_lines[ idx++] <<'\n';
+            std::cout << std::setw( base_spacing) << help_lines[ idx++] <<'\n';
     }
-    fprintf( stderr, "NB! The color names available are compliant with those defined\n"
+    fprintf( stdout, "NB! The color names available are compliant with those defined\n"
                      "by CSS standard(https://www.w3.org/TR/css-color-3/)\n");
     exit( EXIT_FAILURE);
 }
