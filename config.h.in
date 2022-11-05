@@ -7,7 +7,6 @@
 #cmakedefine IS_LINUX                     1
 #cmakedefine IS_WINDOWS                   1
 #cmakedefine HAVE_SYS_STAT_H              1
-#cmakedefine DEFAULT_PROJECT_FONT         "@DEFAULT_PROJECT_FONT@"
 
 #ifndef PNG_SUPPORTED
     #define PNG_SUPPORTED                0
@@ -18,12 +17,8 @@
     #define JPG_SUPPORTED                0
 #endif
 
-
-
-#if defined( CUSTOM_FONT_SUPPORTED)
-    #define FONT_ARCHIVE                  "copywrite-installed-fonts.zip"
-#else
-    #define CUSTOM_FONT_SUPPORTED         0
+#if CUSTOM_FONT_SUPPORTED
+    #define FONT_ARCHIVE                  RESOURCE_DIR "copywrite-installed-fonts.zip"
 #endif
 
 #define SHORT_OPTION_PREFIX               "-"

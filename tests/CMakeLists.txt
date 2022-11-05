@@ -7,6 +7,10 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/cpputest/cpputest.git
     GIT_TAG        latest-passing-build
 )
+
+#   Disable test for CppUTest
+set(TESTS OFF CACHE BOOL "")
+
 FetchContent_MakeAvailable( CppUTest)
 
 add_executable( Copywrite_Tests ${CopywriteTests_src})
