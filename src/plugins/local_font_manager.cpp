@@ -8,19 +8,27 @@
 LocalFontManager::LocalFontManager( ApplicationDirector& manager)
 : Plugin( LOCAL_FONT_MANAGER), app_manager_( manager)
 {
-    #if CUSTOM_FONT_SUPPORTED
-        zip_error_init( &zip_error_);
-        zipper_ = zip_open( FONT_ARCHIVE, ZIP_CREATE | ZIP_CHECKCONS, &code_);
-        //TODO: Report Error
-    #endif
+#if CUSTOM_FONT_SUPPORTED
+	zip_error_init( &zip_error_);
+#endif
+}
+
+bool LocalFontManager::open()
+{
+#if CUSTOM_FONT_SUPPORTED
+	zipper_ = zip_open( fontArchiveDir(), ZIP_CREATE | ZIP_CHECKCONS, &code_);
+	return ACCESSIBLE( zipper_);
+#else
+	return false;
+#endif
 }
 
 void LocalFontManager::installFont( std::string_view font_file)
 {
     #if CUSTOM_FONT_SUPPORTED
+	if( !open())
+		return;
     zip_int64_t response_code;
-    if( code_ == -1)
-        return;
     auto [ font_family, font_style] = requestFontInfo( font_file);
     if( font_family.empty() || font_style.empty())
         return;
@@ -77,12 +85,15 @@ void LocalFontManager::installFont( std::string_view font_file)
             }
         }
     }
+	zip_close( zipper_);
     #endif
 }
 
 void LocalFontManager::uninstallFont( std::string_view font)
 {
     #if CUSTOM_FONT_SUPPORTED
+	if( !open())
+		return;
     executeActionOnFont( font, FontActivity::Delete, []( std::vector<void *> params)
     {
         auto *zipper = ( zip_t *)params[ 0];
@@ -141,7 +152,7 @@ void LocalFontManager::executeActionOnFont( std::string_view font_name, FontActi
                           const std::function<void( std::vector<void *>)>& fn)
 {
     #if CUSTOM_FONT_SUPPORTED
-    if( code_ == -1)
+    if( !open())
         return;
 
     auto parts = Util::partition( font_name, R"(\s*-\s*)");
@@ -195,9 +206,10 @@ void LocalFontManager::executeActionOnFont( std::string_view font_name, FontActi
 
         PropertyManager<zip_file_t *> handle( zip_fopen_index( zipper_, stat.index, ZIP_FL_UNCHANGED),
                                              [](auto *p) { if ( p != nullptr) zip_fclose( p); });
-        if (zip_fread( handle.get(), buffer, stat.size) != stat.size)
+        if ( zip_fread( handle.get(), buffer, stat.size) != stat.size)
         {
             fprintf( stderr, "Read invalid number of bytes\n");
+			free( buffer);
             return;
         }
         params.push_back( buffer);

@@ -12,7 +12,7 @@
 #include FT_FREETYPE_H
 
 TextRenderer::TextRenderer( ApplicationDirector& manager, RuleParser& parser)
-: app_manager_( manager), parser_( parser)
+: app_manager_( manager), parser_( parser), custom_profile_(( uint8_t *)nullptr, []( auto *p){ if( p) free( p);})
 {
     // Initialize the freetype renderer.
     int error = FT_Init_FreeType( &library_);
@@ -22,8 +22,6 @@ TextRenderer::TextRenderer( ApplicationDirector& manager, RuleParser& parser)
         exit( EXIT_FAILURE);
     }
 
-    // Font profile deleter
-    std::unique_ptr<uint8_t, DeleterType> custom_profile(( uint8_t *)nullptr, []( auto *p){ if( p) free( p);});
     auto font_profile = app_manager_.font_profile.data();
     if( strrchr( font_profile, '.') == nullptr)
     {
@@ -32,9 +30,9 @@ TextRenderer::TextRenderer( ApplicationDirector& manager, RuleParser& parser)
         int64_t size{ -1};
         if( codec != nullptr)
         {
-            std::tie( size, custom_profile) =  codec->useInstalledFont( font_profile);
+            std::tie( size, custom_profile_) =  codec->useInstalledFont( font_profile);
             if( !UNSET( size))
-                error = FT_New_Memory_Face( library_, ( const FT_Byte *)custom_profile.get(), size, 0, &face_);
+                error = FT_New_Memory_Face( library_, ( const FT_Byte *)custom_profile_.get(), size, 0, &face_);
         }
 
         // If we are unable to load font or plugin is unavailable, piggyback on loading the specified text

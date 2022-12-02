@@ -778,21 +778,21 @@ std::function<uint32_t( uint32_t, uint32_t)> LayerRenderer::selectBlendFn( Compo
         []( auto top, auto base)
         {
             uint8_t red   = Util::clamp((( RED( top) > 127.5) * ( 1 - ( 1 - ( float)RED( base) / RGB_SCALE)
-                                                                      * ( 1 - (( float)RED( top) / RGB_SCALE - .5f))) + ( RED( top) <= 127.5)
-                                                                                                                        * (( float)RED( base) / RGB_SCALE * (( float)RED( top) / RGB_SCALE + .5f)))
-                                        * RGB_SCALE, 0, RGB_SCALE),
+                            * ( 1 - (( float)RED( top) / RGB_SCALE - .5f))) + ( RED( top) <= 127.5)
+                            * (( float)RED( base) / RGB_SCALE * (( float)RED( top) / RGB_SCALE + .5f)))
+                            * RGB_SCALE, 0, RGB_SCALE),
                     green = Util::clamp((( GREEN( top) > 127.5) * ( 1 - ( 1 - ( float)GREEN( base) / RGB_SCALE)
-                                                                        * ( 1 - (( float)GREEN( top) / RGB_SCALE - .5f))) + ( GREEN( top) <= 127.5)
-                                                                                                                            * ( ( float)GREEN( base) / RGB_SCALE * (( float)GREEN( top) / RGB_SCALE + .5f)))
-                                        * RGB_SCALE, 0, RGB_SCALE),
+                            * ( 1 - (( float)GREEN( top) / RGB_SCALE - .5f))) + ( GREEN( top) <= 127.5)
+                            * ( ( float)GREEN( base) / RGB_SCALE * (( float)GREEN( top) / RGB_SCALE + .5f)))
+                            * RGB_SCALE, 0, RGB_SCALE),
                     blue  = Util::clamp((( BLUE( top) > 127.5) * ( 1 - ( 1 - ( float)BLUE( base) / RGB_SCALE)
-                                                                       * ( 1 - (( float)BLUE( top) / RGB_SCALE - .5f))) + ( BLUE( top) <= 127.5)
-                                                                                                                          * (( float)BLUE( base) / RGB_SCALE * (( float)BLUE( top) / RGB_SCALE + .5)))
-                                        * RGB_SCALE, 0, RGB_SCALE),
+                            * ( 1 - (( float)BLUE( top) / RGB_SCALE - .5f))) + ( BLUE( top) <= 127.5)
+                            * (( float)BLUE( base) / RGB_SCALE * (( float)BLUE( top) / RGB_SCALE + .5)))
+                            * RGB_SCALE, 0, RGB_SCALE),
                     alpha = Util::clamp((( ALPHA( top) > 127.5) * ( 1 - ( 1 - ( float)ALPHA( base) / RGB_SCALE)
-                                                                        * ( 1 - (( float)ALPHA( top) / RGB_SCALE - .5f))) + ( ALPHA( top) <= 127.5)
-                                                                                                                            * (( float)ALPHA( base) / RGB_SCALE * (( float)ALPHA( top) / RGB_SCALE + .5f)))
-                                        * RGB_SCALE, 0, RGB_SCALE);
+                            * ( 1 - (( float)ALPHA( top) / RGB_SCALE - .5f))) + ( ALPHA( top) <= 127.5)
+                            * (( float)ALPHA( base) / RGB_SCALE * (( float)ALPHA( top) / RGB_SCALE + .5f)))
+                            * RGB_SCALE, 0, RGB_SCALE);
 
             return RGBA( red, green, blue, alpha);
         },
@@ -855,7 +855,7 @@ std::function<uint32_t( uint32_t, uint32_t)> LayerRenderer::selectBlendFn( Compo
                     green = Util::clamp((( GREEN( top) > 127.5) * (( float)GREEN( base) / RGB_SCALE + 2
                             * (( float)GREEN( top) / RGB_SCALE - .5f)) + ( GREEN( top) <= 127.5)
                             * (( float)GREEN( base) / RGB_SCALE + 2 * (( float)GREEN( top) / RGB_SCALE) - 1))
-                                        * RGB_SCALE, 0, RGB_SCALE),
+                            * RGB_SCALE, 0, RGB_SCALE),
                     blue  = Util::clamp((( BLUE( top) > 127.5) * (( float)BLUE( base) / RGB_SCALE + 2
 							* (( float)BLUE( top) / RGB_SCALE - .5f)) + ( BLUE( top) <= 127.5)
                             * (( float)BLUE( base) / RGB_SCALE + 2 * (( float)BLUE( top) / RGB_SCALE) - 1))
@@ -999,7 +999,7 @@ void LayerRenderer::useEffectsOn( FrameBuffer<Tp> &frame, const CompositionRule&
             }
             case SpecialEffect::Emboss:
             {
-                auto emboss = makeEmboss( 10);
+                auto emboss = makeEmboss( std::get<2>( effect));
                 extras.kernel = emboss;
                 applyEffect( frame, SpecialEffect::Emboss, extras);
                 break;
@@ -1071,7 +1071,7 @@ std::vector<float> LayerRenderer::makeEmboss( int width)
 // Implementation of guassian filter using erf as cdf
 // References:
 //[1] https://stackoverflow.com/questions/809362/how-to-calculate-cumulative-normal-distribution
-std::vector<float> LayerRenderer::makeGaussian( float radius)
+std::vector<float> LayerRenderer::makeGaussian( float radius) noexcept
 {
     constexpr auto min_ex_radius = 1.f,
                    max_ex_radius = 200.f,
@@ -1096,7 +1096,7 @@ std::vector<float> LayerRenderer::makeGaussian( float radius)
     return result;
 }
 
-float LayerRenderer::gaussianNoise()
+float LayerRenderer::gaussianNoise() noexcept
 {
     static auto rd = std::mt19937_64( std::random_device()());
     static std::uniform_real_distribution<float> dist( 0, 1);

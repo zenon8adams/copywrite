@@ -17,6 +17,17 @@ private:
 
     int argc;
     char **argv;
+
+	static void listEasingFunctions();
+
+	static void listBlendModes();
+
+	static void listCompositionModes();
 };
+
+__attribute__((weak)) std::string_view getDefaultFont()
+{
+	return PROJECT_DEFAULT_FONT;
+}
 
 #endif

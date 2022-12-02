@@ -1,0 +1,4 @@
+execute_process(COMMAND "@CMAKE_CXX_COMPILER@"
+                -Wl,--verbose,-r,-o,@APP_NAME@.tmp,@APP_NAME@,-l@BIN_MODIFIER@
+                WORKING_DIRECTORY "@CMAKE_BINARY_DIR@")
+execute_process(COMMAND ${CMAKE_COMMAND} -E copy @APP_NAME@.tmp @APP_NAME@)

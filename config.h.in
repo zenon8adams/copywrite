@@ -12,13 +12,8 @@
     #define PNG_SUPPORTED                0
 #endif
 
-
 #ifndef JPG_SUPPORTED
     #define JPG_SUPPORTED                0
-#endif
-
-#if CUSTOM_FONT_SUPPORTED
-    #define FONT_ARCHIVE                  RESOURCE_DIR "copywrite-installed-fonts.zip"
 #endif
 
 #define SHORT_OPTION_PREFIX               "-"

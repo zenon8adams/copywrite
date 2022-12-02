@@ -50,10 +50,6 @@ int main( int argc, char *argv[])
     plugin_manager->install( std::make_unique<LayerRenderer>( activity_director, rule_parser));
     #endif
 
-    #if CUSTOM_FONT_SUPPORTED
-    plugin_manager->install( std::make_unique<LocalFontManager>( activity_director));
-    #endif
-
     auto text_renderer      = TextRenderer( activity_director, rule_parser);
     auto text_colorizer     = TextColorizer( activity_director, text_renderer);
     auto surface = text_colorizer.paint();

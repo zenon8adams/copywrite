@@ -8,6 +8,8 @@ class LocalFontManager : public Plugin
 public:
     explicit LocalFontManager( ApplicationDirector& manager);
 
+	bool open();
+
     void installFont( std::string_view font_file);
 
     void uninstallFont( std::string_view font);
@@ -29,5 +31,10 @@ private:
     zip_t *zipper_{ nullptr};
     #endif
 };
+
+__attribute__((weak)) const char *fontArchiveDir()
+{
+	return RESOURCE_DIR "copywrite-installed-fonts.zip";
+}
 
 #endif

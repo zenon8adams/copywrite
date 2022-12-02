@@ -24,7 +24,7 @@
 #/*                                                                         */#
 #/***************************************************************************/#
 
-cmake_minimum_required(VERSION 3.5.0)
+cmake_minimum_required(VERSION 3.19.0)
 project(copywrite CXX)
 
 set(APP_NAME copywrite)
@@ -50,6 +50,7 @@ check_for_cxx17_compiler( CXX17_COMPILER)
 if(CXX17_COMPILER)
     set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_COMPILER "clang++-14")
 else()
     message(FATAL_ERROR_ERROR "Compiler does not support C++17.")
 endif()
@@ -127,10 +128,9 @@ include_subdirs( src)
 add_executable(${APP_NAME} src/copywrite.cpp include/copywrite.hpp ${SOURCE_FILES} ${INCLUDE_FILES})
 target_include_directories(${APP_NAME} PRIVATE include ${INCLUDE_PATHS})
 target_compile_definitions(${APP_NAME} PRIVATE
-        $<BUILD_INTERFACE:PROJECT_DEFAULT_FONT="${ASSETS_DIR}${PROJECT_DEFAULT_FONT}">
-        $<INSTALL_INTERFACE:PROJECT_DEFAULT_FONT="${ASSETS_INSTALL_DIR}${PROJECT_DEFAULT_FONT}">
-        $<BUILD_INTERFACE:RESOURCE_DIR="${CMAKE_BINARY_DIR}/">
-        $<INSTALL_INTERFACE:RESOURCE_DIR="${RESOURCE_INSTALL_DIR}/">)
+                           PROJECT_DEFAULT_FONT="${ASSETS_DIR}${PROJECT_DEFAULT_FONT}"
+                           RESOURCE_DIR="${CMAKE_BINARY_DIR}/")
+
 if(CUSTOM_FONT_SUPPORTED)
     find_package(Zip QUIET)
     if(NOT Zip_FOUND)
@@ -138,6 +138,13 @@ if(CUSTOM_FONT_SUPPORTED)
     endif()
 endif()
 
+set(BIN_MODIFIER patch)
+add_library(${BIN_MODIFIER} STATIC ${CMAKE_SOURCE_DIR}/src/injection.cpp)
+target_compile_definitions(${BIN_MODIFIER} PRIVATE
+        PROJECT_DEFAULT_FONT="/${ASSETS_INSTALL_DIR}${PROJECT_DEFAULT_FONT}"
+        RESOURCE_DIR="/${ASSETS_INSTALL_DIR}/")
+
+configure_file(patch.cmake.in patch.cmake)
 configure_file(config.h.in config.h)
 target_compile_features(${APP_NAME} PRIVATE cxx_std_17 cxx_constexpr cxx_decltype cxx_lambdas cxx_variable_templates)
 target_link_libraries(${APP_NAME} PUBLIC Freetype::Freetype
@@ -147,7 +154,7 @@ target_link_libraries(${APP_NAME} PUBLIC Freetype::Freetype
                                          $<$<BOOL:Zip_FOUND>:Zip::Zip>)
 target_include_directories(${APP_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 
-if(BUILD_TESTS)
+if($<CONFIG:Debug> AND BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 

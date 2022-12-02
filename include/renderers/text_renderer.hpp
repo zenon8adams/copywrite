@@ -27,6 +27,7 @@ private:
 
     FT_Library library_{};
     FT_Face face_{};
+	std::unique_ptr<uint8_t, DeleterType> custom_profile_;
     ApplicationDirector& app_manager_;
     RuleParser& parser_;
     MonoGlyphs rasters_;        // Collection of processed characters.

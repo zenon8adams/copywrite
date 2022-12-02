@@ -20,7 +20,7 @@ public:
     // Implementation of guassian filter using erf as cdf
     // References:
     //[1] https://stackoverflow.com/questions/809362/how-to-calculate-cumulative-normal-distribution
-    static std::vector<float> makeGaussian( float radius);
+    static std::vector<float> makeGaussian( float radius) noexcept;
 
     template <typename Tp, typename = std::enable_if_t<std::is_integral_v<Tp>>>
     static void applyEffect( FrameBuffer<Tp> &frame, SpecialEffect effect, const SpecialEffectArgs& extras = {})
@@ -186,10 +186,10 @@ private:
 
     static std::vector<float> makeEmboss( int width);
 
-    static float gaussianNoise();
+    static float gaussianNoise() noexcept;
 
     template <typename Src, typename Dst>
-    static inline void readPixel( Src *src,  Dst *r, Dst *g, Dst *b, Dst *a)
+    static inline void readPixel( Src *src,  Dst *r, Dst *g, Dst *b, Dst *a) noexcept
     {
         if constexpr ( sizeof( Src) == 4)
         {
@@ -208,7 +208,7 @@ private:
     }
 
     template <typename Dst, typename Src>
-    static inline void writePixel( Dst *dst, Src r, Src g, Src b, Dst *a)
+    static inline void writePixel( Dst *dst, Src r, Src g, Src b, Dst *a) noexcept
     {
         if constexpr ( sizeof( Dst) == 4)
             *dst =  RGBA( r, g, b, ALPHA( *a));

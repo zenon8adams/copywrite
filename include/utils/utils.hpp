@@ -59,6 +59,11 @@ namespace Util
         return ( ... || Pred()( base, others));
     }
 
+	template<typename Pred, typename... Others>
+	bool compareOr( Pred&& pred, Others... others)
+	{
+		return ( ... || pred( others));
+	}
 
     Vec2D<float> getSnapCoordinate( std::string_view given);
 
